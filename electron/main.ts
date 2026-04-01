@@ -378,6 +378,14 @@ function setupIPC() {
     const cfg = loadConfig()
     if (cfg.dataPath) shell.openPath(cfg.dataPath)
   })
+  ipcMain.handle('select-backup-path', async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: '選擇備份儲存目錄',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    return result.filePaths[0]
+  })
 }
 
 // ── App ready ─────────────────────────────────────────────────

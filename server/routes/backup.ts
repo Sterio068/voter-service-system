@@ -3,11 +3,23 @@ import Database from 'better-sqlite3'
 import { db, dbPath } from '../db/index'
 import { requirePermission, authenticate } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+import { getSetting, setSetting } from '../utils/settings'
 import fs from 'fs'
 import path from 'path'
 
-const backupsDir = process.env.BACKUPS_PATH || path.join(process.cwd(), 'backups')
-if (!fs.existsSync(backupsDir)) fs.mkdirSync(backupsDir, { recursive: true })
+const defaultBackupsDir = process.env.BACKUPS_PATH || path.join(process.cwd(), 'backups')
+if (!fs.existsSync(defaultBackupsDir)) fs.mkdirSync(defaultBackupsDir, { recursive: true })
+
+function getBackupsDir(): string {
+  try {
+    const saved = getSetting('backup_path')
+    const dir = (saved && typeof saved === 'string' && saved.trim()) ? saved.trim() : defaultBackupsDir
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    return dir
+  } catch {
+    return defaultBackupsDir
+  }
+}
 
 function getBackupFileName(): string {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
@@ -25,7 +37,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       console.warn('[Backup] WAL checkpoint failed:', e)
     }
     // 先用 VACUUM INTO 產生乾淨的備份
-    const tmpPath = path.join(backupsDir, getBackupFileName())
+    const tmpPath = path.join(getBackupsDir(), getBackupFileName())
     db.exec(`VACUUM INTO '${tmpPath}'`)
     const buf = fs.readFileSync(tmpPath)
     const fname = path.basename(tmpPath)
@@ -37,10 +49,10 @@ export default async function backupRoutes(fastify: FastifyInstance) {
 
   // ===== 列出本機備份清單 =====
   fastify.get('/api/admin/backup/list', { preHandler: [requirePermission('system', 'view')] }, async (request, reply) => {
-    const files = fs.readdirSync(backupsDir)
+    const files = fs.readdirSync(getBackupsDir())
       .filter(f => f.endsWith('.db'))
       .map(f => {
-        const stat = fs.statSync(path.join(backupsDir, f))
+        const stat = fs.statSync(path.join(getBackupsDir(), f))
         return { name: f, size: stat.size, created_at: stat.birthtime.toISOString() }
       })
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -51,7 +63,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
   fastify.post('/api/admin/backup', { preHandler: [requirePermission('system', 'view')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const fname = getBackupFileName()
-    const destPath = path.join(backupsDir, fname)
+    const destPath = path.join(getBackupsDir(), fname)
     // Force WAL checkpoint to ensure all data is in main DB
     try {
       db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
@@ -96,7 +108,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
 
     // Step 3: Backup current database before replacing
-    const currentBackup = path.join(backupsDir, `pre-restore-${getBackupFileName()}`)
+    const currentBackup = path.join(getBackupsDir(), `pre-restore-${getBackupFileName()}`)
     try {
       db.exec(`VACUUM INTO '${currentBackup}'`)
     } catch (e) {
@@ -155,7 +167,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     if (!safeName.endsWith('.db') || safeName.includes('..')) {
       return reply.code(400).send({ success: false, error: '無效的檔案名稱' })
     }
-    const filePath = path.join(backupsDir, safeName)
+    const filePath = path.join(getBackupsDir(), safeName)
     if (!fs.existsSync(filePath)) return reply.code(404).send({ success: false, error: '備份檔案不存在' })
     try {
       const backupDb = new Database(filePath, { readonly: true })
@@ -176,10 +188,36 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     if (!safeName.endsWith('.db') || safeName.includes('..')) {
       return reply.code(400).send({ success: false, error: '無效的檔案名稱' })
     }
-    const filePath = path.join(backupsDir, safeName)
+    const filePath = path.join(getBackupsDir(), safeName)
     if (!fs.existsSync(filePath)) return reply.code(404).send({ success: false, error: '備份不存在' })
     fs.unlinkSync(filePath)
     createAuditLog(request, cu.id, { action: 'delete', module: '系統備份', target_name: safeName })
     return reply.send({ success: true, message: '備份已刪除' })
+  })
+
+  // ===== 取得備份目錄 =====
+  fastify.get('/api/admin/backup/path', { preHandler: [requirePermission('system', 'view')] }, async (_request, reply) => {
+    return reply.send({ success: true, data: { path: getBackupsDir() } })
+  })
+
+  // ===== 設定備份目錄 =====
+  fastify.post('/api/admin/backup/path', { preHandler: [requirePermission('system', 'view')] }, async (request, reply) => {
+    const cu = (request as any).currentUser
+    const { path: newPath } = request.body as any
+    if (!newPath || typeof newPath !== 'string') {
+      return reply.code(400).send({ success: false, error: '請提供備份目錄路徑' })
+    }
+    // 驗證可寫入
+    try {
+      fs.mkdirSync(newPath, { recursive: true })
+      const testFile = path.join(newPath, '.write-test')
+      fs.writeFileSync(testFile, '')
+      fs.unlinkSync(testFile)
+    } catch (e) {
+      return reply.code(400).send({ success: false, error: `無法寫入目錄：${String(e)}` })
+    }
+    setSetting('backup_path', newPath)
+    createAuditLog(request, cu.id, { action: 'update', module: '備份設定', target_name: newPath })
+    return reply.send({ success: true, message: '備份目錄已更新', data: { path: newPath } })
   })
 }

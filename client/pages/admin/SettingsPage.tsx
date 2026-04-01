@@ -5,7 +5,7 @@ import {
 } from 'antd'
 import {
   SaveOutlined, DownloadOutlined, UploadOutlined, DeleteOutlined,
-  DatabaseOutlined, ReloadOutlined, ClockCircleOutlined, InfoCircleOutlined
+  DatabaseOutlined, ReloadOutlined, ClockCircleOutlined, InfoCircleOutlined, FolderOpenOutlined
 } from '@ant-design/icons'
 import api from '../../utils/api'
 import dayjs from 'dayjs'
@@ -33,11 +33,15 @@ export default function SettingsPage() {
   const [restoreFile, setRestoreFile] = useState<UploadFile | null>(null)
   const [restoreModalOpen, setRestoreModalOpen] = useState(false)
   const [restoring, setRestoring] = useState(false)
+  const [backupPath, setBackupPath] = useState<string>('')
+  const [savingBackupPath, setSavingBackupPath] = useState(false)
+  const isElectron = !!(window as any).electronAPI
 
   useEffect(() => {
     loadSettings()
     loadNetworkInfo()
     loadBackups()
+    loadBackupPath()
   }, [])
 
   const loadSettings = async () => {
@@ -54,6 +58,34 @@ export default function SettingsPage() {
       const res = await api.get('/network-info')
       setNetworkInfo(res.data.data)
     } catch {}
+  }
+
+  const loadBackupPath = async () => {
+    try {
+      const res = await api.get('/admin/backup/path')
+      setBackupPath(res.data.data?.path || '')
+    } catch {}
+  }
+
+  const handleSelectBackupPath = async () => {
+    const electronAPI = (window as any).electronAPI
+    if (!electronAPI?.selectBackupPath) {
+      message.warning('請在桌面應用程式中使用此功能')
+      return
+    }
+    const selected = await electronAPI.selectBackupPath()
+    if (!selected) return
+    setSavingBackupPath(true)
+    try {
+      const res = await api.post('/admin/backup/path', { path: selected })
+      setBackupPath(res.data.data?.path || selected)
+      message.success('備份目錄已更新')
+      loadBackups()
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '設定失敗')
+    } finally {
+      setSavingBackupPath(false)
+    }
   }
 
   const loadBackups = async () => {
@@ -239,13 +271,22 @@ export default function SettingsPage() {
           </Button>
         </Space>
 
-        <Text type="secondary" style={{ display: 'block', marginBottom: 4, fontSize: 12 }}>
-          備份檔案儲存於伺服器 <code>backups/</code> 目錄。建議定期下載備份至外部儲存裝置。
-        </Text>
-        <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
-          <InfoCircleOutlined style={{ marginRight: 4 }} />
-          備份儲存位置可透過系統選單 → 變更資料位置 調整
-        </Text>
+        <div style={{ marginBottom: 12, padding: '8px 12px', background: '#f5f5f5', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <FolderOpenOutlined style={{ color: '#1677ff' }} />
+          <Text style={{ flex: 1, fontSize: 12, wordBreak: 'break-all' }}>
+            備份目錄：<code style={{ fontSize: 11 }}>{backupPath || '（預設）'}</code>
+          </Text>
+          {isElectron && (
+            <Button
+              size="small"
+              icon={<FolderOpenOutlined />}
+              loading={savingBackupPath}
+              onClick={handleSelectBackupPath}
+            >
+              變更目錄
+            </Button>
+          )}
+        </div>
         {form.getFieldValue('last_auto_backup') && (
           <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
             <ClockCircleOutlined /> 上次自動備份：{dayjs(form.getFieldValue('last_auto_backup')).format('YYYY-MM-DD HH:mm')}

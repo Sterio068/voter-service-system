@@ -8,6 +8,7 @@ export type SettingKey =
   | 'stats_exclude_inactive'
   | 'election_year_mode'
   | 'theme'
+  | 'backup_path'
 
 interface SettingTypes {
   office_name: string
@@ -17,6 +18,7 @@ interface SettingTypes {
   stats_exclude_inactive: boolean
   election_year_mode: boolean
   theme: 'light' | 'dark'
+  backup_path: string
 }
 
 export function getSetting<K extends SettingKey>(key: K): SettingTypes[K] | null {
