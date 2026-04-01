@@ -188,7 +188,7 @@
 <aside class="sidebar">
   <div class="sidebar-header">
     <h1>選民服務系統</h1>
-    <p>使用手冊 v1.0</p>
+    <p>使用手冊 v1.1</p>
   </div>
   <nav>
     <span class="section-label">入門</span>
@@ -203,7 +203,8 @@
     <span class="section-label">分析與設定</span>
     <a href="#reports">8. 統計報表</a>
     <a href="#settings">9. 系統設定</a>
-    <a href="#shortcuts">10. 鍵盤快捷鍵</a>
+    <a href="#mobile">10. 行動裝置使用</a>
+    <a href="#shortcuts">11. 鍵盤快捷鍵</a>
   </nav>
 </aside>
 
@@ -211,7 +212,7 @@
 <div class="content">
 <header>
   <h1>選民服務系統 使用手冊</h1>
-  <p>完整功能說明 &nbsp;|&nbsp; 版本 1.0 &nbsp;|&nbsp; 2026 年</p>
+  <p>完整功能說明 &nbsp;|&nbsp; 版本 1.1 &nbsp;|&nbsp; 2026 年</p>
 </header>
 
 <main>
@@ -268,9 +269,11 @@
   <h3>技術特色</h3>
   <ul>
     <li><strong>全離線運作</strong>：不需要網際網路連線，所有資料存於本機</li>
-    <li><strong>區域網路共用</strong>：支援多台辦公室電腦共用同一資料庫</li>
-    <li><strong>自動備份</strong>：可設定每日或每週自動備份資料庫</li>
+    <li><strong>區域網路共用</strong>：支援多台辦公室電腦共用同一資料庫，手機、平板亦可透過 WiFi 連線使用</li>
+    <li><strong>自動備份</strong>：可設定每日或每週自動備份資料庫，備份目錄可自由指定</li>
     <li><strong>民國日期</strong>：全系統使用中華民國年號（民國年）顯示</li>
+    <li><strong>行動裝置最佳化</strong>：手機瀏覽時自動切換為行動版介面，底部導覽列操作更便利</li>
+    <li><strong>附件管理</strong>：收發文及陳情案件均可上傳 PDF 或照片（單檔最大 20MB）</li>
   </ul>
 </section>
 
@@ -475,6 +478,19 @@
   <h3>5.5 追蹤日期提醒</h3>
   <p>設定案件的「追蹤日期」後，系統會在儀表板的待辦區顯示即將到期的案件提醒。逾期未追蹤的案件會以紅色標示。</p>
 
+  <h3>5.6 附件上傳</h3>
+  <p>在案件詳細頁面的「附件」分頁，可上傳相關文件與照片：</p>
+  <ul>
+    <li>支援格式：<strong>PDF</strong>、<strong>JPG / PNG / GIF / WebP</strong> 等圖片格式</li>
+    <li>單檔上限：<strong>20 MB</strong></li>
+    <li>PDF 點擊後在新分頁開啟；圖片點擊後可全螢幕預覽</li>
+    <li>每個附件顯示上傳者姓名與上傳時間</li>
+    <li>附件可單獨刪除，不影響案件本身</li>
+  </ul>
+
+  <h3>5.7 刪除案件</h3>
+  <p>在案件清單的操作欄點擊「🗑 刪除」圖示，確認後即可永久刪除該案件（含所有處理記錄）。刪除前系統會彈出確認提示，請謹慎操作。</p>
+
   <div class="callout tip">
     <strong>批次操作</strong>
     在案件清單中勾選多個案件後，可批次變更狀態、指派負責人或匯出選取案件。
@@ -517,12 +533,33 @@
         </ul>
       </div>
     </li>
-    <li><div class="content"><strong>上傳附件</strong>（選填）可上傳 PDF、Word、圖片等格式，單檔最大 50MB。</div></li>
     <li><div class="content"><strong>關聯陳情案件</strong>（選填）若此公文與特定陳情有關，可在此關聯。</div></li>
     <li><div class="content"><strong>點擊「儲存」</strong></div></li>
   </ol>
 
-  <h3>6.4 公文搜尋</h3>
+  <h3>6.4 附件與刪除</h3>
+  <p>開啟公文詳細後，可在抽屜下方的「附件」區域上傳相關文件：</p>
+  <ul>
+    <li>支援格式：<strong>PDF</strong>、<strong>JPG / PNG</strong> 等圖片</li>
+    <li>單檔上限：<strong>20 MB</strong></li>
+    <li>點擊 PDF 在新分頁開啟；圖片點擊後全螢幕預覽</li>
+  </ul>
+  <p>點擊詳細頁右上角「🗑 刪除公文」按鈕可永久刪除該公文（含附件）。</p>
+
+  <h3>6.5 發文匯出 Word（公文格式）</h3>
+  <p>開啟發文後點擊「匯出 Word」，系統依據台灣行政機關公文格式（函）產生 <code>.doc</code> 檔：</p>
+  <ul>
+    <li>A4 直式，外框線</li>
+    <li>速別、密等、受文者、發文日期、發文字號</li>
+    <li>主旨（末尾自動加句點）、說明（換行自動轉段落）</li>
+    <li>正本、副本</li>
+  </ul>
+  <div class="callout info">
+    <strong>Word 版本說明</strong>
+    產生的檔案為 <code>.doc</code> 格式（Word 97-2003），可直接用 Microsoft Word、LibreOffice、WPS 開啟。
+  </div>
+
+  <h3>6.6 公文搜尋</h3>
   <p>支援以下搜尋條件：</p>
   <ul>
     <li>文號、主旨關鍵字</li>
@@ -531,7 +568,7 @@
     <li>辦理狀態（待辦、已辦、逾期）</li>
   </ul>
 
-  <h3>6.5 逾期公文提醒</h3>
+  <h3>6.7 逾期公文提醒</h3>
   <p>辦理期限設定後，系統會在以下地方提示：</p>
   <ul>
     <li>儀表板「待辦提醒」區塊</li>
@@ -652,8 +689,13 @@
       <tr><td>啟用自動備份</td><td>開啟後系統定期自動備份資料庫</td></tr>
       <tr><td>備份頻率</td><td>每日或每週</td></tr>
       <tr><td>保留份數</td><td>最多保留最近 10 份自動備份（舊的自動刪除）</td></tr>
+      <tr><td>備份目錄</td><td>點擊「變更目錄」可將備份存至任意位置（如外接硬碟、NAS）</td></tr>
     </tbody>
   </table>
+  <div class="callout tip">
+    <strong>建議將備份目錄設至外接硬碟或 NAS</strong>
+    預設備份位置與程式同磁碟，若硬碟損壞則備份一併遺失。建議在「設定」→「資料庫備份」→「變更目錄」中指定外部儲存裝置路徑。
+  </div>
 
   <h3>9.3 手動備份與還原</h3>
   <ol>
@@ -670,12 +712,48 @@
   <p>點擊應用程式上方選單「系統」→「變更資料位置...」可重新設定資料儲存路徑。變更後需重新啟動才會生效。</p>
 
   <h3>9.5 系統資訊</h3>
-  <p>「設定」→「關於」頁面顯示：系統版本號、Node.js 版本、資料庫路徑、目前登入使用者。</p>
+  <p>「設定」頁面最下方的「系統資訊」卡片顯示目前安裝的版本號（例如 <code>v1.0.0</code>）。</p>
 </section>
 
-<!-- 10. 快捷鍵 -->
+<!-- 10. 行動裝置 -->
+<section id="mobile">
+  <h2>10. 行動裝置使用</h2>
+  <p>在手機或平板上透過 WiFi 連線至主機 IP，系統自動切換行動版介面。</p>
+
+  <h3>10.1 連線方式</h3>
+  <ol class="step-list">
+    <li><div class="content"><strong>確認主機與手機在同一 WiFi</strong></div></li>
+    <li><div class="content"><strong>查詢主機 IP</strong>：在主機的「設定」→「網路資訊」中可看到區域網路 IP（例如 <code>192.168.1.100</code>）</div></li>
+    <li><div class="content"><strong>在手機瀏覽器輸入</strong>：<code>http://192.168.1.100:3000</code>（埠號以設定頁顯示為準）</div></li>
+    <li><div class="content"><strong>正常登入</strong>即可使用</div></li>
+  </ol>
+
+  <h3>10.2 行動版介面差異</h3>
+  <table>
+    <thead><tr><th>項目</th><th>桌面版</th><th>行動版（< 768px）</th></tr></thead>
+    <tbody>
+      <tr><td>導覽列</td><td>左側側欄</td><td>底部 5 個快速分頁 + 漢堡選單</td></tr>
+      <tr><td>底部分頁</td><td>—</td><td>儀表板 / 陳情 / 選民 / 行程 / 待辦</td></tr>
+      <tr><td>完整選單</td><td>—</td><td>點擊左上角漢堡圖示展開</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout info">
+    <strong>建議加入主畫面</strong>
+    在 Safari（iOS）或 Chrome（Android）點擊「分享」→「加入主畫面」，即可建立 App 捷徑，啟動時全螢幕顯示。
+  </div>
+
+  <h3>10.3 注意事項</h3>
+  <ul>
+    <li>行動版僅支援查詢與新增，部分複雜表單（如批次匯入）建議在桌面操作</li>
+    <li>手機無法直接執行備份下載，請在主機桌面端操作</li>
+    <li>若主機關機或睡眠，手機連線將中斷</li>
+  </ul>
+</section>
+
+<!-- 11. 快捷鍵 -->
 <section id="shortcuts">
-  <h2>10. 鍵盤快捷鍵速查表</h2>
+  <h2>11. 鍵盤快捷鍵速查表</h2>
 
   <h3>全域快捷鍵</h3>
   <table class="shortcut-table">
@@ -734,7 +812,7 @@
 </main>
 
 <footer>
-  選民服務系統 &copy; 2026 &nbsp;|&nbsp; 使用手冊 v1.0 &nbsp;|&nbsp; 技術支援請聯繫系統管理員
+  選民服務系統 &copy; 2026 &nbsp;|&nbsp; 使用手冊 v1.1 &nbsp;|&nbsp; 技術支援請聯繫系統管理員
 </footer>
 </div>
 
