@@ -197,6 +197,7 @@ export default function PetitionDetailPage() {
                 <Descriptions.Item label="案件編號">{petition.case_number}</Descriptions.Item>
                 <Descriptions.Item label="陳情日期">{petition.petition_date}</Descriptions.Item>
                 <Descriptions.Item label="陳情人">{petition.voter_name || '未登記'}</Descriptions.Item>
+                <Descriptions.Item label="聯絡電話">{petition.contact_phone || '-'}</Descriptions.Item>
                 <Descriptions.Item label="陳情方式">{petition.channel || '-'}</Descriptions.Item>
                 <Descriptions.Item label="陳情類別">{petition.category || '-'}</Descriptions.Item>
                 <Descriptions.Item label="子分類">{petition.subcategory || '-'}</Descriptions.Item>
@@ -212,7 +213,7 @@ export default function PetitionDetailPage() {
                   <div style={{ whiteSpace: 'pre-wrap' }}>{petition.content}</div>
                 </Descriptions.Item>
                 <Descriptions.Item label="處理區域" span={2}>
-                  {[petition.area_city, petition.area_district, petition.area_village, petition.area_address].filter(Boolean).join(' ') || '-'}
+                  {[petition.area_city, petition.area_address].filter(Boolean).join(' ') || '-'}
                 </Descriptions.Item>
                 {petition.related_doc_id && (
                   <Descriptions.Item label="關聯公文" span={2}>

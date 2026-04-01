@@ -455,6 +455,9 @@ export function runMigrations() {
   try { db.exec("ALTER TABLE petitions ADD COLUMN follow_up_date TEXT") } catch {}
   try { db.exec("ALTER TABLE petitions ADD COLUMN follow_up_note TEXT") } catch {}
 
+  // F-N7: Petition contact phone (陳情人聯絡電話，非選民檔案)
+  try { db.exec("ALTER TABLE petitions ADD COLUMN contact_phone TEXT") } catch {}
+
   // F-N6: Voter interest topics
   db.exec(`CREATE TABLE IF NOT EXISTS voter_topics (
     voter_id INTEGER NOT NULL REFERENCES voters(id),

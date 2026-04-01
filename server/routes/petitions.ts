@@ -8,11 +8,13 @@ const CreatePetitionSchema = z.object({
   content: z.string().min(1, '陳情內容為必填'),
   petition_date: z.string().min(1, '陳情日期為必填'),
   voter_id: z.number().optional(),
+  contact_phone: z.string().optional(),
   channel: z.string().optional(),
   category: z.string().optional(),
   subcategory: z.string().optional(),
   area_city: z.string().optional(),
   area_district: z.string().optional(),
+  area_village: z.string().optional(),
   area_address: z.string().optional(),
   urgency: z.enum(['normal','urgent','critical']).optional(),
   assignee_id: z.number().optional(),
@@ -120,7 +122,7 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
     }
     const body = request.body as any
     const case_number = generateCaseNumber()
-    const fields = ['case_number','petition_date','voter_id','channel','category','subcategory','content','area_city','area_district','area_village','area_address','urgency','status','assignee_id']
+    const fields = ['case_number','petition_date','voter_id','contact_phone','channel','category','subcategory','content','area_city','area_district','area_village','area_address','urgency','status','assignee_id']
     const values = fields.map(f => f === 'case_number' ? case_number : (body[f] ?? null))
     const r = db.prepare(`INSERT INTO petitions (${fields.join(',')},created_by) VALUES (${fields.map(() => '?').join(',')},?)`)
       .run(...values, cu.id)
@@ -140,7 +142,7 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
     // Only allow known updateable fields
     const allowedFields = ['status','urgency','assignee_id','satisfaction','satisfaction_rating','category','subcategory',
       'channel','content','area_city','area_district','area_village','area_address','petition_date','voter_id',
-      'due_date','source','result_type','follow_up_date','follow_up_note']
+      'contact_phone','due_date','source','result_type','follow_up_date','follow_up_note']
     const updateData: Record<string, any> = {}
     for (const k of allowedFields) { if (body[k] !== undefined) updateData[k] = body[k] }
 

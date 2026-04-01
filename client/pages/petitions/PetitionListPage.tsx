@@ -68,6 +68,7 @@ export default function PetitionListPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [form] = Form.useForm()
   const [categories, setCategories] = useState<string[]>([])
+  const [areas, setAreas] = useState<string[]>([])
   const [users, setUsers] = useState<any[]>([])
   const [voterSearch, setVoterSearch] = useState('')
   const [voterOptions, setVoterOptions] = useState<any[]>([])
@@ -82,6 +83,7 @@ export default function PetitionListPage() {
 
   useEffect(() => {
     fetchCategories()
+    fetchAreas()
     fetchUsers()
     if (new URLSearchParams(location.search).get('action') === 'new') {
       setDrawerOpen(true)
@@ -105,6 +107,13 @@ export default function PetitionListPage() {
     try {
       const res = await api.get('/admin/categories?type=petition_category')
       setCategories(res.data.data?.map((c: any) => c.name) || [])
+    } catch {}
+  }
+
+  const fetchAreas = async () => {
+    try {
+      const res = await api.get('/admin/categories?type=petition_area')
+      setAreas(res.data.data?.map((c: any) => c.name) || [])
     } catch {}
   }
 
@@ -407,20 +416,29 @@ export default function PetitionListPage() {
       >
         <Form form={form} layout="vertical" onFinish={handleSave}
           initialValues={{ urgency: 'normal', status: 'pending', petition_date: dayjs() }}>
-          <Form.Item name="voter_id" label="陳情人（選填）">
-            <Select
-              showSearch
-              allowClear
-              filterOption={false}
-              placeholder="輸入姓名或手機搜尋選民"
-              onSearch={searchVoters}
-              notFoundContent={null}
-            >
-              {voterOptions.map((v: any) => (
-                <Option key={v.id} value={v.id}>{v.name} {v.mobile ? `(${v.mobile})` : ''}</Option>
-              ))}
-            </Select>
-          </Form.Item>
+          <Row gutter={12}>
+            <Col span={16}>
+              <Form.Item name="voter_id" label="陳情人（選填）">
+                <Select
+                  showSearch
+                  allowClear
+                  filterOption={false}
+                  placeholder="輸入姓名或手機搜尋選民"
+                  onSearch={searchVoters}
+                  notFoundContent={null}
+                >
+                  {voterOptions.map((v: any) => (
+                    <Option key={v.id} value={v.id}>{v.name} {v.mobile ? `(${v.mobile})` : ''}</Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="contact_phone" label="聯絡電話">
+                <Input placeholder="0912345678" />
+              </Form.Item>
+            </Col>
+          </Row>
           <Row gutter={12}>
             <Col span={12}>
               <Form.Item name="petition_date" label="陳情日期" rules={[{ required: true }]}>
@@ -466,17 +484,15 @@ export default function PetitionListPage() {
 
           <Divider orientation="left" orientationMargin={0}>處理區域</Divider>
           <Row gutter={12}>
-            <Col span={8}>
-              <Form.Item name="area_city" label="縣市"><Input /></Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="area_district" label="鄉鎮區"><Input /></Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="area_village" label="村里"><Input /></Form.Item>
+            <Col span={24}>
+              <Form.Item name="area_city" label="區域">
+                <Select allowClear showSearch placeholder="選擇或輸入區域" optionFilterProp="children">
+                  {areas.map(a => <Option key={a} value={a}>{a}</Option>)}
+                </Select>
+              </Form.Item>
             </Col>
             <Col span={24}>
-              <Form.Item name="area_address" label="詳細地址"><Input /></Form.Item>
+              <Form.Item name="area_address" label="詳細地址"><Input placeholder="路段、門牌等" /></Form.Item>
             </Col>
           </Row>
         </Form>
@@ -493,21 +509,30 @@ export default function PetitionListPage() {
       >
         <Form form={quickForm} layout="vertical" onFinish={handleQuickCreate}
           initialValues={{ channel: '電話' }}>
-          <Form.Item name="voter_id" label="陳情人（選填）">
-            <Select
-              showSearch
-              allowClear
-              filterOption={false}
-              placeholder="輸入姓名或手機搜尋選民"
-              onSearch={searchVoters}
-              notFoundContent={null}
-            >
-              {voterOptions.map((v: any) => (
-                <Option key={v.id} value={v.id}>{v.name} {v.mobile ? `(${v.mobile})` : ''}</Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <div style={{ marginTop: 4, marginBottom: 8 }}>
+          <Row gutter={12}>
+            <Col span={16}>
+              <Form.Item name="voter_id" label="陳情人（選填）">
+                <Select
+                  showSearch
+                  allowClear
+                  filterOption={false}
+                  placeholder="輸入姓名或手機搜尋選民"
+                  onSearch={searchVoters}
+                  notFoundContent={null}
+                >
+                  {voterOptions.map((v: any) => (
+                    <Option key={v.id} value={v.id}>{v.name} {v.mobile ? `(${v.mobile})` : ''}</Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="contact_phone" label="聯絡電話">
+                <Input placeholder="0912345678" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <div style={{ marginTop: -4, marginBottom: 8 }}>
             <Button type="link" size="small" style={{ padding: 0, fontSize: 12 }}
               onClick={() => setInlineVoterOpen(true)}>
               ＋ 新增選民

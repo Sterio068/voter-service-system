@@ -7,6 +7,7 @@ const { Title } = Typography
 
 const TYPE_LABELS: Record<string, string> = {
   petition_category: '陳情類別',
+  petition_area: '陳情區域',
   voter_tag: '選民標籤',
   group_category: '團體類別',
   doc_category: '公文分類',
