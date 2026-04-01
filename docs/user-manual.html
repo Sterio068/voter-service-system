@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>選民服務系統 — 使用手冊</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
+      font-size: 15px;
+      line-height: 1.75;
+      color: #1a1a1a;
+      background: #f5f6fa;
+      display: flex;
+    }
+    /* Sidebar */
+    .sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      background: #1a2a4a;
+      color: #c8d8f0;
+      min-height: 100vh;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+    .sidebar-header {
+      padding: 28px 20px 20px;
+      border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    .sidebar-header h1 { font-size: 16px; font-weight: 700; color: #fff; line-height: 1.4; }
+    .sidebar-header p  { font-size: 12px; color: #7a9acc; margin-top: 4px; }
+    .sidebar nav { padding: 12px 0 24px; }
+    .sidebar nav a {
+      display: block;
+      padding: 8px 20px;
+      color: #a8c0e0;
+      text-decoration: none;
+      font-size: 13.5px;
+      transition: background .15s, color .15s;
+    }
+    .sidebar nav a:hover { background: rgba(255,255,255,.07); color: #fff; }
+    .sidebar nav .section-label {
+      display: block;
+      padding: 14px 20px 4px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #4a6a9a;
+    }
+    /* Main content */
+    .content {
+      flex: 1;
+      min-width: 0;
+    }
+    header {
+      background: linear-gradient(135deg, #003a82 0%, #007AFF 100%);
+      color: #fff;
+      padding: 36px 48px 28px;
+    }
+    header h1 { font-size: 26px; font-weight: 700; }
+    header p  { font-size: 14px; opacity: .8; margin-top: 4px; }
+    main { padding: 36px 48px 64px; max-width: 820px; }
+    section { margin-bottom: 52px; }
+    h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #0050b3;
+      border-bottom: 2px solid #e0e8f8;
+      padding-bottom: 8px;
+      margin-bottom: 20px;
+    }
+    h3 { font-size: 16px; font-weight: 600; color: #1a3060; margin: 22px 0 10px; }
+    h4 { font-size: 14px; font-weight: 600; color: #2a4080; margin: 14px 0 6px; }
+    p  { margin-bottom: 12px; }
+    ul, ol { padding-left: 22px; margin-bottom: 12px; }
+    li { margin: 5px 0; }
+    code {
+      background: #f0f2f7;
+      border: 1px solid #dde3f0;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 13px;
+      color: #c7254e;
+    }
+    .callout {
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+    .callout.info    { background: #e8f3ff; border-left: 4px solid #007AFF; }
+    .callout.tip     { background: #e6f9ef; border-left: 4px solid #28a745; }
+    .callout.warning { background: #fff8e6; border-left: 4px solid #f5a623; }
+    .callout strong  { display: block; margin-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+    th, td { padding: 10px 14px; border: 1px solid #e0e6f0; text-align: left; vertical-align: top; }
+    th { background: #f0f4ff; font-weight: 600; color: #1a3060; }
+    tr:nth-child(even) td { background: #f8faff; }
+    .step-list { list-style: none; padding-left: 0; counter-reset: step; }
+    .step-list > li {
+      counter-increment: step;
+      display: flex;
+      gap: 14px;
+      margin-bottom: 14px;
+      align-items: flex-start;
+    }
+    .step-list > li::before {
+      content: counter(step);
+      flex-shrink: 0;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: #007AFF;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 3px;
+    }
+    .step-list > li .content { flex: 1; }
+    .step-list > li .content strong { display: block; margin-bottom: 3px; }
+    kbd {
+      display: inline-block;
+      padding: 2px 7px;
+      background: #fff;
+      border: 1px solid #b0b8cc;
+      border-bottom: 3px solid #8090b0;
+      border-radius: 4px;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12px;
+      color: #2a3a5a;
+      box-shadow: 0 1px 2px rgba(0,0,0,.08);
+    }
+    .shortcut-table kbd { white-space: nowrap; }
+    .chip {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .chip.blue   { background: #e8f3ff; color: #0050b3; }
+    .chip.green  { background: #e6f9ef; color: #1a6a35; }
+    .chip.orange { background: #fff3e0; color: #a05000; }
+    .chip.red    { background: #ffeef0; color: #a00020; }
+    .chip.gray   { background: #f0f2f7; color: #4a5a7a; }
+    .func-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+    .func-card {
+      border: 1px solid #dde6f8;
+      border-radius: 8px;
+      padding: 14px 16px;
+      background: #f8faff;
+    }
+    .func-card .icon { font-size: 22px; margin-bottom: 8px; }
+    .func-card h4    { margin: 0 0 4px; font-size: 14px; }
+    .func-card p     { margin: 0; font-size: 13px; color: #5a6a8a; }
+    footer {
+      background: #f0f4ff;
+      border-top: 1px solid #dde3f0;
+      padding: 18px 48px;
+      text-align: center;
+      font-size: 13px;
+      color: #6a7a9a;
+    }
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+      .sidebar { width: 100%; height: auto; position: static; }
+      main { padding: 24px 20px 40px; }
+      header { padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar Navigation -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <h1>選民服務系統</h1>
+    <p>使用手冊 v1.0</p>
+  </div>
+  <nav>
+    <span class="section-label">入門</span>
+    <a href="#overview">1. 系統概覽</a>
+    <a href="#login">2. 登入與帳戶</a>
+    <a href="#dashboard">3. 儀表板</a>
+    <span class="section-label">核心功能</span>
+    <a href="#voters">4. 選民資料管理</a>
+    <a href="#petitions">5. 陳情案件處理</a>
+    <a href="#documents">6. 公文管理</a>
+    <a href="#schedule">7. 行程與待辦</a>
+    <span class="section-label">分析與設定</span>
+    <a href="#reports">8. 統計報表</a>
+    <a href="#settings">9. 系統設定</a>
+    <a href="#shortcuts">10. 鍵盤快捷鍵</a>
+  </nav>
+</aside>
+
+<!-- Main Content -->
+<div class="content">
+<header>
+  <h1>選民服務系統 使用手冊</h1>
+  <p>完整功能說明 &nbsp;|&nbsp; 版本 1.0 &nbsp;|&nbsp; 2026 年</p>
+</header>
+
+<main>
+
+<!-- 1. 系統概覽 -->
+<section id="overview">
+  <h2>1. 系統概覽與功能架構</h2>
+  <p>選民服務系統是一套專為民意代表辦公室設計的本地端管理系統，整合選民資料、陳情案件、公文管理、行程安排與統計分析等功能，協助辦公室人員有效率地服務選民。</p>
+
+  <h3>主要功能模組</h3>
+  <div class="func-grid">
+    <div class="func-card">
+      <div class="icon">👥</div>
+      <h4>選民資料</h4>
+      <p>建立與管理選民基本資料、分組與聯絡記錄</p>
+    </div>
+    <div class="func-card">
+      <div class="icon">📋</div>
+      <h4>陳情案件</h4>
+      <p>追蹤陳情案件進度、指派處理人員、設定期限</p>
+    </div>
+    <div class="func-card">
+      <div class="icon">📄</div>
+      <h4>公文管理</h4>
+      <p>管理收發文公文、追蹤公文流程與期限</p>
+    </div>
+    <div class="func-card">
+      <div class="icon">📅</div>
+      <h4>行程安排</h4>
+      <p>月曆檢視行程、建立活動與提醒事項</p>
+    </div>
+    <div class="func-card">
+      <div class="icon">✅</div>
+      <h4>待辦事項</h4>
+      <p>個人與共用待辦清單、關聯陳情與選民</p>
+    </div>
+    <div class="func-card">
+      <div class="icon">📊</div>
+      <h4>統計報表</h4>
+      <p>週報、月報、陳情分析、選民互動統計</p>
+    </div>
+    <div class="func-card">
+      <div class="icon">🔍</div>
+      <h4>全文搜尋</h4>
+      <p>跨模組快速搜尋選民、案件、公文</p>
+    </div>
+    <div class="func-card">
+      <div class="icon">⚙️</div>
+      <h4>系統設定</h4>
+      <p>帳戶管理、自動備份、選區設定</p>
+    </div>
+  </div>
+
+  <h3>技術特色</h3>
+  <ul>
+    <li><strong>全離線運作</strong>：不需要網際網路連線，所有資料存於本機</li>
+    <li><strong>區域網路共用</strong>：支援多台辦公室電腦共用同一資料庫</li>
+    <li><strong>自動備份</strong>：可設定每日或每週自動備份資料庫</li>
+    <li><strong>民國日期</strong>：全系統使用中華民國年號（民國年）顯示</li>
+  </ul>
+</section>
+
+<!-- 2. 登入 -->
+<section id="login">
+  <h2>2. 登入與帳戶管理</h2>
+  <h3>2.1 初次登入</h3>
+  <p>系統安裝完成後，預設管理員帳戶資訊如下：</p>
+  <table>
+    <tr><th>帳號</th><td><code>admin</code></td></tr>
+    <tr><th>密碼</th><td><code>admin123</code></td></tr>
+  </table>
+  <div class="callout warning">
+    <strong>首次登入後請立即變更密碼</strong>
+    點擊右上角頭像 → 「個人設定」→「變更密碼」，設定符合辦公室安全規範的強式密碼。
+  </div>
+
+  <h3>2.2 登入流程</h3>
+  <ol class="step-list">
+    <li><div class="content"><strong>輸入帳號與密碼</strong>在登入頁面輸入使用者帳號及密碼。</div></li>
+    <li><div class="content"><strong>點擊「登入」</strong>或按 <kbd>Enter</kbd> 確認。</div></li>
+    <li><div class="content"><strong>進入系統</strong>驗證成功後自動跳轉至儀表板。</div></li>
+  </ol>
+  <p>系統使用 JWT Token 驗證，Token 預設有效期為 8 小時，逾期後需重新登入。</p>
+
+  <h3>2.3 帳戶管理（管理員）</h3>
+  <p>管理員可在「系統設定」→「使用者管理」中進行以下操作：</p>
+  <table>
+    <thead><tr><th>功能</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>新增帳戶</td><td>為辦公室人員建立獨立帳號，設定姓名、帳號、密碼與角色</td></tr>
+      <tr><td>修改帳戶</td><td>更改姓名、重設密碼、調整權限角色</td></tr>
+      <tr><td>停用帳戶</td><td>離職人員帳戶可停用而非刪除，保留操作記錄</td></tr>
+    </tbody>
+  </table>
+
+  <h3>2.4 角色與權限</h3>
+  <table>
+    <thead><tr><th>角色</th><th>可存取功能</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="chip red">管理員</span></td>
+        <td>所有功能，含使用者管理、系統設定、備份還原</td>
+      </tr>
+      <tr>
+        <td><span class="chip blue">一般使用者</span></td>
+        <td>選民資料、陳情案件、公文、行程、報表（唯讀系統設定）</td>
+      </tr>
+      <tr>
+        <td><span class="chip gray">唯讀</span></td>
+        <td>僅可查看資料，不可新增或修改</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 3. 儀表板 -->
+<section id="dashboard">
+  <h2>3. 儀表板說明</h2>
+  <p>登入後的首頁為儀表板，提供辦公室日常工作的快速概覽。</p>
+
+  <h3>3.1 資訊卡片區</h3>
+  <p>頁面頂部顯示四個關鍵數字卡片：</p>
+  <table>
+    <thead><tr><th>卡片</th><th>顯示內容</th></tr></thead>
+    <tbody>
+      <tr><td>選民總數</td><td>系統中登錄的有效選民人數</td></tr>
+      <tr><td>待處理案件</td><td>尚未結案的陳情數量（點擊可跳轉至案件清單）</td></tr>
+      <tr><td>本月聯絡</td><td>本月份已記錄的選民聯絡次數</td></tr>
+      <tr><td>逾期案件</td><td>超過預計處理期限未結案的數量（紅色警示）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>3.2 近期活動</h3>
+  <p>儀表板中央顯示：</p>
+  <ul>
+    <li><strong>最近新增的陳情案件</strong>（最新 5 筆）</li>
+    <li><strong>今日行程</strong>（當日所有已排定事項）</li>
+    <li><strong>待辦提醒</strong>（今日到期或逾期的待辦事項）</li>
+  </ul>
+
+  <h3>3.3 快速操作</h3>
+  <p>儀表板提供快速新增按鈕，點擊可直接進入新增表單：</p>
+  <ul>
+    <li>新增選民</li>
+    <li>新增陳情案件</li>
+    <li>新增行程</li>
+  </ul>
+
+  <div class="callout tip">
+    <strong>小技巧</strong>
+    儀表板的逾期案件卡片顯示紅色時，點擊可直接跳轉至篩選好的逾期案件清單，方便快速處理。
+  </div>
+</section>
+
+<!-- 4. 選民資料管理 -->
+<section id="voters">
+  <h2>4. 選民資料管理</h2>
+
+  <h3>4.1 選民清單</h3>
+  <p>從左側選單點擊「選民」進入選民清單頁面。清單以表格形式顯示所有選民，支援以下操作：</p>
+  <ul>
+    <li><strong>搜尋</strong>：在搜尋框輸入姓名、電話、地址或身分證字號（後 4 碼）</li>
+    <li><strong>篩選</strong>：依分組、里別、選區、聯絡狀態等條件篩選</li>
+    <li><strong>排序</strong>：點擊欄位標題即可依該欄位排序</li>
+    <li><strong>分頁</strong>：每頁預設顯示 20 筆，可調整為 50 或 100 筆</li>
+  </ul>
+
+  <h3>4.2 新增選民</h3>
+  <ol class="step-list">
+    <li><div class="content"><strong>點擊「新增選民」按鈕</strong>位於清單頁右上角。</div></li>
+    <li>
+      <div class="content">
+        <strong>填寫基本資料</strong>
+        必填欄位：姓名、電話。
+        選填欄位：地址、里別、選區、生日（民國年）、備註。
+      </div>
+    </li>
+    <li><div class="content"><strong>指定分組</strong>可將選民加入一或多個群組（如：支持者、義工、里長等）。</div></li>
+    <li><div class="content"><strong>點擊「儲存」</strong>完成新增。</div></li>
+  </ol>
+
+  <h3>4.3 編輯選民資料</h3>
+  <p>在清單中點擊任一選民姓名，或點擊操作欄的「編輯」圖示，即可進入編輯頁面。所有欄位均可修改，修改後點擊「儲存」確認。</p>
+
+  <h3>4.4 選民聯絡記錄</h3>
+  <p>在選民詳細頁面的「聯絡記錄」分頁，可記錄每次聯絡的情況：</p>
+  <table>
+    <thead><tr><th>欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>聯絡日期</td><td>聯絡發生的日期（民國年格式）</td></tr>
+      <tr><td>聯絡方式</td><td>電話、面談、LINE、書信等</td></tr>
+      <tr><td>聯絡人</td><td>辦公室中負責此次聯絡的人員</td></tr>
+      <tr><td>摘要</td><td>聯絡內容重點記錄</td></tr>
+      <tr><td>關聯案件</td><td>（選填）此次聯絡相關的陳情案件</td></tr>
+    </tbody>
+  </table>
+
+  <h3>4.5 選民分組管理</h3>
+  <p>前往「選民」→「群組管理」可新增、修改或刪除群組標籤，並批次指派選民至群組。常見分組範例：里長、義工、鄰長、支持者、特別關注等。</p>
+
+  <h3>4.6 匯入 / 匯出</h3>
+  <table>
+    <thead><tr><th>功能</th><th>格式</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>匯入選民</td><td>Excel (.xlsx)</td><td>依照系統提供的範本格式填寫後上傳</td></tr>
+      <tr><td>匯出選民</td><td>Excel (.xlsx)</td><td>可匯出當前篩選結果或全部選民</td></tr>
+    </tbody>
+  </table>
+  <div class="callout info">
+    <strong>匯入範本</strong>
+    點擊「匯入」→「下載範本」取得標準 Excel 範本。請勿修改欄位標題列，否則系統無法正確識別欄位。
+  </div>
+</section>
+
+<!-- 5. 陳情案件 -->
+<section id="petitions">
+  <h2>5. 陳情案件處理流程</h2>
+
+  <h3>5.1 案件狀態說明</h3>
+  <table>
+    <thead><tr><th>狀態</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip blue">待處理</span></td><td>新收件，尚未開始處理</td></tr>
+      <tr><td><span class="chip orange">處理中</span></td><td>已開始跟進，等待結果</td></tr>
+      <tr><td><span class="chip gray">待追蹤</span></td><td>已提交相關單位，等待回覆</td></tr>
+      <tr><td><span class="chip green">已結案</span></td><td>問題已解決，案件完結</td></tr>
+      <tr><td><span class="chip red">取消</span></td><td>陳情人撤回或無需處理</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.2 新增陳情案件</h3>
+  <ol class="step-list">
+    <li><div class="content"><strong>點擊「陳情案件」→「新增案件」</strong></div></li>
+    <li>
+      <div class="content">
+        <strong>填寫案件基本資料</strong>
+        <ul>
+          <li>陳情人：選擇或搜尋已建立的選民，或直接輸入姓名</li>
+          <li>陳情日期：民國年格式，例如「113/03/15」</li>
+          <li>案件類別：基礎建設、社會福利、教育、稅務、其他等</li>
+          <li>陳情內容：詳細描述陳情訴求</li>
+          <li>處理期限：設定預計完成日期</li>
+        </ul>
+      </div>
+    </li>
+    <li><div class="content"><strong>指定負責人員</strong>從下拉選單選擇辦公室人員負責跟進此案。</div></li>
+    <li><div class="content"><strong>點擊「儲存」</strong>系統自動產生流水號案件編號。</div></li>
+  </ol>
+
+  <h3>5.3 更新案件進度</h3>
+  <p>在案件詳細頁面，可記錄每次進度更新：</p>
+  <ul>
+    <li>點擊「新增處理記錄」輸入日期、處理人、處理內容</li>
+    <li>每筆記錄會自動加上時間戳記與操作者</li>
+    <li>狀態變更也會自動記錄在歷程中</li>
+  </ul>
+
+  <h3>5.4 案件結案</h3>
+  <p>案件處理完畢後，將狀態改為「已結案」，並填寫結案說明（處理方式與結果），點擊「確認結案」。結案後案件進入歸檔狀態，仍可查詢但不可再修改主要資料。</p>
+
+  <h3>5.5 追蹤日期提醒</h3>
+  <p>設定案件的「追蹤日期」後，系統會在儀表板的待辦區顯示即將到期的案件提醒。逾期未追蹤的案件會以紅色標示。</p>
+
+  <div class="callout tip">
+    <strong>批次操作</strong>
+    在案件清單中勾選多個案件後，可批次變更狀態、指派負責人或匯出選取案件。
+  </div>
+</section>
+
+<!-- 6. 公文管理 -->
+<section id="documents">
+  <h2>6. 公文管理</h2>
+
+  <h3>6.1 公文類型</h3>
+  <table>
+    <thead><tr><th>類型</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip blue">收文</span></td><td>各機關來函、陳情書、建議書等收到的文件</td></tr>
+      <tr><td><span class="chip green">發文</span></td><td>本辦公室發出的公函、回函、陳情轉文等</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.2 民國日期說明</h3>
+  <p>本系統所有日期均採用中華民國年號：</p>
+  <ul>
+    <li>格式：<code>民國年/月/日</code>，例如民國 115 年 3 月 15 日輸入 <code>115/03/15</code></li>
+    <li>系統不接受西元年輸入，請勿輸入「2026/03/15」</li>
+    <li>輸入時可省略前導零，<code>115/3/5</code> 與 <code>115/03/05</code> 均可接受</li>
+  </ul>
+
+  <h3>6.3 新增公文</h3>
+  <ol class="step-list">
+    <li><div class="content"><strong>選擇公文類型</strong>收文或發文。</div></li>
+    <li>
+      <div class="content">
+        <strong>填寫公文資料</strong>
+        <ul>
+          <li>文號：對方機關的文號或本辦公室編號</li>
+          <li>日期：收文日期或發文日期（民國年）</li>
+          <li>來源/受文者：相關機關或單位名稱</li>
+          <li>主旨：公文主旨摘要</li>
+          <li>辦理期限：需回覆或處理的截止日（民國年）</li>
+        </ul>
+      </div>
+    </li>
+    <li><div class="content"><strong>上傳附件</strong>（選填）可上傳 PDF、Word、圖片等格式，單檔最大 50MB。</div></li>
+    <li><div class="content"><strong>關聯陳情案件</strong>（選填）若此公文與特定陳情有關，可在此關聯。</div></li>
+    <li><div class="content"><strong>點擊「儲存」</strong></div></li>
+  </ol>
+
+  <h3>6.4 公文搜尋</h3>
+  <p>支援以下搜尋條件：</p>
+  <ul>
+    <li>文號、主旨關鍵字</li>
+    <li>日期範圍（起訖）</li>
+    <li>來源機關</li>
+    <li>辦理狀態（待辦、已辦、逾期）</li>
+  </ul>
+
+  <h3>6.5 逾期公文提醒</h3>
+  <p>辦理期限設定後，系統會在以下地方提示：</p>
+  <ul>
+    <li>儀表板「待辦提醒」區塊</li>
+    <li>公文清單中以紅色標示逾期項目</li>
+  </ul>
+</section>
+
+<!-- 7. 行程安排 -->
+<section id="schedule">
+  <h2>7. 行程安排與待辦事項</h2>
+
+  <h3>7.1 行程月曆</h3>
+  <p>從左側選單點擊「行程」進入月曆頁面，提供三種檢視模式：</p>
+  <table>
+    <thead><tr><th>模式</th><th>適用情境</th></tr></thead>
+    <tbody>
+      <tr><td>月檢視</td><td>總覽整月行程安排，適合規劃</td></tr>
+      <tr><td>週檢視</td><td>以時間軸顯示一週行程，適合日常查看</td></tr>
+      <tr><td>日檢視</td><td>顯示當日詳細行程，適合當天執行</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.2 新增行程</h3>
+  <p>在月曆上點擊任意日期，或點擊右上角「新增行程」按鈕：</p>
+  <ul>
+    <li><strong>標題</strong>（必填）：行程名稱</li>
+    <li><strong>日期與時間</strong>：開始與結束時間</li>
+    <li><strong>地點</strong>：（選填）活動地點</li>
+    <li><strong>類型</strong>：議事、拜訪、會議、活動、其他</li>
+    <li><strong>說明</strong>：詳細備注</li>
+    <li><strong>全日行程</strong>：勾選後不需填寫時間</li>
+  </ul>
+
+  <h3>7.3 待辦事項</h3>
+  <p>「待辦事項」是比行程更輕量的追蹤工具，適合記錄需要完成但無固定時間的工作：</p>
+  <ul>
+    <li>新增待辦：輸入內容、截止日期、優先等級（高/中/低）</li>
+    <li>關聯功能：可關聯特定選民或陳情案件</li>
+    <li>完成勾選：完成後勾選核取方塊，自動移至已完成清單</li>
+    <li>逾期提醒：超過截止日的待辦以紅色顯示於儀表板</li>
+  </ul>
+
+  <h3>7.4 行程搜尋與篩選</h3>
+  <p>月曆頂部提供搜尋功能，輸入關鍵字可搜尋標題和說明。側邊可依活動類型篩選顯示的行程。</p>
+</section>
+
+<!-- 8. 統計報表 -->
+<section id="reports">
+  <h2>8. 統計報表</h2>
+  <p>從左側選單點擊「報表」進入統計分析頁面，提供多種報表類型。</p>
+
+  <h3>8.1 週報</h3>
+  <p>自動統計指定週次的工作概要：</p>
+  <ul>
+    <li>本週新增陳情案件數</li>
+    <li>本週結案數</li>
+    <li>本週選民聯絡次數</li>
+    <li>本週新增選民數</li>
+    <li>待處理案件總數及逾期案件數</li>
+  </ul>
+  <p>可選擇任意週次查看，並支援列印或匯出 PDF。</p>
+
+  <h3>8.2 月報</h3>
+  <p>更詳細的月度統計，包含：</p>
+  <ul>
+    <li>陳情案件月趨勢折線圖（近 12 個月比較）</li>
+    <li>案件類別分布圓餅圖</li>
+    <li>各里別案件分布長條圖</li>
+    <li>處理人員績效統計（結案數、平均處理天數）</li>
+  </ul>
+
+  <h3>8.3 陳情分析報表</h3>
+  <table>
+    <thead><tr><th>報表名稱</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>案件類別統計</td><td>各類陳情件數與占比，支援時段篩選</td></tr>
+      <tr><td>處理時效分析</td><td>平均結案天數、超期率</td></tr>
+      <tr><td>逾期案件明細</td><td>所有逾期未結案的案件清單，可匯出</td></tr>
+      <tr><td>月度比較</td><td>本月與上月、去年同期的比較</td></tr>
+    </tbody>
+  </table>
+
+  <h3>8.4 選民互動統計</h3>
+  <table>
+    <thead><tr><th>報表名稱</th><th>內容</th></tr></thead>
+    <tbody>
+      <tr><td>聯絡次數排行</td><td>聯絡最頻繁的前 20 位選民</td></tr>
+      <tr><td>長期未聯絡名單</td><td>超過指定天數未有聯絡記錄的選民</td></tr>
+      <tr><td>各里別選民分布</td><td>地理分布統計圖</td></tr>
+      <tr><td>新增趨勢</td><td>近 12 個月每月新增選民數</td></tr>
+    </tbody>
+  </table>
+
+  <h3>8.5 匯出報表</h3>
+  <p>大多數報表支援以下匯出格式：</p>
+  <ul>
+    <li><strong>Excel (.xlsx)</strong>：原始數據，可進一步加工</li>
+    <li><strong>列印</strong>：透過瀏覽器列印功能輸出（建議選擇橫向格式）</li>
+  </ul>
+</section>
+
+<!-- 9. 系統設定 -->
+<section id="settings">
+  <h2>9. 系統設定</h2>
+  <p>僅管理員可存取完整系統設定。從左側選單點擊「設定」進入。</p>
+
+  <h3>9.1 辦公室基本設定</h3>
+  <ul>
+    <li>辦公室名稱（顯示於系統標題與報表表頭）</li>
+    <li>聯絡電話、地址</li>
+    <li>選區設定（里別清單）</li>
+  </ul>
+
+  <h3>9.2 自動備份設定</h3>
+  <table>
+    <thead><tr><th>設定項目</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>啟用自動備份</td><td>開啟後系統定期自動備份資料庫</td></tr>
+      <tr><td>備份頻率</td><td>每日或每週</td></tr>
+      <tr><td>保留份數</td><td>最多保留最近 10 份自動備份（舊的自動刪除）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>9.3 手動備份與還原</h3>
+  <ol>
+    <li>前往「設定」→「備份管理」</li>
+    <li>點擊「立即備份」建立手動備份</li>
+    <li>備份清單顯示所有備份檔案，點擊「還原」可回復到該時間點的資料</li>
+  </ol>
+  <div class="callout warning">
+    <strong>還原注意事項</strong>
+    還原操作會覆蓋目前所有資料，且無法撤銷。執行還原前請確認已備份目前資料。
+  </div>
+
+  <h3>9.4 資料路徑管理</h3>
+  <p>點擊應用程式上方選單「系統」→「變更資料位置...」可重新設定資料儲存路徑。變更後需重新啟動才會生效。</p>
+
+  <h3>9.5 系統資訊</h3>
+  <p>「設定」→「關於」頁面顯示：系統版本號、Node.js 版本、資料庫路徑、目前登入使用者。</p>
+</section>
+
+<!-- 10. 快捷鍵 -->
+<section id="shortcuts">
+  <h2>10. 鍵盤快捷鍵速查表</h2>
+
+  <h3>全域快捷鍵</h3>
+  <table class="shortcut-table">
+    <thead><tr><th>功能</th><th>Windows / Linux</th><th>macOS</th></tr></thead>
+    <tbody>
+      <tr><td>全域搜尋</td><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td><kbd>⌘</kbd>+<kbd>K</kbd></td></tr>
+      <tr><td>重新整理頁面</td><td><kbd>F5</kbd> 或 <kbd>Ctrl</kbd>+<kbd>R</kbd></td><td><kbd>⌘</kbd>+<kbd>R</kbd></td></tr>
+      <tr><td>開發者工具</td><td><kbd>F12</kbd> 或 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd></td><td><kbd>⌘</kbd>+<kbd>⌥</kbd>+<kbd>I</kbd></td></tr>
+      <tr><td>全螢幕切換</td><td><kbd>F11</kbd></td><td><kbd>⌃</kbd>+<kbd>⌘</kbd>+<kbd>F</kbd></td></tr>
+      <tr><td>縮小</td><td><kbd>Ctrl</kbd>+<kbd>-</kbd></td><td><kbd>⌘</kbd>+<kbd>-</kbd></td></tr>
+      <tr><td>放大</td><td><kbd>Ctrl</kbd>+<kbd>=</kbd></td><td><kbd>⌘</kbd>+<kbd>=</kbd></td></tr>
+      <tr><td>重設縮放</td><td><kbd>Ctrl</kbd>+<kbd>0</kbd></td><td><kbd>⌘</kbd>+<kbd>0</kbd></td></tr>
+    </tbody>
+  </table>
+
+  <h3>表單操作</h3>
+  <table class="shortcut-table">
+    <thead><tr><th>功能</th><th>按鍵</th></tr></thead>
+    <tbody>
+      <tr><td>確認送出表單</td><td><kbd>Enter</kbd>（在表單內）</td></tr>
+      <tr><td>取消 / 關閉對話框</td><td><kbd>Esc</kbd></td></tr>
+      <tr><td>切換至下一個欄位</td><td><kbd>Tab</kbd></td></tr>
+      <tr><td>切換至上一個欄位</td><td><kbd>Shift</kbd>+<kbd>Tab</kbd></td></tr>
+    </tbody>
+  </table>
+
+  <h3>選民清單</h3>
+  <table class="shortcut-table">
+    <thead><tr><th>功能</th><th>操作</th></tr></thead>
+    <tbody>
+      <tr><td>開啟選民詳細資料</td><td>點擊姓名，或選取後按 <kbd>Enter</kbd></td></tr>
+      <tr><td>勾選單筆</td><td>點擊左側核取方塊</td></tr>
+      <tr><td>全選當頁</td><td>點擊標題列核取方塊</td></tr>
+      <tr><td>搜尋焦點</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd>（搜尋框獲得焦點）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>月曆操作</h3>
+  <table class="shortcut-table">
+    <thead><tr><th>功能</th><th>操作</th></tr></thead>
+    <tbody>
+      <tr><td>上一個月 / 上一週</td><td>點擊 &lt; 箭頭，或按方向鍵 <kbd>←</kbd></td></tr>
+      <tr><td>下一個月 / 下一週</td><td>點擊 &gt; 箭頭，或按方向鍵 <kbd>→</kbd></td></tr>
+      <tr><td>回到今天</td><td>點擊「今天」按鈕</td></tr>
+      <tr><td>切換月 / 週 / 日檢視</td><td>點擊右上角檢視切換按鈕</td></tr>
+      <tr><td>新增行程</td><td>點擊日期格，或按 <kbd>N</kbd>（月曆頁面）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout info">
+    <strong>日期輸入格式提醒</strong>
+    所有日期輸入框均接受民國年格式。輸入 <code>115/3/15</code> 後按 <kbd>Tab</kbd>，系統自動格式化為 <code>115/03/15</code>。
+  </div>
+</section>
+
+</main>
+
+<footer>
+  選民服務系統 &copy; 2026 &nbsp;|&nbsp; 使用手冊 v1.0 &nbsp;|&nbsp; 技術支援請聯繫系統管理員
+</footer>
+</div>
+
+</body>
+</html>

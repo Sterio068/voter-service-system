@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-electron/
+dist-server/
+release/
+data/
+uploads/
+backups/
+*.db
+*.db-wal
+*.db-shm
+.env
+.DS_Store

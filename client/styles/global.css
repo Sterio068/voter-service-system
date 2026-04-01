@@ -1,0 +1,189 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  background-color: #f5f5f7;
+  color: #1d1d1f;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Scrollbar ──────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.18);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.28); }
+[data-theme='dark'] ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); }
+[data-theme='dark'] ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.26); }
+
+/* ─── macOS sidebar nav item ────────────────────── */
+.mac-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: 30px;
+  border-radius: 7px;
+  margin: 0 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 400;
+  color: #3a3a3c;
+  transition: background 0.12s;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mac-nav-item:hover { background: rgba(0,0,0,0.06); }
+.mac-nav-item.active {
+  background: rgba(0,122,255,0.12);
+  color: #007AFF;
+  font-weight: 500;
+}
+.mac-nav-item .mac-nav-icon {
+  font-size: 15px;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.mac-nav-item.active .mac-nav-icon { opacity: 1; }
+
+.mac-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: #8e8e93;
+  text-transform: uppercase;
+  padding: 10px 16px 3px;
+  user-select: none;
+}
+
+[data-theme='dark'] .mac-nav-item { color: #ebebf5cc; }
+[data-theme='dark'] .mac-nav-item:hover { background: rgba(255,255,255,0.07); }
+[data-theme='dark'] .mac-nav-item.active {
+  background: rgba(10,132,255,0.2);
+  color: #0a84ff;
+}
+[data-theme='dark'] .mac-section-label { color: #636366; }
+
+/* ─── Ant Design overrides ──────────────────────── */
+.ant-card {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04) !important;
+  border: none !important;
+}
+.ant-card-head {
+  border-bottom: 1px solid rgba(0,0,0,0.06) !important;
+  min-height: 42px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #1d1d1f !important;
+}
+.ant-card-body { padding: 14px 16px !important; }
+.ant-card-small > .ant-card-head { min-height: 36px !important; padding: 0 14px !important; }
+.ant-card-small > .ant-card-body { padding: 12px 14px !important; }
+
+.ant-statistic-title {
+  font-size: 12px !important;
+  color: #6e6e73 !important;
+  font-weight: 500 !important;
+}
+.ant-statistic-content-value { font-size: 26px !important; }
+
+.ant-btn-primary {
+  background: #007AFF !important;
+  border-color: #007AFF !important;
+  font-weight: 500 !important;
+  box-shadow: 0 1px 3px rgba(0,122,255,0.3) !important;
+}
+.ant-btn-primary:hover {
+  background: #0071e3 !important;
+  border-color: #0071e3 !important;
+}
+
+.ant-table-thead > tr > th {
+  background: #f5f5f7 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #6e6e73 !important;
+  border-bottom: 1px solid rgba(0,0,0,0.08) !important;
+}
+.ant-table-tbody > tr:hover > td { background: rgba(0,122,255,0.03) !important; }
+
+.ant-input, .ant-select-selector, .ant-picker {
+  border-color: rgba(0,0,0,0.15) !important;
+  border-radius: 8px !important;
+}
+.ant-input:focus, .ant-input-focused,
+.ant-select-focused .ant-select-selector {
+  border-color: #007AFF !important;
+  box-shadow: 0 0 0 3px rgba(0,122,255,0.15) !important;
+}
+
+.ant-modal-content {
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.10) !important;
+}
+.ant-modal-header { padding: 16px 20px 12px !important; }
+.ant-modal-title { font-size: 15px !important; font-weight: 600 !important; }
+.ant-modal-body { padding: 12px 20px 20px !important; }
+.ant-modal-footer { padding: 10px 20px 16px !important; border-top: 1px solid rgba(0,0,0,0.06) !important; }
+
+.ant-tag { border: none !important; font-weight: 500 !important; }
+
+.ant-menu-dark { background: transparent !important; }
+
+/* ─── Page header ───────────────────────────────── */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+/* ─── Urgency ───────────────────────────────────── */
+.urgency-normal { color: #34c759; }
+.urgency-urgent { color: #ff9f0a; }
+.urgency-critical { color: #ff3b30; font-weight: 600; }
+
+/* ─── Timeline card ─────────────────────────────── */
+.timeline-card {
+  background: rgba(0,0,0,0.03);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+[data-theme='dark'] .timeline-card { background: rgba(255,255,255,0.05); }
+
+/* ─── Dark mode overrides ───────────────────────── */
+[data-theme='dark'] .ant-card {
+  background: #1c1c1e !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3) !important;
+}
+[data-theme='dark'] .ant-card-head {
+  border-bottom-color: rgba(255,255,255,0.06) !important;
+  color: #f5f5f7 !important;
+}
+[data-theme='dark'] .ant-table-thead > tr > th {
+  background: #2c2c2e !important;
+  color: #8e8e93 !important;
+}

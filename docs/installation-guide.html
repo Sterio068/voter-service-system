@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>選民服務系統 — 安裝教學手冊</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      color: #1a1a1a;
+      background: #f5f6fa;
+    }
+    .page-wrap {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #fff;
+      min-height: 100vh;
+      box-shadow: 0 0 30px rgba(0,0,0,.08);
+    }
+    header {
+      background: linear-gradient(135deg, #0057b7 0%, #007AFF 100%);
+      color: #fff;
+      padding: 40px 48px 32px;
+    }
+    header h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+    header p  { font-size: 14px; opacity: .85; }
+    nav {
+      background: #f0f4ff;
+      border-bottom: 1px solid #dde3f0;
+      padding: 20px 48px;
+    }
+    nav h2 { font-size: 13px; font-weight: 600; color: #5a6a8a; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+    nav ol { padding-left: 20px; }
+    nav li { margin: 4px 0; }
+    nav a  { color: #007AFF; text-decoration: none; font-size: 14px; }
+    nav a:hover { text-decoration: underline; }
+    main { padding: 40px 48px 60px; }
+    section { margin-bottom: 48px; }
+    h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #0057b7;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e8eef8;
+      margin-bottom: 20px;
+    }
+    h3 { font-size: 16px; font-weight: 600; color: #1a2a4a; margin: 20px 0 10px; }
+    h4 { font-size: 14px; font-weight: 600; color: #3a4a6a; margin: 14px 0 6px; }
+    p  { margin-bottom: 12px; }
+    ul, ol { padding-left: 22px; margin-bottom: 12px; }
+    li { margin: 5px 0; }
+    .step-list { list-style: none; padding-left: 0; counter-reset: step; }
+    .step-list > li {
+      counter-increment: step;
+      display: flex;
+      gap: 14px;
+      margin-bottom: 16px;
+      align-items: flex-start;
+    }
+    .step-list > li::before {
+      content: counter(step);
+      flex-shrink: 0;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: #007AFF;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+    .step-list > li .content { flex: 1; }
+    .step-list > li .content strong { display: block; margin-bottom: 4px; }
+    .callout {
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+    .callout.info    { background: #e8f3ff; border-left: 4px solid #007AFF; }
+    .callout.warning { background: #fff8e6; border-left: 4px solid #f5a623; }
+    .callout.success { background: #e6f9ef; border-left: 4px solid #28a745; }
+    .callout.danger  { background: #ffeef0; border-left: 4px solid #dc3545; }
+    .callout strong  { display: block; margin-bottom: 4px; }
+    code {
+      background: #f0f2f7;
+      border: 1px solid #dde3f0;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 13px;
+      color: #c7254e;
+    }
+    pre {
+      background: #1e2a3a;
+      color: #e0e8f8;
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      margin: 12px 0;
+    }
+    pre code { background: none; border: none; padding: 0; color: inherit; }
+    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+    th, td { padding: 10px 14px; border: 1px solid #e0e6f0; text-align: left; }
+    th { background: #f0f4ff; font-weight: 600; color: #2a3a5a; }
+    tr:nth-child(even) td { background: #f8faff; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge.win { background: #0078d4; color: #fff; }
+    .badge.mac { background: #555; color: #fff; }
+    .faq-item { margin-bottom: 20px; }
+    .faq-q { font-weight: 600; color: #1a2a4a; margin-bottom: 6px; }
+    .faq-q::before { content: "Q: "; color: #007AFF; }
+    .faq-a::before { content: "A: "; color: #28a745; font-weight: 600; }
+    footer {
+      background: #f0f4ff;
+      border-top: 1px solid #dde3f0;
+      padding: 20px 48px;
+      text-align: center;
+      font-size: 13px;
+      color: #6a7a9a;
+    }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+
+<header>
+  <h1>選民服務系統 安裝教學手冊</h1>
+  <p>版本 1.0 &nbsp;|&nbsp; 適用平台：Windows 10/11、macOS 12+</p>
+</header>
+
+<nav>
+  <h2>目錄</h2>
+  <ol>
+    <li><a href="#requirements">系統需求</a></li>
+    <li><a href="#install-win">Windows 安裝步驟</a></li>
+    <li><a href="#install-mac">macOS 安裝步驟</a></li>
+    <li><a href="#first-run">首次設定精靈</a></li>
+    <li><a href="#nas">區域網路 / NAS 共用設定</a></li>
+    <li><a href="#multi-pc">多台電腦共用資料庫</a></li>
+    <li><a href="#faq">常見問題 FAQ</a></li>
+    <li><a href="#uninstall">解除安裝</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- 1. 系統需求 -->
+<section id="requirements">
+  <h2>1. 系統需求</h2>
+  <table>
+    <thead>
+      <tr><th>項目</th><th><span class="badge win">Windows</span></th><th><span class="badge mac">macOS</span></th></tr>
+    </thead>
+    <tbody>
+      <tr><td>作業系統版本</td><td>Windows 10（1903+）或 Windows 11</td><td>macOS 12 Monterey 以上</td></tr>
+      <tr><td>處理器架構</td><td>x64（64 位元）</td><td>Intel x64 或 Apple Silicon (M1/M2/M3)</td></tr>
+      <tr><td>記憶體</td><td colspan="2">最低 4 GB RAM（建議 8 GB）</td></tr>
+      <tr><td>儲存空間</td><td colspan="2">安裝程式約 150 MB；資料庫視資料量而定（建議預留 2 GB）</td></tr>
+      <tr><td>網路需求</td><td colspan="2">單機使用無需網路；NAS 共用模式需穩定區域網路</td></tr>
+      <tr><td>顯示解析度</td><td colspan="2">最低 1280×768；建議 1920×1080</td></tr>
+    </tbody>
+  </table>
+  <div class="callout info">
+    <strong>重要說明</strong>
+    本系統使用內建資料庫引擎（SQLite），不需另外安裝資料庫軟體或伺服器。所有資料均儲存在本機或指定的網路磁碟。
+  </div>
+</section>
+
+<!-- 2. Windows 安裝 -->
+<section id="install-win">
+  <h2>2. Windows 安裝步驟</h2>
+  <h3>2.1 取得安裝程式</h3>
+  <p>向系統管理員索取最新版安裝程式，檔案名稱格式如：<code>選民服務系統-Setup-1.0.0.exe</code></p>
+
+  <h3>2.2 執行安裝</h3>
+  <ol class="step-list">
+    <li>
+      <div class="content">
+        <strong>以滑鼠右鍵點擊安裝程式，選擇「以系統管理員身分執行」</strong>
+        若系統彈出 UAC 視窗（使用者帳戶控制），點擊「是」允許繼續。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>選擇安裝語言</strong>
+        預設為「繁體中文」，點擊「確定」。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>選擇安裝目錄</strong>
+        預設安裝於 <code>C:\Program Files\選民服務系統\</code>。若需更改位置，點擊「瀏覽」選擇其他目錄，再點擊「下一步」。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>選擇是否建立捷徑</strong>
+        勾選「建立桌面捷徑」及「建立開始功能表捷徑」（建議保持預設），點擊「安裝」。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>等待安裝完成</strong>
+        安裝程式會自動解壓縮並安裝所有必要元件，過程約 30 秒。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>點擊「完成」</strong>
+        勾選「立即啟動選民服務系統」即可直接開啟，進入首次設定精靈。
+      </div>
+    </li>
+  </ol>
+
+  <div class="callout warning">
+    <strong>Windows Defender SmartScreen 警告</strong>
+    首次執行時 Windows 可能顯示「Windows 已保護您的電腦」警告。點擊「更多資訊」→「仍要執行」即可繼續。此為正常現象，非安全問題。
+  </div>
+
+  <h3>2.3 防毒軟體設定（如需要）</h3>
+  <p>部分防毒軟體可能誤判本系統。如遇阻擋，請將以下路徑加入防毒白名單：</p>
+  <ul>
+    <li><code>C:\Program Files\選民服務系統\</code>（安裝目錄）</li>
+    <li><code>C:\Users\[使用者名稱]\AppData\Roaming\選民服務系統\</code>（資料目錄）</li>
+  </ul>
+</section>
+
+<!-- 3. macOS 安裝 -->
+<section id="install-mac">
+  <h2>3. macOS 安裝步驟</h2>
+  <h3>3.1 取得安裝程式</h3>
+  <p>向系統管理員索取適合您 Mac 的版本：</p>
+  <ul>
+    <li>Intel Mac：<code>選民服務系統-1.0.0-x64.dmg</code></li>
+    <li>Apple Silicon（M1/M2/M3）：<code>選民服務系統-1.0.0-arm64.dmg</code></li>
+  </ul>
+
+  <h3>3.2 安裝流程</h3>
+  <ol class="step-list">
+    <li>
+      <div class="content">
+        <strong>雙擊 .dmg 檔案開啟磁碟映像</strong>
+        系統會掛載一個虛擬磁碟並開啟安裝視窗。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>將「選民服務系統」圖示拖曳至「應用程式」資料夾</strong>
+        按照視窗提示，將應用程式拖曳至右側的 Applications 捷徑。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>退出磁碟映像</strong>
+        拖曳完成後，在 Finder 側欄對磁碟映像點擊退出按鈕。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>首次開啟</strong>
+        在「應用程式」資料夾找到「選民服務系統」，按住 Control 鍵並點擊，選擇「開啟」。系統會詢問確認，點擊「開啟」即可。
+      </div>
+    </li>
+  </ol>
+
+  <div class="callout info">
+    <strong>Gatekeeper 說明</strong>
+    首次開啟時 macOS 可能顯示「無法打開，因為開發者無法驗證」。請前往「系統設定」→「隱私權與安全性」→「安全性」，找到相關訊息，點擊「仍要開啟」。此為 macOS 安全機制，屬正常情況。
+  </div>
+
+  <div class="callout warning">
+    <strong>Apple Silicon 注意事項</strong>
+    M 系列 Mac 若出現效能問題，請確認下載的是 arm64 版本。Intel 版本可在 M 晶片上透過 Rosetta 2 執行，但效能較差。
+  </div>
+</section>
+
+<!-- 4. 首次設定精靈 -->
+<section id="first-run">
+  <h2>4. 首次設定精靈</h2>
+  <p>首次啟動時，系統會引導您完成資料儲存位置的設定。這個步驟非常重要，決定了所有資料的儲存位置。</p>
+
+  <h3>4.1 選擇儲存位置</h3>
+  <p>精靈會顯示以下對話框，提供兩個選項：</p>
+
+  <table>
+    <thead>
+      <tr><th>選項</th><th>說明</th><th>適用情況</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>使用本機預設位置</strong></td>
+        <td>儲存在此台電腦的應用程式資料夾（AppData）</td>
+        <td>單機使用、無需跨電腦共用</td>
+      </tr>
+      <tr>
+        <td><strong>選擇自訂位置...</strong></td>
+        <td>可選擇本機任意資料夾，或輸入 NAS / 網路磁碟路徑</td>
+        <td>多台電腦共用、備份至 NAS</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout info">
+    <strong>預設路徑位置</strong>
+    <ul style="margin-top:6px">
+      <li>Windows：<code>C:\Users\[使用者]\AppData\Roaming\選民服務系統\</code></li>
+      <li>macOS：<code>~/Library/Application Support/選民服務系統/</code></li>
+    </ul>
+  </div>
+
+  <h3>4.2 自訂位置注意事項</h3>
+  <ul>
+    <li>選擇的資料夾必須有讀寫權限，系統會自動測試寫入</li>
+    <li>若寫入測試失敗，會自動改回本機預設位置</li>
+    <li>系統會自動在選擇的路徑下建立 <code>uploads/</code> 和 <code>backups/</code> 子目錄</li>
+  </ul>
+
+  <h3>4.3 完成設定</h3>
+  <p>設定完成後，系統顯示確認訊息並開始正常運作。日後若需變更資料位置，可從應用程式選單 → 「系統」→「變更資料位置...」重新設定。</p>
+
+  <div class="callout success">
+    <strong>設定完成後</strong>
+    資料位置僅需設定一次。重新啟動後系統會自動使用已設定的路徑，不會再次顯示精靈。
+  </div>
+</section>
+
+<!-- 5. NAS 共用設定 -->
+<section id="nas">
+  <h2>5. 區域網路 / NAS 資料共用設定</h2>
+  <p>若您的辦公室有 NAS（網路附接儲存）或共享資料夾，可以將資料庫儲存於其上，實現多台電腦共用同一份資料。</p>
+
+  <h3>5.1 事前準備</h3>
+  <ul>
+    <li>確認 NAS 或共享資料夾已掛載並可正常存取</li>
+    <li>確認您的帳戶對該資料夾有完整的讀寫權限</li>
+    <li>建議使用有線網路，避免 Wi-Fi 連線不穩造成資料損毀</li>
+    <li>若使用 NAS，確認 SMB 協定已啟用</li>
+  </ul>
+
+  <h3>5.2 Windows 設定 NAS 路徑</h3>
+  <ol class="step-list">
+    <li>
+      <div class="content">
+        <strong>先掛載網路磁碟機</strong>
+        開啟「檔案總管」→「本機」→ 右鍵「連接網路磁碟機」，輸入 NAS 路徑，例如：<code>\\192.168.1.100\公務文件\選民服務</code>，指派磁碟機代號（如 Z:）。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>啟動選民服務系統時選擇「自訂位置」</strong>
+        在首次設定精靈中點選「選擇自訂位置...」，在對話框中導覽至剛才掛載的網路磁碟機，選擇目標資料夾。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>確認寫入測試通過</strong>
+        系統會自動測試寫入權限，通過後顯示成功訊息。
+      </div>
+    </li>
+  </ol>
+
+  <h3>5.3 macOS 設定 NAS 路徑</h3>
+  <ol class="step-list">
+    <li>
+      <div class="content">
+        <strong>連接 SMB 共享</strong>
+        Finder 選單 → 「前往」→「連接伺服器」，輸入 <code>smb://192.168.1.100/公務文件</code>，輸入帳號密碼後掛載。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>選擇自訂位置</strong>
+        在首次設定精靈中選擇「選擇自訂位置...」，導覽至 <code>/Volumes/公務文件/</code> 下的目標資料夾。
+      </div>
+    </li>
+  </ol>
+
+  <div class="callout warning">
+    <strong>重要：開機自動掛載</strong>
+    若電腦重新開機後 NAS 未自動掛載，系統啟動時會偵測到路徑失效，並提示您重新設定。建議在系統設定中設定開機自動掛載網路磁碟機，以避免此情況。
+  </div>
+</section>
+
+<!-- 6. 多台電腦共用 -->
+<section id="multi-pc">
+  <h2>6. 多台電腦共用資料庫</h2>
+  <p>本系統支援多台電腦共用同一個資料庫檔案，適合辦公室多人共同維護選民資料的需求。</p>
+
+  <h3>6.1 架構說明</h3>
+  <p>共用模式的架構如下：</p>
+  <ul>
+    <li>所有電腦的選民服務系統均指向 NAS 上的同一個 <code>voter-service.db</code> 檔案</li>
+    <li>系統使用 SQLite WAL 模式，支援多個讀取端同時存取</li>
+    <li>同一時間只能有一個寫入端（系統內建鎖定機制保護資料完整性）</li>
+  </ul>
+
+  <h3>6.2 各電腦設定步驟</h3>
+  <ol class="step-list">
+    <li>
+      <div class="content">
+        <strong>第一台電腦：建立初始資料庫</strong>
+        安裝並首次設定時，選擇 NAS 上的共用資料夾作為資料儲存位置，完成初始化。
+      </div>
+    </li>
+    <li>
+      <div class="content">
+        <strong>其他電腦：指向相同資料夾</strong>
+        在其他電腦安裝系統後，首次設定時同樣選擇「自訂位置」，指向 NAS 上的相同資料夾。系統會自動偵測到已有資料庫並直接使用，不會覆蓋現有資料。
+      </div>
+    </li>
+  </ol>
+
+  <h3>6.3 注意事項與限制</h3>
+  <table>
+    <thead>
+      <tr><th>項目</th><th>說明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>同時寫入</td><td>多人同時操作（寫入）時，系統會自動等待並重試，若等待超過 15 秒會顯示錯誤提示</td></tr>
+      <tr><td>網路中斷</td><td>操作過程中若網路中斷，正在執行的操作會失敗並回滾，已完成的操作不受影響</td></tr>
+      <tr><td>NAS 版本</td><td>建議使用支援 SMBv2 以上的 NAS（QNAP、Synology 等主流品牌均支援）</td></tr>
+      <tr><td>同時連線人數</td><td>建議不超過 10 台電腦同時連線，以確保穩定性</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout danger">
+    <strong>嚴禁以下行為</strong>
+    <ul style="margin-top:6px">
+      <li>直接複製 .db 檔案作為備份時，請確保系統未在運作</li>
+      <li>不可使用雲端同步服務（如 OneDrive、Google Drive）同步 .db 檔案，這會造成資料損毀</li>
+      <li>不可將資料庫放在 USB 隨身碟上共用，延遲過高會造成鎖定問題</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 7. FAQ -->
+<section id="faq">
+  <h2>7. 常見問題 FAQ</h2>
+
+  <div class="faq-item">
+    <p class="faq-q">安裝後雙擊圖示沒有反應，或閃一下就關掉？</p>
+    <p class="faq-a">請嘗試以系統管理員身分執行，或檢查防毒軟體是否阻擋程式啟動。也可查看系統事件檢視器的應用程式記錄找尋錯誤訊息。</p>
+  </div>
+
+  <div class="faq-item">
+    <p class="faq-q">啟動時出現「伺服器無法啟動」錯誤？</p>
+    <p class="faq-a">可能是 8080 連接埠被其他程式占用。請關閉可能使用 8080 埠的程式（如其他 Web 服務），或在工作管理員中結束相關行程後重試。</p>
+  </div>
+
+  <div class="faq-item">
+    <p class="faq-q">資料路徑設定後，下次開機找不到資料？</p>
+    <p class="faq-a">最常見原因是 NAS 未自動掛載。請確認網路磁碟機設定為開機自動連線，或在開啟系統前手動掛載網路磁碟機。</p>
+  </div>
+
+  <div class="faq-item">
+    <p class="faq-q">如何查看目前的資料儲存位置？</p>
+    <p class="faq-a">開啟系統後，點擊選單 →「系統」→「變更資料位置...」，對話框中會顯示目前的資料路徑。</p>
+  </div>
+
+  <div class="faq-item">
+    <p class="faq-q">Windows 防毒軟體一直刪除程式檔案？</p>
+    <p class="faq-a">請將安裝目錄（通常為 <code>C:\Program Files\選民服務系統\</code>）加入防毒軟體的排除清單。若使用 Windows Defender，可在「Windows 安全性」→「病毒與威脅防護」→「管理設定」→「排除項目」中新增。</p>
+  </div>
+
+  <div class="faq-item">
+    <p class="faq-q">可以在同一台電腦安裝多個版本嗎？</p>
+    <p class="faq-a">不建議。每次安裝新版本前，請先解除安裝舊版本，資料庫不會被刪除。</p>
+  </div>
+
+  <div class="faq-item">
+    <p class="faq-q">macOS 更新後系統無法啟動？</p>
+    <p class="faq-a">macOS 系統更新有時會重設安全性設定。請再次至「系統設定」→「隱私權與安全性」允許應用程式執行，或重新下載安裝程式。</p>
+  </div>
+
+  <div class="faq-item">
+    <p class="faq-q">資料庫檔案有多大？效能如何？</p>
+    <p class="faq-a">一般辦公室規模（約 5,000 位選民、2,000 件陳情）資料庫約 10-50 MB，查詢速度極快（毫秒級）。資料庫本身支援至數 GB，不影響使用。</p>
+  </div>
+</section>
+
+<!-- 8. 解除安裝 -->
+<section id="uninstall">
+  <h2>8. 解除安裝</h2>
+  <div class="callout warning">
+    <strong>注意：解除安裝前請先備份資料</strong>
+    解除安裝程式本身不會刪除您的資料庫，但若要完全清除所有資料，需要手動刪除資料目錄。
+  </div>
+
+  <h3>Windows 解除安裝</h3>
+  <ol>
+    <li>前往「設定」→「應用程式」→「已安裝的應用程式」</li>
+    <li>找到「選民服務系統」，點擊右側選單 → 「解除安裝」</li>
+    <li>依照解除安裝精靈完成程序</li>
+    <li>（選擇性）手動刪除資料目錄：<code>%APPDATA%\選民服務系統\</code></li>
+  </ol>
+
+  <h3>macOS 解除安裝</h3>
+  <ol>
+    <li>在 Finder 中開啟「應用程式」資料夾</li>
+    <li>將「選民服務系統」拖曳至「垃圾桶」</li>
+    <li>（選擇性）刪除資料目錄：<code>~/Library/Application Support/選民服務系統/</code></li>
+  </ol>
+
+  <h3>資料保留說明</h3>
+  <table>
+    <thead>
+      <tr><th>解除安裝後</th><th>Windows 路徑</th><th>macOS 路徑</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>程式檔案</td>
+        <td><span style="color:#28a745">✓ 已刪除</span></td>
+        <td><span style="color:#28a745">✓ 已刪除</span></td>
+      </tr>
+      <tr>
+        <td>資料庫與設定</td>
+        <td><span style="color:#007AFF">保留於 AppData</span></td>
+        <td><span style="color:#007AFF">保留於 Library</span></td>
+      </tr>
+      <tr>
+        <td>NAS 上的資料</td>
+        <td colspan="2"><span style="color:#007AFF">完整保留，不受影響</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+
+<footer>
+  選民服務系統 &copy; 2026 &nbsp;|&nbsp; 技術支援請聯繫系統管理員
+</footer>
+
+</div>
+</body>
+</html>
