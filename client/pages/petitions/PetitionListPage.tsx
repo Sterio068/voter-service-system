@@ -110,7 +110,7 @@ export default function PetitionListPage() {
 
   const fetchUsers = async () => {
     try {
-      const res = await api.get('/admin/users')
+      const res = await api.get('/users/list')
       setUsers(res.data.data || [])
     } catch {}
   }

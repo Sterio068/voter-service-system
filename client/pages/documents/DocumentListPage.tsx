@@ -238,7 +238,7 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
   const [petitionOptions, setPetitionOptions] = useState<any[]>([])
 
   useEffect(() => {
-    api.get('/admin/users').then(r => setUsers(r.data.data || [])).catch(() => {})
+    api.get('/users/list').then(r => setUsers(r.data.data || [])).catch(() => {})
     api.get('/admin/categories?type=doc_category').then(r => setCategories(r.data.data?.map((c: any) => c.name) || [])).catch(() => {})
     api.get('/admin/settings').then(r => { if (r.data.data?.office_name) setOfficeName(r.data.data.office_name) }).catch(() => {})
   }, [])

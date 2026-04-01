@@ -7,6 +7,12 @@ import { authenticate, requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
 
 export default async function adminRoutes(fastify: FastifyInstance) {
+  // ===== 使用者名單（所有已登入者可取得，僅供承辦下拉選單用）=====
+  fastify.get('/api/users/list', { preHandler: [authenticate] }, async (_, reply) => {
+    const users = db.prepare('SELECT id, name, role FROM users WHERE is_active = 1 ORDER BY name').all()
+    return reply.send({ success: true, data: users })
+  })
+
   // ===== 帳號管理 =====
   fastify.get('/api/admin/users', { preHandler: [requirePermission('users', 'view')] }, async (_, reply) => {
     const users = db.prepare('SELECT id,username,name,role,email,phone,is_active,created_at,updated_at FROM users ORDER BY created_at').all()

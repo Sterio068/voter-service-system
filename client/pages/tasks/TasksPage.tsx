@@ -33,7 +33,7 @@ export default function TasksPage() {
 
   useEffect(() => {
     fetchTasks()
-    api.get('/admin/users').then(r => setUsers(r.data.data || [])).catch(() => {})
+    api.get('/users/list').then(r => setUsers(r.data.data || [])).catch(() => {})
     api.get('/voters?pageSize=200').then(r => setVoters(r.data.data || [])).catch(() => {})
   }, [page, statusFilter, todayFocus])
 
