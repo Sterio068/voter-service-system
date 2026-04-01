@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+import { syncScheduleToGCal } from './googleCalendar'
 
 const CreateScheduleSchema = z.object({
   title: z.string().min(1, '行程標題為必填'),
@@ -63,6 +64,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance) {
       .run(...values, cu.id)
     const newId = r.lastInsertRowid as number
     createAuditLog(request, cu.id, { action: 'create', module: '行程管理', target_type: 'schedule', target_id: newId, target_name: body.title })
+    syncScheduleToGCal(newId, 'create').catch(() => {})
     return reply.code(201).send({ success: true, data: { id: newId }, message: '行程已建立' })
   })
 
@@ -83,6 +85,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance) {
     const sets = Object.keys(safeData).map(k => `${k}=?`).join(',')
     db.prepare(`UPDATE schedules SET ${sets},updated_at=datetime('now','localtime') WHERE id=?`).run(...Object.values(safeData), Number(id))
     createAuditLog(request, cu.id, { action: 'update', module: '行程管理', target_type: 'schedule', target_id: Number(id), target_name: s.title })
+    syncScheduleToGCal(Number(id), 'update').catch(() => {})
     return reply.send({ success: true, message: '行程已更新' })
   })
 
@@ -91,6 +94,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance) {
     const { id } = request.params as any
     const s = db.prepare('SELECT * FROM schedules WHERE id=?').get(Number(id)) as any
     if (!s) return reply.code(404).send({ success: false, error: '行程不存在' })
+    syncScheduleToGCal(Number(id), 'delete').catch(() => {})
     db.prepare("UPDATE schedules SET is_active=0, updated_at=datetime('now','localtime') WHERE id=?").run(Number(id))
     createAuditLog(request, cu.id, { action: 'delete', module: '行程管理', target_type: 'schedule', target_id: Number(id), target_name: s.title })
     return reply.send({ success: true, message: '行程已刪除' })

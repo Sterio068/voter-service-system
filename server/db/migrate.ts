@@ -458,6 +458,20 @@ export function runMigrations() {
   // F-N7: Petition contact phone (陳情人聯絡電話，非選民檔案)
   try { db.exec("ALTER TABLE petitions ADD COLUMN contact_phone TEXT") } catch {}
 
+  // G-1: Google Calendar integration
+  db.exec(`CREATE TABLE IF NOT EXISTS google_calendar_accounts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    label       TEXT NOT NULL,
+    email       TEXT,
+    access_token  TEXT,
+    refresh_token TEXT NOT NULL,
+    expiry_date   INTEGER,
+    calendar_id   TEXT NOT NULL DEFAULT 'primary',
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  )`)
+  try { db.exec("ALTER TABLE schedules ADD COLUMN gcal_sync_data TEXT") } catch {}
+
   // F-N6: Voter interest topics
   db.exec(`CREATE TABLE IF NOT EXISTS voter_topics (
     voter_id INTEGER NOT NULL REFERENCES voters(id),

@@ -30,6 +30,7 @@ import dailyLogRoutes from './routes/dailyLogs'
 import lineWebhookRoutes from './routes/lineWebhook'
 import searchRoutes from './routes/search'
 import attachmentRoutes from './routes/attachments'
+import googleCalendarRoutes from './routes/googleCalendar'
 
 const PORT = parseInt(process.env.PORT || '8080')
 const HOST = process.env.HOST || '0.0.0.0'
@@ -141,6 +142,7 @@ export async function buildServer() {
   await fastify.register(lineWebhookRoutes)
   await fastify.register(searchRoutes)
   await fastify.register(attachmentRoutes)
+  await fastify.register(googleCalendarRoutes)
 
   // 全域錯誤處理
   fastify.setErrorHandler((error, request, reply) => {

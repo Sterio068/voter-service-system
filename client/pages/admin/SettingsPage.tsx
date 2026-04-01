@@ -5,7 +5,8 @@ import {
 } from 'antd'
 import {
   SaveOutlined, DownloadOutlined, UploadOutlined, DeleteOutlined,
-  DatabaseOutlined, ReloadOutlined, ClockCircleOutlined, InfoCircleOutlined, FolderOpenOutlined
+  DatabaseOutlined, ReloadOutlined, ClockCircleOutlined, InfoCircleOutlined, FolderOpenOutlined,
+  CalendarOutlined, LinkOutlined, PlusOutlined
 } from '@ant-design/icons'
 import api from '../../utils/api'
 import dayjs from 'dayjs'
@@ -36,12 +37,17 @@ export default function SettingsPage() {
   const [backupPath, setBackupPath] = useState<string>('')
   const [savingBackupPath, setSavingBackupPath] = useState(false)
   const isElectron = !!(window as any).electronAPI
+  const [gcalStatus, setGcalStatus] = useState<any>(null)
+  const [gcalCredForm] = Form.useForm()
+  const [gcalConnecting, setGcalConnecting] = useState(false)
+  const [gcalLabelInput, setGcalLabelInput] = useState('')
 
   useEffect(() => {
     loadSettings()
     loadNetworkInfo()
     loadBackups()
     loadBackupPath()
+    loadGcalStatus()
   }, [])
 
   const loadSettings = async () => {
@@ -65,6 +71,46 @@ export default function SettingsPage() {
       const res = await api.get('/admin/backup/path')
       setBackupPath(res.data.data?.path || '')
     } catch {}
+  }
+
+  const loadGcalStatus = async () => {
+    try {
+      const res = await api.get('/integrations/gcal/status')
+      setGcalStatus(res.data.data)
+      if (res.data.data?.clientId) {
+        gcalCredForm.setFieldsValue({ client_id: res.data.data.clientId })
+      }
+    } catch {}
+  }
+
+  const handleSaveGcalCreds = async (values: any) => {
+    try {
+      await api.post('/integrations/gcal/credentials', values)
+      message.success('OAuth 設定已儲存')
+      loadGcalStatus()
+    } catch { message.error('儲存失敗') }
+  }
+
+  const handleConnectGcal = async () => {
+    if (!gcalLabelInput.trim()) { message.warning('請輸入帳號標籤'); return }
+    setGcalConnecting(true)
+    try {
+      const res = await api.get('/integrations/gcal/auth-url', { params: { label: gcalLabelInput } })
+      window.open(res.data.data.url, '_blank')
+      message.info('請在瀏覽器完成 Google 授權，完成後回來重新整理帳號列表')
+      setTimeout(() => { loadGcalStatus(); setGcalConnecting(false) }, 5000)
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '無法產生授權連結')
+      setGcalConnecting(false)
+    }
+  }
+
+  const handleDeleteGcalAccount = async (id: number) => {
+    try {
+      await api.delete(`/integrations/gcal/accounts/${id}`)
+      message.success('已移除')
+      loadGcalStatus()
+    } catch { message.error('移除失敗') }
   }
 
   const handleSelectBackupPath = async () => {
@@ -302,6 +348,77 @@ export default function SettingsPage() {
           pagination={{ pageSize: 10, hideOnSinglePage: true }}
           locale={{ emptyText: '尚無備份紀錄' }}
         />
+      </Card>
+
+      {/* Google Calendar 整合 */}
+      <Card title={<><CalendarOutlined /> Google 日曆同步</>} style={{ marginTop: 16 }}>
+        <Alert type="info" showIcon style={{ marginBottom: 16 }}
+          message="設定後，新增/修改/刪除行程時會自動同步到已連結的 Google 日曆帳號"
+          description={<>需先至 <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer">Google Cloud Console</a> 建立 OAuth 2.0 用戶端 ID，授權重新導向 URI 填：<code>http://localhost:8080/api/integrations/gcal/callback</code></>}
+        />
+
+        <Divider orientation="left" orientationMargin={0}>OAuth 設定</Divider>
+        <Form form={gcalCredForm} layout="vertical" onFinish={handleSaveGcalCreds} style={{ maxWidth: 500 }}>
+          <Form.Item name="client_id" label="用戶端 ID（Client ID）" rules={[{ required: true }]}>
+            <Input placeholder="xxxxxxx.apps.googleusercontent.com" />
+          </Form.Item>
+          <Form.Item name="client_secret" label="用戶端密鑰（Client Secret）">
+            <Input.Password placeholder="填入後點儲存；已設定者留空不變" />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" icon={<SaveOutlined />}>儲存 OAuth 設定</Button>
+          </Form.Item>
+        </Form>
+
+        <Divider orientation="left" orientationMargin={0}>已連結帳號</Divider>
+        {gcalStatus?.accounts?.length > 0 ? (
+          <Table
+            size="small"
+            pagination={false}
+            style={{ marginBottom: 16 }}
+            dataSource={gcalStatus.accounts}
+            rowKey="id"
+            columns={[
+              { title: '標籤', dataIndex: 'label' },
+              { title: 'Email', dataIndex: 'email', render: (e: string) => e || '-' },
+              { title: '日曆 ID', dataIndex: 'calendar_id', render: (c: string) => c || 'primary' },
+              { title: '狀態', dataIndex: 'is_active', width: 70, render: (v: number) => v ? <Tag color="green">啟用</Tag> : <Tag>停用</Tag> },
+              {
+                title: '操作', width: 60,
+                render: (_: any, r: any) => (
+                  <Popconfirm title="確定移除此帳號連結？" onConfirm={() => handleDeleteGcalAccount(r.id)}>
+                    <Button size="small" danger icon={<DeleteOutlined />} type="text" />
+                  </Popconfirm>
+                )
+              }
+            ]}
+          />
+        ) : (
+          <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>尚未連結任何 Google 帳號</Text>
+        )}
+
+        <Space>
+          <Input
+            placeholder="帳號標籤（例：辦公室日曆）"
+            value={gcalLabelInput}
+            onChange={e => setGcalLabelInput(e.target.value)}
+            style={{ width: 200 }}
+          />
+          <Button
+            icon={<LinkOutlined />}
+            loading={gcalConnecting}
+            disabled={!gcalStatus?.configured}
+            onClick={handleConnectGcal}
+          >
+            連結 Google 帳號
+          </Button>
+          <Button icon={<ReloadOutlined />} onClick={loadGcalStatus}>重新整理</Button>
+        </Space>
+        {!gcalStatus?.configured && (
+          <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
+            請先儲存 OAuth 設定才能連結帳號
+          </Text>
+        )}
       </Card>
 
       {/* 系統資訊 */}

@@ -38,6 +38,7 @@
     "dayjs": "^1.11.10",
     "electron-updater": "^6.1.8",
     "fastify": "^4.26.2",
+    "googleapis": "^171.4.0",
     "ip": "^2.0.1",
     "jsonwebtoken": "^9.0.2",
     "react": "^18.2.0",
