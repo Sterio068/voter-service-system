@@ -2,6 +2,12 @@ import { FastifyInstance } from 'fastify'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 
+function validateDate(date: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false
+  const d = new Date(date)
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === date
+}
+
 export default async function dailyLogRoutes(fastify: FastifyInstance) {
   // GET /api/daily-logs — list recent 30
   fastify.get('/api/daily-logs', { preHandler: [requirePermission('admin','view')] }, async (req, reply) => {
@@ -12,6 +18,7 @@ export default async function dailyLogRoutes(fastify: FastifyInstance) {
   // GET /api/daily-logs/:date — get or auto-generate
   fastify.get('/api/daily-logs/:date', { preHandler: [requirePermission('admin','view')] }, async (req, reply) => {
     const { date } = req.params as any
+    if (!validateDate(date)) return reply.code(400).send({ success: false, error: '日期格式錯誤或不合法，需為 YYYY-MM-DD' })
     let log = db.prepare('SELECT * FROM daily_logs WHERE log_date=?').get(date) as any
     if (!log) {
       // Auto-generate summary from today's data
@@ -27,6 +34,7 @@ export default async function dailyLogRoutes(fastify: FastifyInstance) {
   fastify.put('/api/daily-logs/:date', { preHandler: [requirePermission('admin','edit')] }, async (req, reply) => {
     const cu = (req as any).currentUser
     const { date } = req.params as any
+    if (!validateDate(date)) return reply.code(400).send({ success: false, error: '日期格式錯誤或不合法，需為 YYYY-MM-DD' })
     const body = req.body as any
     const existing = db.prepare('SELECT id FROM daily_logs WHERE log_date=?').get(date)
     const fields = ['highlights','new_cases_summary','completed_summary','pending_handover','director_note']

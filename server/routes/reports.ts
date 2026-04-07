@@ -6,6 +6,7 @@ export default async function reportRoutes(fastify: FastifyInstance) {
   // R-N1: Assignee workload
   fastify.get('/api/reports/assignee-workload', { preHandler: [requirePermission('petitions', 'view')] }, async (request, reply) => {
     const { year = new Date().getFullYear().toString() } = request.query as any
+    if (!/^\d{4}$/.test(String(year))) return reply.code(400).send({ success: false, error: 'year 格式錯誤' })
     const data = db.prepare(`
       SELECT u.id, u.name,
         COUNT(CASE WHEN p.status NOT IN ('closed','cancelled') THEN 1 END) as active_count,
@@ -23,6 +24,7 @@ export default async function reportRoutes(fastify: FastifyInstance) {
   // R-N2: Area heatmap
   fastify.get('/api/reports/area-heatmap', { preHandler: [requirePermission('petitions', 'view')] }, async (request, reply) => {
     const { year = new Date().getFullYear().toString() } = request.query as any
+    if (!/^\d{4}$/.test(String(year))) return reply.code(400).send({ success: false, error: 'year 格式錯誤' })
     const data = db.prepare(`
       SELECT
         COALESCE(area_district, '未指定') as district,
@@ -49,6 +51,7 @@ export default async function reportRoutes(fastify: FastifyInstance) {
   // R-N5: Closure efficiency
   fastify.get('/api/reports/closure-efficiency', { preHandler: [requirePermission('petitions', 'view')] }, async (request, reply) => {
     const { year = new Date().getFullYear().toString() } = request.query as any
+    if (!/^\d{4}$/.test(String(year))) return reply.code(400).send({ success: false, error: 'year 需為 4 位數年份' })
     const byMonth = db.prepare(`
       SELECT strftime('%m',petition_date) as month,
         COUNT(*) as total,
@@ -104,15 +107,22 @@ export default async function reportRoutes(fastify: FastifyInstance) {
   // R-N8: Area penetration
   fastify.get('/api/reports/area-penetration', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
     const data = db.prepare(`
+      WITH district_petitions AS (
+        SELECT v.household_district, COUNT(p.id) as petition_count
+        FROM voters v
+        LEFT JOIN petitions p ON p.voter_id = v.id
+        WHERE v.is_active = 1
+        GROUP BY v.household_district
+      )
       SELECT
-        COALESCE(household_district,'未指定') as district,
+        COALESCE(v.household_district,'未指定') as district,
         COUNT(*) as voter_count,
-        COUNT(CASE WHEN is_active=1 THEN 1 END) as active_voters,
-        (SELECT COUNT(*) FROM petitions p2 WHERE p2.voter_id IN (
-          SELECT id FROM voters WHERE household_district=v.household_district AND is_active=1
-        )) as petition_count
-      FROM voters v WHERE is_active=1
-      GROUP BY household_district ORDER BY voter_count DESC
+        COUNT(CASE WHEN v.is_active=1 THEN 1 END) as active_voters,
+        COALESCE(dp.petition_count, 0) as petition_count
+      FROM voters v
+      LEFT JOIN district_petitions dp ON dp.household_district = v.household_district
+      WHERE v.is_active = 1
+      GROUP BY v.household_district ORDER BY voter_count DESC
     `).all()
     return reply.send({ success: true, data })
   })
@@ -120,6 +130,8 @@ export default async function reportRoutes(fastify: FastifyInstance) {
   // R-1: No-contact voters report
   fastify.get('/api/reports/no-contact-voters', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
     const { days = 90 } = request.query as any
+    const daysNum = parseInt(String(days), 10)
+    if (isNaN(daysNum) || daysNum < 1 || daysNum > 3650) return reply.code(400).send({ success: false, error: 'days 需為 1~3650 的整數' })
     const data = db.prepare(`
       SELECT v.id, v.name, v.mobile, v.household_district,
         MAX(c.contact_date) as last_contact,
@@ -133,7 +145,7 @@ export default async function reportRoutes(fastify: FastifyInstance) {
       HAVING days_since_contact >= ?
       ORDER BY days_since_contact DESC
       LIMIT 100
-    `).all(Number(days))
+    `).all(daysNum)
     return reply.send({ success: true, data })
   })
 
@@ -185,6 +197,9 @@ export default async function reportRoutes(fastify: FastifyInstance) {
   // R-4: Weekly report data
   fastify.get('/api/reports/weekly', { preHandler: [requirePermission('petitions', 'view')] }, async (request, reply) => {
     const { start_date } = request.query as any
+    if (start_date && !/^\d{4}-\d{2}-\d{2}$/.test(start_date)) {
+      return reply.code(400).send({ success: false, error: 'start_date 需為 YYYY-MM-DD 格式' })
+    }
     const weekStart = start_date || (() => {
       const d = new Date(); d.setDate(d.getDate() - d.getDay() + 1); return d.toISOString().slice(0, 10)
     })()
@@ -229,11 +244,12 @@ export default async function reportRoutes(fastify: FastifyInstance) {
 
   // R-7: Voter Lifecycle Funnel
   fastify.get('/api/reports/voter-lifecycle', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
+    // support_level 與 activity_count 在 voter_engagement 表，不在 voters 表
     const total = (db.prepare(`SELECT COUNT(*) as c FROM voters WHERE is_active=1`).get() as any).c
     const contacted = (db.prepare(`SELECT COUNT(DISTINCT voter_id) as c FROM contact_records WHERE voter_id IN (SELECT id FROM voters WHERE is_active=1)`).get() as any).c
-    const engaged = (db.prepare(`SELECT COUNT(*) as c FROM voters WHERE is_active=1 AND support_level >= 3`).get() as any).c
-    const active = (db.prepare(`SELECT COUNT(*) as c FROM voters WHERE is_active=1 AND (activity_score >= 50 OR engagement_score >= 50)`).get() as any).c
-    const core_supporters = (db.prepare(`SELECT COUNT(*) as c FROM voters WHERE is_active=1 AND support_level = 5`).get() as any).c
+    const engaged = (db.prepare(`SELECT COUNT(*) as c FROM voter_engagement ve JOIN voters v ON v.id=ve.voter_id WHERE v.is_active=1 AND ve.support_level >= 3`).get() as any).c
+    const active = (db.prepare(`SELECT COUNT(*) as c FROM voter_engagement ve JOIN voters v ON v.id=ve.voter_id WHERE v.is_active=1 AND ve.activity_count >= 3`).get() as any).c
+    const core_supporters = (db.prepare(`SELECT COUNT(*) as c FROM voter_engagement ve JOIN voters v ON v.id=ve.voter_id WHERE v.is_active=1 AND ve.support_level = 5`).get() as any).c
     return reply.send({ success: true, data: { total, contacted, engaged, active, core_supporters } })
   })
 
@@ -280,6 +296,10 @@ export default async function reportRoutes(fastify: FastifyInstance) {
   // R-10: Issue Trend Line Chart
   fastify.get('/api/reports/issue-trend', { preHandler: [requirePermission('petitions', 'view')] }, async (request, reply) => {
     const { months = '6' } = request.query as any
+    const monthsNum = parseInt(String(months), 10)
+    if (isNaN(monthsNum) || monthsNum < 1 || monthsNum > 120) {
+      return reply.code(400).send({ success: false, error: 'months 需為 1~120 的整數' })
+    }
     const data = db.prepare(`
       SELECT strftime('%Y-%m', petition_date) as month,
         COALESCE(category, '未分類') as category,
@@ -288,7 +308,7 @@ export default async function reportRoutes(fastify: FastifyInstance) {
       WHERE petition_date >= date('now', '-' || ? || ' months')
       GROUP BY month, category
       ORDER BY month, count DESC
-    `).all(Number(months))
+    `).all(monthsNum)
     return reply.send({ success: true, data })
   })
 
@@ -342,7 +362,8 @@ export default async function reportRoutes(fastify: FastifyInstance) {
   fastify.get('/api/reports/key-influencers', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
     const data = db.prepare(`
       SELECT
-        v.id, v.name, v.mobile, v.addr_district, v.support_level, v.activity_score, v.tags,
+        v.id, v.name, v.mobile, v.addr_district, v.support_level, v.activity_score,
+        (SELECT GROUP_CONCAT(tag,',') FROM voter_tags WHERE voter_id=v.id) as tags,
         COUNT(DISTINCT cr.id) as contact_count,
         COUNT(DISTINCT rv.id) as referrer_count,
         COUNT(DISTINCT ep.id) as event_count,

@@ -36,8 +36,8 @@ export default async function lineWebhookRoutes(fastify: FastifyInstance) {
     const rawBody = JSON.stringify(request.body)
     const signature = request.headers['x-line-signature'] as string | undefined
 
-    // If channel secret is configured, verify signature
-    if (channelSecret && !verifyLineSignature(rawBody, signature, channelSecret)) {
+    // Always require a valid signature — if channel secret is not configured, reject all requests
+    if (!channelSecret || !verifyLineSignature(rawBody, signature, channelSecret)) {
       return reply.code(403).send({ success: false, error: 'Invalid LINE signature' })
     }
 
@@ -52,8 +52,9 @@ export default async function lineWebhookRoutes(fastify: FastifyInstance) {
 
           // Try to find voter by LINE user ID (stored in tags or a dedicated field)
           // For now, create a contact record if we can match the voter
-          const voter = db.prepare(`SELECT * FROM voters WHERE tags LIKE ? AND is_active=1 LIMIT 1`)
-            .get(`%${lineUserId}%`) as any
+          const escapedId = (lineUserId || '').replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+          const voter = db.prepare(`SELECT * FROM voters WHERE tags LIKE ? ESCAPE '\\' AND is_active=1 LIMIT 1`)
+            .get(`%${escapedId}%`) as any
 
           if (voter) {
             db.prepare(`INSERT INTO contact_records(voter_id,type,channel,content,contact_date,source,created_at) VALUES(?,?,?,?,?,?,datetime('now','localtime'))`)

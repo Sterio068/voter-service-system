@@ -4,6 +4,10 @@ import { db } from '../db/index'
 import { requirePermission, authenticate } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
 
+function escapeLike(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
 // A-3: Address normalization helper
 function normalizeAddress(addr: string | null | undefined): string | null {
   if (!addr) return addr ?? null
@@ -35,7 +39,6 @@ const CreateVoterSchema = z.object({
   household_city: z.string().optional(),
   household_district: z.string().optional(),
   household_village: z.string().optional(),
-  household_neighbor: z.string().optional(),
   household_address: z.string().optional(),
   mailing_address: z.string().optional(),
   occupation: z.string().optional(),
@@ -60,7 +63,6 @@ interface CreateVoterBody {
   household_city?: string
   household_district?: string
   household_village?: string
-  household_neighbor?: string
   household_address?: string
   mailing_address?: string
   occupation?: string
@@ -89,10 +91,13 @@ function validateVoterStateTransition(current: any, update: any): string | null 
 
 export default async function voterRoutes(fastify: FastifyInstance) {
   fastify.get('/api/voters', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
-    const { page = 1, pageSize = 20, search, city, district, village, tag, is_active = 1, is_blacklisted } = request.query as any
+    const _q = request.query as any
+    const page = Math.max(1, Number(_q.page) || 1)
+    const pageSize = Math.min(200, Math.max(1, Number(_q.pageSize) || 20))
+    const { search, city, district, village, tag, is_active = 1, is_blacklisted } = _q
     const conds = ['v.is_active = ?']
     const params: any[] = [Number(is_active) === 0 ? 0 : 1]
-    if (search) { conds.push("(v.name LIKE ? OR v.mobile LIKE ? OR v.phone LIKE ? OR v.household_address LIKE ?)"); params.push(`%${search}%`,`%${search}%`,`%${search}%`,`%${search}%`) }
+    if (search) { const es = escapeLike(search); conds.push("(v.name LIKE ? ESCAPE '\\' OR v.mobile LIKE ? ESCAPE '\\' OR v.phone LIKE ? ESCAPE '\\' OR v.household_address LIKE ? ESCAPE '\\')"); params.push(`%${es}%`,`%${es}%`,`%${es}%`,`%${es}%`) }
     if (city) { conds.push('v.household_city = ?'); params.push(city) }
     if (district) { conds.push('v.household_district = ?'); params.push(district) }
     if (village) { conds.push('v.household_village = ?'); params.push(village) }
@@ -101,11 +106,10 @@ export default async function voterRoutes(fastify: FastifyInstance) {
 
     if (tag) { conds.push('v.id IN (SELECT voter_id FROM voter_tags WHERE tag = ?)'); params.push(tag) }
 
-    // B-1: JSON tags field search
+    // B-1: tags 欄位搜尋（統一使用 voter_tags 表）
     const { tags: tagsQuery } = request.query as any
     if (tagsQuery) {
-      // Use json_each for proper JSON array search
-      conds.push(`EXISTS (SELECT 1 FROM json_each(v.tags) WHERE value=?)`)
+      conds.push(`EXISTS (SELECT 1 FROM voter_tags WHERE voter_id=v.id AND tag=?)`)
       params.push(String(tagsQuery))
     }
 
@@ -130,11 +134,12 @@ export default async function voterRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true, data: voters.map(v => ({ ...v, tags: tagMap[v.id] || [] })), total, page: Number(page), pageSize: Number(pageSize) })
   })
 
-  fastify.get('/api/voters/search', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.get('/api/voters/search', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
     const { q } = request.query as any
     if (!q) return reply.send({ success: true, data: [] })
-    const results = db.prepare("SELECT id,name,mobile,household_address FROM voters WHERE is_active=1 AND (name LIKE ? OR mobile LIKE ?) LIMIT 10")
-      .all(`%${q}%`, `%${q}%`)
+    const eq = escapeLike(q)
+    const results = db.prepare("SELECT id,name,mobile,household_address FROM voters WHERE is_active=1 AND (name LIKE ? ESCAPE '\\' OR mobile LIKE ? ESCAPE '\\') LIMIT 10")
+      .all(`%${eq}%`, `%${eq}%`)
     return reply.send({ success: true, data: results })
   })
 
@@ -243,7 +248,7 @@ export default async function voterRoutes(fastify: FastifyInstance) {
 
     // Sanitize: only allow known fields (F-5: added is_blacklisted)
     const allowedFields = ['name','gender','birth_date','id_number','mobile','phone','line_id','email',
-      'household_city','household_district','household_village','household_neighbor','household_address',
+      'household_city','household_district','household_village','household_address',
       'mailing_address','occupation','company','job_title','election_area','note',
       'addr_city','addr_district','addr_village','is_blacklisted','household_key']
     const safeData: Record<string, any> = {}
@@ -330,9 +335,9 @@ export default async function voterRoutes(fastify: FastifyInstance) {
 
     // Sanitize: only allow known fields (F-N11: added source, referrer_id; D-2: added addr_*; F-5: is_blacklisted)
     const allowedFields = ['name','gender','birth_date','id_number','mobile','phone','line_id','email',
-      'household_city','household_district','household_village','household_neighbor','household_address',
+      'household_city','household_district','household_village','household_address',
       'mailing_address','occupation','company','job_title','election_area','note','source','referrer_id',
-      'addr_city','addr_district','addr_village','is_blacklisted','household_key']
+      'addr_city','addr_district','addr_village','is_blacklisted','household_key','title']
     const safeData: Record<string, any> = {}
     for (const k of allowedFields) { if (data[k] !== undefined) safeData[k] = data[k] }
     if (Object.keys(safeData).length === 0 && tags === undefined) {
@@ -429,12 +434,19 @@ export default async function voterRoutes(fastify: FastifyInstance) {
     const source = db.prepare('SELECT * FROM voters WHERE id=?').get(sourceId) as any
     if (!target || !source) return reply.code(404).send({ success: false, error: '選民不存在' })
 
-    // Preview mode
+    // Preview mode — 單一查詢取代 N+1 個 COUNT
     const { preview } = request.query as any
-    const petitions = (db.prepare('SELECT COUNT(*) as c FROM petitions WHERE voter_id=?').get(sourceId) as any).c
-    const contacts = (db.prepare('SELECT COUNT(*) as c FROM contact_records WHERE voter_id=?').get(sourceId) as any).c
-    const tasks = (db.prepare('SELECT COUNT(*) as c FROM tasks WHERE related_voter_id=?').get(sourceId) as any).c
-    const engagements = (db.prepare('SELECT COUNT(*) as c FROM voter_engagement WHERE voter_id=?').get(sourceId) as any).c
+    const counts = db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM petitions WHERE voter_id=?) as petitions,
+        (SELECT COUNT(*) FROM contact_records WHERE voter_id=?) as contacts,
+        (SELECT COUNT(*) FROM tasks WHERE related_voter_id=?) as tasks,
+        (SELECT COUNT(*) FROM voter_engagement WHERE voter_id=?) as engagements
+    `).get(sourceId, sourceId, sourceId, sourceId) as any
+    const petitions = counts.petitions
+    const contacts = counts.contacts
+    const tasks = counts.tasks
+    const engagements = counts.engagements
 
     if (preview === 'true') {
       return reply.send({ success: true, preview: { petitions, contacts, tasks, engagements, source_name: source.name, target_name: target.name } })

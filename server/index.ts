@@ -1,4 +1,4 @@
-import Fastify from 'fastify'
+import Fastify, { FastifyError } from 'fastify'
 import fastifyJwt from '@fastify/jwt'
 import fastifyCors from '@fastify/cors'
 import fastifyCookie from '@fastify/cookie'
@@ -7,8 +7,10 @@ import fastifyStatic from '@fastify/static'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
+import { exec } from 'child_process'
 import { runMigrations } from './db/migrate'
 import { db } from './db/index'
+import { authenticate, requirePermission } from './middleware/auth'
 import authRoutes from './routes/auth'
 import adminRoutes from './routes/admin'
 import voterRoutes from './routes/voters'
@@ -31,6 +33,11 @@ import lineWebhookRoutes from './routes/lineWebhook'
 import searchRoutes from './routes/search'
 import attachmentRoutes from './routes/attachments'
 import googleCalendarRoutes from './routes/googleCalendar'
+import vendorRoutes from './routes/vendors'
+import ceremonyRoutes from './routes/ceremonies'
+import expenseRoutes from './routes/expenses'
+import proposalRoutes from './routes/proposals'
+import aiRoutes from './routes/ai'
 
 const PORT = parseInt(process.env.PORT || '8080')
 const HOST = process.env.HOST || '0.0.0.0'
@@ -41,7 +48,7 @@ process.on('uncaughtException', (error: Error) => {
   // Try to log to DB
   try {
     db.prepare(`INSERT INTO audit_logs(user_id,action,module,target_type,detail,created_at) VALUES(?,?,?,?,?,datetime('now','localtime'))`)
-      .run(0, 'fatal_error', '系統', 'process_error', JSON.stringify({ message: error.message, stack: error.stack?.slice(0, 1000) }))
+      .run(0, 'fatal_error', '系統', 'process_error', JSON.stringify({ message: error.message }))
   } catch {}
   // Don't exit - let Fastify handle gracefully
 })
@@ -61,9 +68,29 @@ export async function buildServer() {
     trustProxy: true,
   })
 
+  // 先執行資料庫遷移，以便可從 settings 讀取 jwt_secret
+  runMigrations()
+
+  // JWT secret：優先使用環境變數，否則從 DB 取出或自動產生隨機值並儲存
+  const jwtSecret = (() => {
+    if (process.env.JWT_SECRET) return process.env.JWT_SECRET
+    try {
+      const row = db.prepare("SELECT value FROM settings WHERE key='jwt_secret'").get() as any
+      if (row?.value && row.value.length >= 32) return row.value as string
+    } catch {}
+    const { randomBytes } = require('crypto')
+    const newSecret: string = randomBytes(32).toString('hex')
+    try {
+      db.prepare("INSERT INTO settings(key,value) VALUES('jwt_secret',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        .run(newSecret)
+    } catch {}
+    console.log('[Security] Generated new JWT secret and stored in settings')
+    return newSecret
+  })()
+
   // JWT 設定
   await fastify.register(fastifyJwt, {
-    secret: process.env.JWT_SECRET || 'voter-service-system-secret-key-2026',
+    secret: jwtSecret,
     cookie: {
       cookieName: 'token',
       signed: false,
@@ -93,11 +120,6 @@ export async function buildServer() {
     fs.mkdirSync(uploadsDir, { recursive: true })
   }
 
-  await fastify.register(fastifyStatic, {
-    root: uploadsDir,
-    prefix: '/uploads/',
-  })
-
   // 靜態前端（生產模式）
   if (process.env.NODE_ENV === 'production') {
     const distPath = path.join(__dirname, '../dist')
@@ -116,9 +138,6 @@ export async function buildServer() {
       }
     })
   }
-
-  // 初始化資料庫
-  runMigrations()
 
   // 路由
   await fastify.register(authRoutes)
@@ -143,9 +162,14 @@ export async function buildServer() {
   await fastify.register(searchRoutes)
   await fastify.register(attachmentRoutes)
   await fastify.register(googleCalendarRoutes)
+  await fastify.register(vendorRoutes)
+  await fastify.register(ceremonyRoutes)
+  await fastify.register(expenseRoutes)
+  await fastify.register(proposalRoutes)
+  await fastify.register(aiRoutes)
 
   // 全域錯誤處理
-  fastify.setErrorHandler((error, request, reply) => {
+  fastify.setErrorHandler((error: FastifyError, request, reply) => {
     if ((error as any).name === 'AppError') {
       const appErr = error as any
       return reply.code(appErr.statusCode).send({ success: false, error: { code: appErr.statusCode, message: appErr.message } })
@@ -164,7 +188,9 @@ export async function buildServer() {
       if (msg.includes('UNIQUE constraint failed')) {
         return reply.code(409).send({ success: false, error: { code: 409, message: '資料重複，請確認是否已存在相同資料' } })
       }
-      return reply.code(400).send({ success: false, error: { code: 400, message: '資料庫操作失敗：' + msg } })
+      // 不回傳原始 SQLite 訊息（含欄位/表名稱），避免洩露 schema
+      console.error('[DB Error]', msg)
+      return reply.code(400).send({ success: false, error: { code: 400, message: '資料庫操作失敗，請稍後再試' } })
     }
 
     if (statusCode === 400) {
@@ -191,7 +217,7 @@ export async function buildServer() {
   })
 
   // 取得區網 IP
-  fastify.get('/api/network-info', async () => {
+  fastify.get('/api/network-info', { preHandler: [authenticate] }, async () => {
     const interfaces = os.networkInterfaces()
     const ips: string[] = []
     for (const iface of Object.values(interfaces)) {
@@ -203,6 +229,36 @@ export async function buildServer() {
       }
     }
     return { success: true, data: { ips, port: PORT } }
+  })
+
+  // 偵測 Tailscale 狀態
+  fastify.get('/api/admin/tailscale/status', { preHandler: [requirePermission('system', 'view')] }, async (_req, reply) => {
+    const getTailscaleIp = (): Promise<{ installed: boolean; running: boolean; ip: string | null }> =>
+      new Promise(resolve => {
+        // Windows 下指令路徑可能需要完整路徑
+        const cmd = process.platform === 'win32'
+          ? 'tailscale ip -4'
+          : 'tailscale ip -4 2>/dev/null || /usr/local/bin/tailscale ip -4 2>/dev/null'
+        exec(cmd, { timeout: 6000 }, (err, stdout) => {
+          if (err) {
+            // code 127 = command not found（Unix）
+            // ENOENT = 執行檔不存在
+            const msg = (err.message || '').toLowerCase()
+            const notInstalled = (err as any).code === 127
+              || msg.includes('not found')
+              || msg.includes('no such file')
+              || msg.includes('is not recognized')   // Windows
+              || (err as any).code === 'ENOENT'
+            resolve({ installed: !notInstalled, running: false, ip: null })
+          } else {
+            const ip = stdout.trim().split('\n')[0].trim()
+            resolve({ installed: true, running: !!ip, ip: ip || null })
+          }
+        })
+      })
+
+    const result = await getTailscaleIp()
+    return reply.send({ success: true, data: { ...result, port: PORT } })
   })
 
   return fastify
@@ -262,7 +318,7 @@ function scheduleAutoBackup() {
 
       const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
       const backupPath = path.join(backupDir, `auto-${ts}.db`)
-      db.exec(`VACUUM INTO '${backupPath}'`)
+      db.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`)
 
       const now = new Date().toISOString()
       setSettingValue('last_auto_backup', now)
@@ -388,12 +444,14 @@ function scheduleWeeklyBackupVerify() {
       const latestFile = files[0].name
       const filePath = path.join(backupDir, latestFile)
       let result: any = 'unknown'
+      let backupDb: any = null
       try {
-        const backupDb = new BetterSqlite3(filePath, { readonly: true })
+        backupDb = new BetterSqlite3(filePath, { readonly: true })
         result = (backupDb.prepare('PRAGMA integrity_check').get() as any)?.integrity_check ?? 'unknown'
-        backupDb.close()
       } catch (dbErr) {
         result = String(dbErr)
+      } finally {
+        try { backupDb?.close() } catch {}
       }
       const detail = JSON.stringify({ file: latestFile, result, checked_at: new Date().toISOString() })
       console.log(`[WeeklyBackupVerify] ${latestFile}: ${result}`)
@@ -543,12 +601,14 @@ async function start() {
               const latestFile = (files[0] as any).name
               const filePath = path.join(backupDir, latestFile)
               let result: any = 'unknown'
+              let backupDb: any = null
               try {
-                const backupDb = new BetterSqlite3(filePath, { readonly: true })
+                backupDb = new BetterSqlite3(filePath, { readonly: true })
                 result = (backupDb.prepare('PRAGMA integrity_check').get() as any)?.integrity_check ?? 'unknown'
-                backupDb.close()
               } catch (dbErr) {
                 result = String(dbErr)
+              } finally {
+                try { backupDb?.close() } catch {}
               }
               const detail = JSON.stringify({ file: latestFile, result, checked_at: new Date().toISOString() })
               console.log(`[BackupVerify] ${latestFile}: ${result}`)

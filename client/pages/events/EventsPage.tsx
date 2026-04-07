@@ -49,8 +49,10 @@ export default function EventsPage() {
 
   const openDetail = async (event: any) => {
     setSelectedEvent(event)
-    const res = await api.get(`/events/${event.id}/participants`)
-    setParticipants(res.data.data || [])
+    try {
+      const res = await api.get(`/events/${event.id}/participants`)
+      setParticipants(res.data.data || [])
+    } catch { message.error('載入參與者失敗') }
     api.get('/voters?pageSize=500').then(r => setVoters(r.data.data || [])).catch(() => {})
     setDetailOpen(true)
   }

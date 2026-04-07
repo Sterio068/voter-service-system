@@ -34,10 +34,13 @@ export default async function authRoutes(fastify: FastifyInstance) {
     }
 
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any
-    if (!user || !user.is_active) return reply.code(401).send({ success: false, error: '帳號或密碼錯誤' })
 
-    const match = await bcrypt.compare(password, user.password)
-    if (!match) {
+    // Validate credentials — keep error message generic regardless of failure reason
+    const validUser = user && user.is_active
+    const match = validUser ? await bcrypt.compare(password, user.password) : false
+
+    if (!validUser || !match) {
+      // Always increment attempt counter (prevents username enumeration via lockout bypass)
       const cur = loginAttempts.get(username) || { count: 0 }
       cur.count += 1
       if (cur.count >= maxAttempts) {
@@ -46,7 +49,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         return reply.code(429).send({ success: false, error: `登入失敗次數過多，已鎖定 ${lockMinutes} 分鐘` })
       }
       loginAttempts.set(username, cur)
-      return reply.code(401).send({ success: false, error: `帳號或密碼錯誤（剩餘嘗試：${maxAttempts - cur.count}）` })
+      return reply.code(401).send({ success: false, error: '帳號或密碼錯誤' })
     }
 
     loginAttempts.delete(username)

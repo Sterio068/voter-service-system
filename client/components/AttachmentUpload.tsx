@@ -57,7 +57,7 @@ export default function AttachmentUpload({ refType, refId, readonly }: Props) {
   }
 
   const handlePreview = (att: Attachment) => {
-    const url = `/uploads/${att.file_path}`
+    const url = `/api/attachments/${att.id}/file`
     if (att.mime_type.startsWith('image/')) {
       setPreviewUrl(url)
       setPreviewVisible(true)

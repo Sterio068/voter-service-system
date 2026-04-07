@@ -27,7 +27,7 @@ function startPolling() {
         lastSyncTime = data.server_time
       }
     } catch {}
-  }, 30000) // Poll every 30 seconds
+  }, 5000) // Poll every 5 seconds
 }
 
 function stopPollingIfIdle() {

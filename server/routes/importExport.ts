@@ -4,12 +4,17 @@ import { requirePermission, authenticate } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
 import * as XLSX from 'xlsx'
 import bcrypt from 'bcrypt'
+import { parseAddressFields, looksLikeFullAddress } from '../utils/parseAddress'
+
+function escapeLike(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
 
 // ===== 選民 Excel 範本欄位 =====
 const VOTER_TEMPLATE_HEADERS = [
   '姓名*', '性別(男/女/其他)', '出生日期(YYYY-MM-DD)', '身份證號',
   '手機', '市話', 'LINE ID', '電子郵件',
-  '戶籍縣市', '戶籍鄉鎮區', '戶籍村里', '戶籍鄰',
+  '戶籍縣市', '戶籍鄉鎮區', '戶籍村里',
   '戶籍地址', '通訊地址', '選區',
   '職業', '服務單位', '職稱',
   '標籤(多個用逗號分隔)', '備註',
@@ -20,10 +25,15 @@ const VOTER_COL_MAP: Record<string, string> = {
   '出生日期(YYYY-MM-DD)': 'birth_date', '身份證號': 'id_number',
   '手機': 'mobile', '市話': 'phone', 'LINE ID': 'line_id', '電子郵件': 'email',
   '戶籍縣市': 'household_city', '戶籍鄉鎮區': 'household_district',
-  '戶籍村里': 'household_village', '戶籍鄰': 'household_neighbor',
+  '戶籍村里': 'household_village',
   '戶籍地址': 'household_address', '通訊地址': 'mailing_address', '選區': 'election_area',
   '職業': 'occupation', '服務單位': 'company', '職稱': 'job_title',
   '標籤(多個用逗號分隔)': '__tags', '備註': 'note',
+  // 別名欄位：填完整地址時系統自動拆解
+  '地址': '__full_address',
+  '戶籍完整地址': '__full_address',
+  '完整地址': '__full_address',
+  '通訊完整地址': '__mailing_full',
 }
 
 // ===== 陳情 Excel 範本欄位 =====
@@ -50,29 +60,36 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     // 說明工作表
     const helpWs = XLSX.utils.aoa_to_sheet([
       ['欄位說明'],
-      ['欄位名稱', '說明', '範例'],
-      ['姓名*', '必填', '王大明'],
-      ['性別(男/女/其他)', '選填', '男'],
-      ['出生日期(YYYY-MM-DD)', '選填，格式 YYYY-MM-DD', '1980-05-15'],
-      ['身份證號', '選填', 'A123456789'],
-      ['手機', '選填', '0912345678'],
-      ['市話', '選填', '02-12345678'],
-      ['LINE ID', '選填', ''],
-      ['電子郵件', '選填', ''],
-      ['戶籍縣市', '選填', '台北市'],
-      ['戶籍鄉鎮區', '選填', '信義區'],
-      ['戶籍村里', '選填', '信義里'],
-      ['戶籍鄰', '選填', '1'],
-      ['戶籍地址', '選填（不含縣市鄉鎮村里）', '信義路1號'],
-      ['通訊地址', '選填', ''],
-      ['選區', '選填', '第一選區'],
-      ['職業', '選填', '自由業'],
-      ['服務單位', '選填', ''],
-      ['職稱', '選填', ''],
-      ['標籤(多個用逗號分隔)', '選填，多個標籤用逗號分隔', '樁腳,支持者'],
-      ['備註', '選填', ''],
+      [''],
+      ['【地址填寫方式（二擇一）】'],
+      ['方式一：填寫完整地址欄（推薦）', '欄名使用「地址」或「戶籍完整地址」，系統會自動拆解縣市/區/里/鄰/門牌'],
+      ['　　　　範例', '台北市信義區信義里1鄰信義路5段1號'],
+      ['方式二：分欄填寫', '分別填寫「戶籍縣市」「戶籍鄉鎮區」「戶籍村里」「戶籍地址」'],
+      [''],
+      ['欄位名稱', '是否必填', '說明', '範例'],
+      ['姓名*', '必填', '', '王大明'],
+      ['性別(男/女/其他)', '選填', '', '男'],
+      ['出生日期(YYYY-MM-DD)', '選填', '格式 YYYY-MM-DD', '1980-05-15'],
+      ['身份證號', '選填', '', 'A123456789'],
+      ['手機', '選填', '格式：09xxxxxxxx', '0912345678'],
+      ['市話', '選填', '', '02-12345678'],
+      ['LINE ID', '選填', '', ''],
+      ['電子郵件', '選填', '', ''],
+      ['地址', '選填', '【自動拆解】填入完整地址，系統自動偵測縣市/區/里/鄰/門牌', '台北市信義區信義里1鄰信義路5段1號'],
+      ['戶籍縣市', '選填', '若已填「地址」欄則無需填', '台北市'],
+      ['戶籍鄉鎮區', '選填', '若已填「地址」欄則無需填', '信義區'],
+      ['戶籍村里', '選填', '若已填「地址」欄則無需填', '信義里'],
+
+      ['戶籍地址', '選填', '不含縣市鄉鎮村里的門牌（或填完整地址亦可自動拆解）', '信義路5段1號'],
+      ['通訊地址', '選填', '', ''],
+      ['選區', '選填', '', '第一選區'],
+      ['職業', '選填', '', '自由業'],
+      ['服務單位', '選填', '', ''],
+      ['職稱', '選填', '', ''],
+      ['標籤(多個用逗號分隔)', '選填', '多個標籤用逗號分隔', '樁腳,支持者'],
+      ['備註', '選填', '', ''],
     ])
-    helpWs['!cols'] = [{ wch: 25 }, { wch: 30 }, { wch: 20 }]
+    helpWs['!cols'] = [{ wch: 28 }, { wch: 10 }, { wch: 42 }, { wch: 28 }]
 
     XLSX.utils.book_append_sheet(wb, ws, '選民資料')
     XLSX.utils.book_append_sheet(wb, helpWs, '欄位說明')
@@ -89,7 +106,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     const { search, city, district, village, tag } = request.query as any
     const conds = ['v.is_active = 1']
     const params: any[] = []
-    if (search) { conds.push("(v.name LIKE ? OR v.mobile LIKE ? OR v.household_address LIKE ?)"); params.push(`%${search}%`, `%${search}%`, `%${search}%`) }
+    if (search) { const es = escapeLike(search); conds.push("(v.name LIKE ? ESCAPE '\\' OR v.mobile LIKE ? ESCAPE '\\' OR v.household_address LIKE ? ESCAPE '\\')"); params.push(`%${es}%`, `%${es}%`, `%${es}%`) }
     if (city) { conds.push('v.household_city = ?'); params.push(city) }
     if (district) { conds.push('v.household_district = ?'); params.push(district) }
     if (village) { conds.push('v.household_village = ?'); params.push(village) }
@@ -101,7 +118,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
       return reply.code(403).send({ success: false, error: '唯讀帳號無法匯出資料' })
     }
 
-    const voters = db.prepare(`SELECT * FROM voters v ${where} ORDER BY v.id`).all(...params) as any[]
+    const voters = db.prepare(`SELECT * FROM voters v ${where} ORDER BY v.id LIMIT 10000`).all(...params) as any[]
     const ids = voters.map((v: any) => v.id)
     let tagMap: Record<number, string[]> = {}
     if (ids.length) {
@@ -135,7 +152,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     const rows = markedData.map((v: any) => [
       v.name, v.gender, v.birth_date, v.id_number,
       v.mobile, v.phone, v.line_id, v.email,
-      v.household_city, v.household_district, v.household_village, v.household_neighbor,
+      v.household_city, v.household_district, v.household_village,
       v.household_address, v.mailing_address, v.election_area,
       v.occupation, v.company, v.job_title,
       (tagMap[v.id] || []).join(','), v.note,
@@ -160,6 +177,18 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     const data = await request.file()
     if (!data) return reply.code(400).send({ success: false, error: '請上傳 Excel 檔案' })
 
+    // 驗證副檔名與 MIME 類型，防止上傳偽裝成 xlsx 的惡意檔案
+    const allowedExts = ['.xlsx', '.xls']
+    const fileExt = data.filename.toLowerCase().slice(data.filename.lastIndexOf('.'))
+    const allowedMimes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel', 'application/octet-stream']
+    if (!allowedExts.includes(fileExt)) {
+      return reply.code(400).send({ success: false, error: '只接受 .xlsx 或 .xls 格式的檔案' })
+    }
+    if (data.mimetype && !allowedMimes.some(m => data.mimetype.includes(m.split('/')[1]))) {
+      return reply.code(400).send({ success: false, error: '檔案類型不符，請上傳 Excel 格式' })
+    }
+
     // D-N6: support mode from query or multipart fields
     const queryMode = (request.query as any).mode
     const mode: 'insert' | 'upsert' = (queryMode === 'upsert') ? 'upsert' : 'insert'
@@ -181,13 +210,13 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
 
     const insertVoter = db.prepare(`INSERT INTO voters (
       name,gender,birth_date,id_number,mobile,phone,line_id,email,
-      household_city,household_district,household_village,household_neighbor,
+      household_city,household_district,household_village,
       household_address,mailing_address,election_area,
       occupation,company,job_title,note,created_by
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     const updateVoter = db.prepare(`UPDATE voters SET
       name=?,gender=?,birth_date=?,mobile=?,phone=?,line_id=?,email=?,
-      household_city=?,household_district=?,household_village=?,household_neighbor=?,
+      household_city=?,household_district=?,household_village=?,
       household_address=?,mailing_address=?,election_area=?,
       occupation=?,company=?,job_title=?,note=?,updated_at=datetime('now','localtime')
       WHERE id=?`)
@@ -211,6 +240,35 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
           }
         }
       })
+
+      // ── 地址自動解析 ──────────────────────────────────────
+      // 情況 A：有 __full_address 欄（地址/戶籍完整地址），直接拆解
+      if (obj.__full_address) {
+        const parsed = parseAddressFields(obj.__full_address)
+        if (!obj.household_city    && parsed.city)     obj.household_city     = parsed.city
+        if (!obj.household_district && parsed.district) obj.household_district = parsed.district
+        if (!obj.household_village  && parsed.village)  obj.household_village  = parsed.village
+        if (!obj.household_address  && parsed.address)  obj.household_address  = parsed.address
+        delete obj.__full_address
+      }
+
+      // 情況 B：__mailing_full → 通訊地址（只填通訊地址，不拆行政欄）
+      if (obj.__mailing_full) {
+        if (!obj.mailing_address) obj.mailing_address = obj.__mailing_full
+        delete obj.__mailing_full
+      }
+
+      // 情況 C：household_address 欄本身就填了完整地址（包含縣市區里）
+      //         且 household_city 為空時，自動拆解並回填
+      if (!obj.household_city && obj.household_address && looksLikeFullAddress(obj.household_address)) {
+        const parsed = parseAddressFields(obj.household_address)
+        if (parsed.city)     obj.household_city     = parsed.city
+        if (parsed.district) obj.household_district = obj.household_district || parsed.district
+        if (parsed.village)  obj.household_village  = obj.household_village  || parsed.village
+        // 只保留門牌部分（去掉已拆解的行政單位前綴）
+        if (parsed.address)  obj.household_address  = parsed.address
+      }
+      // ─────────────────────────────────────────────────────
 
       const rowNum = i + 2
       if (!obj.name || !String(obj.name).trim()) {
@@ -240,8 +298,9 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
       if (obj.birth_date) {
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/
         if (!dateRegex.test(obj.birth_date)) {
-          // Try to parse Excel serial date number
-          const serial = parseFloat(obj.birth_date)
+          // 只有純數字（含小數點）才視為 Excel serial；parseFloat("123abc")=123 是假陽性
+          // Math.round 修正浮點精度誤差（如 44644.0 → 44643.999...）
+          const serial = /^\d+(\.\d+)?$/.test(String(obj.birth_date)) ? Math.round(parseFloat(obj.birth_date)) : NaN
           if (!isNaN(serial)) {
             // Excel date serial: days since 1900-01-01 (with leap year bug)
             const excelEpoch = new Date(Date.UTC(1899, 11, 30))
@@ -265,6 +324,16 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
 
     // U-N14: dry run — return preview without inserting
     if (dryRun) {
+      // 預覽前三筆的地址解析結果
+      const addressPreview = validRows.slice(0, 3).map(({ obj, rowNum }) => ({
+        row: rowNum,
+        name: obj.name,
+        household_city: obj.household_city,
+        household_district: obj.household_district,
+        household_village: obj.household_village,
+        household_address: obj.household_address,
+      }))
+
       if (mode === 'upsert') {
         const matchField = body.match_field || 'mobile'
         const updateCount = validRows.filter((r: ValidRow) => {
@@ -276,7 +345,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
           }
           return false
         }).length
-        return reply.send({ success: true, preview: { valid_count: validRows.length, error_count: errors.length, update_count: updateCount, insert_count: validRows.length - updateCount, errors: errors.slice(0, 20).map(e => e.error), match_field: matchField } })
+        return reply.send({ success: true, preview: { valid_count: validRows.length, error_count: errors.length, update_count: updateCount, insert_count: validRows.length - updateCount, errors: errors.slice(0, 20).map(e => e.error), match_field: matchField, address_preview: addressPreview } })
       }
       return reply.send({
         success: true,
@@ -284,6 +353,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
           valid_count: validRows.length,
           error_count: failed,
           errors: errors.slice(0, 20).map(e => e.error),
+          address_preview: addressPreview,
         },
       })
     }
@@ -299,12 +369,16 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
             const matchField = body.match_field || 'mobile'
             let existing: any = null
             if (matchField === 'id_number' && obj.id_number) {
+              // 以身分證號為主鍵比對
               existing = db.prepare('SELECT id FROM voters WHERE id_number=? AND is_active=1 LIMIT 1').get(obj.id_number)
-            } else if (obj.mobile) {
-              existing = db.prepare('SELECT id FROM voters WHERE mobile=? AND is_active=1 LIMIT 1').get(obj.mobile)
-            }
-            if (!existing && obj.id_number) {
-              existing = db.prepare('SELECT id FROM voters WHERE id_number=? AND is_active=1 LIMIT 1').get(obj.id_number)
+            } else {
+              // 以手機號為主鍵比對；手機空白時再 fallback 身分證
+              if (obj.mobile) {
+                existing = db.prepare('SELECT id FROM voters WHERE mobile=? AND is_active=1 LIMIT 1').get(obj.mobile)
+              }
+              if (!existing && obj.id_number) {
+                existing = db.prepare('SELECT id FROM voters WHERE id_number=? AND is_active=1 LIMIT 1').get(obj.id_number)
+              }
             }
             if (existing) existingId = (existing as any).id
           }
@@ -313,7 +387,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
             updateVoter.run(
               obj.name, obj.gender || null, obj.birth_date || null,
               obj.mobile || null, obj.phone || null, obj.line_id || null, obj.email || null,
-              obj.household_city || null, obj.household_district || null, obj.household_village || null, obj.household_neighbor || null,
+              obj.household_city || null, obj.household_district || null, obj.household_village || null,
               obj.household_address || null, obj.mailing_address || null, obj.election_area || null,
               obj.occupation || null, obj.company || null, obj.job_title || null,
               obj.note || null, existingId
@@ -328,7 +402,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
             const r = insertVoter.run(
               obj.name, obj.gender || null, obj.birth_date || null, obj.id_number || null,
               obj.mobile || null, obj.phone || null, obj.line_id || null, obj.email || null,
-              obj.household_city || null, obj.household_district || null, obj.household_village || null, obj.household_neighbor || null,
+              obj.household_city || null, obj.household_district || null, obj.household_village || null,
               obj.household_address || null, obj.mailing_address || null, obj.election_area || null,
               obj.occupation || null, obj.company || null, obj.job_title || null,
               obj.note || null, cu.id
@@ -371,7 +445,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     if (urgency) { conds.push('p.urgency = ?'); params.push(urgency) }
     if (start_date) { conds.push('p.petition_date >= ?'); params.push(start_date) }
     if (end_date) { conds.push('p.petition_date <= ?'); params.push(end_date) }
-    if (search) { conds.push('p.content LIKE ?'); params.push(`%${search}%`) }
+    if (search) { conds.push("p.content LIKE ? ESCAPE '\\'"); params.push(`%${escapeLike(search)}%`) }
     const where = conds.length ? 'WHERE ' + conds.join(' AND ') : ''
 
     const URGENCY_LABELS: Record<string, string> = { normal: '一般', urgent: '急件', critical: '特急' }
@@ -383,7 +457,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     const petitions = db.prepare(`
       SELECT p.*, v.name as voter_name, u.name as assignee_name
       FROM petitions p LEFT JOIN voters v ON p.voter_id=v.id LEFT JOIN users u ON p.assignee_id=u.id
-      ${where} ORDER BY p.petition_date DESC
+      ${where} ORDER BY p.petition_date DESC LIMIT 10000
     `).all(...params) as any[]
 
     const rows = petitions.map((p: any) => [

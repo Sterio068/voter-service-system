@@ -50,28 +50,34 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
     if (notification.status !== 'draft') {
       return reply.code(400).send({ success: false, error: '只能發送草稿狀態的通知' })
     }
+    const SUPPORTED_TARGET_TYPES = ['all']
+    if (!SUPPORTED_TARGET_TYPES.includes(notification.target_type)) {
+      return reply.code(400).send({ success: false, error: `不支援的目標類型：${notification.target_type}` })
+    }
     // Count recipients based on target_type
-    const sentCount = (db.prepare('SELECT COUNT(*) as count FROM voters WHERE is_active=1').get() as any).count
+    const sentCount = notification.target_type === 'all'
+      ? (db.prepare('SELECT COUNT(*) as count FROM voters WHERE is_active=1').get() as any).count
+      : 0
     db.prepare(`
       UPDATE notifications
       SET status='sent', sent_count=?, sent_at=datetime('now','localtime')
       WHERE id=?
     `).run(sentCount, Number(id))
 
-    // W-9: Bulk insert contact record for notified voters (single statement)
-    try {
-      const today = new Date().toISOString().slice(0, 10)
-      const content = notification.title + (notification.content ? `：${notification.content}` : '')
-      db.exec('BEGIN')
+    // Bulk insert contact_records scoped to actual recipients
+    if (notification.target_type === 'all') {
       try {
-        db.prepare(`
-          INSERT INTO contact_records (voter_id, contact_date, contact_type, content, created_by)
-          SELECT id, ?, '通知', ?, ?
-          FROM voters WHERE is_active=1
-        `).run(today, content, cu.id)
-        db.exec('COMMIT')
-      } catch { db.exec('ROLLBACK') }
-    } catch {}
+        const today = new Date().toISOString().slice(0, 10)
+        const content = notification.title + (notification.content ? `：${notification.content}` : '')
+        db.transaction(() => {
+          db.prepare(`
+            INSERT INTO contact_records (voter_id, contact_date, contact_type, content, created_by)
+            SELECT id, ?, '通知', ?, ?
+            FROM voters WHERE is_active=1
+          `).run(today, content, cu.id)
+        })()
+      } catch {}
+    }
 
     createAuditLog(request, cu.id, { action: 'update', module: '通知管理', target_type: 'notification', target_id: Number(id), target_name: notification.title })
     return reply.send({ success: true, message: '通知已標記為已發送', sent_count: sentCount })

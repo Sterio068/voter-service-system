@@ -42,6 +42,19 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     if (role !== undefined && !['admin','supervisor','assistant','volunteer'].includes(role)) {
       return reply.code(400).send({ success: false, error: '無效的角色' })
     }
+    // Prevent self-role change to avoid accidental self-lockout
+    if (Number(id) === cu.id && role !== undefined && role !== user.role) {
+      return reply.code(403).send({ success: false, error: '不可更改自己的角色，請聯絡其他管理員' })
+    }
+    // Ensure at least one active admin always remains
+    const demotingAdmin = user.role === 'admin' && role !== undefined && role !== 'admin'
+    const deactivatingAdmin = user.role === 'admin' && is_active !== undefined && Number(is_active) === 0
+    if (demotingAdmin || deactivatingAdmin) {
+      const remainingAdmins = (db.prepare("SELECT COUNT(*) as c FROM users WHERE role='admin' AND is_active=1 AND id != ?").get(Number(id)) as any).c
+      if (remainingAdmins < 1) {
+        return reply.code(400).send({ success: false, error: '系統至少需保留一位有效的管理員' })
+      }
+    }
     db.prepare("UPDATE users SET name=?,role=?,email=?,phone=?,is_active=?,updated_at=datetime('now','localtime') WHERE id=?")
       .run(name ?? user.name, role ?? user.role, email ?? user.email, phone ?? user.phone, is_active ?? user.is_active, Number(id))
     createAuditLog(request, cu.id, { action: 'update', module: '帳號管理', target_type: 'user', target_id: Number(id), target_name: user.name })
@@ -51,8 +64,14 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   fastify.put('/api/admin/users/:id/password', { preHandler: [requirePermission('users', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const { id } = request.params as any
-    const { password } = request.body as any
+    const { password, confirm_self_password } = request.body as any
     if (!password || password.length < 8) return reply.code(400).send({ success: false, error: '密碼至少需要 8 個字元' })
+    // Require requester's own password for sensitive account operations
+    if (!confirm_self_password) return reply.code(400).send({ success: false, error: '請提供自己的密碼以確認身份' })
+    const requester = db.prepare('SELECT password FROM users WHERE id=?').get(cu.id) as any
+    if (!await bcrypt.compare(confirm_self_password, requester.password)) {
+      return reply.code(403).send({ success: false, error: '身份驗證失敗，請確認您自己的密碼' })
+    }
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id)) as any
     if (!user) return reply.code(404).send({ success: false, error: '使用者不存在' })
     const hashed = await bcrypt.hash(password, 12)
@@ -113,9 +132,10 @@ export default async function adminRoutes(fastify: FastifyInstance) {
 
   fastify.post('/api/admin/categories', { preHandler: [requirePermission('categories', 'create')] }, async (request, reply) => {
     const cu = (request as any).currentUser
-    const { type, parent_id, name, sort_order } = request.body as any
+    const { type, parent_id, name, sort_order, code, color } = request.body as any
     if (!type || !name) return reply.code(400).send({ success: false, error: '類別類型和名稱為必填' })
-    const r = db.prepare('INSERT INTO categories (type,parent_id,name,sort_order) VALUES (?,?,?,?)').run(type, parent_id ?? null, name, sort_order ?? 0)
+    const r = db.prepare('INSERT INTO categories (type,parent_id,name,sort_order,code,color) VALUES (?,?,?,?,?,?)')
+      .run(type, parent_id ?? null, name, sort_order ?? 0, code ?? null, color ?? null)
     createAuditLog(request, cu.id, { action: 'create', module: '類別管理', target_name: name })
     return reply.code(201).send({ success: true, data: { id: r.lastInsertRowid } })
   })
@@ -123,8 +143,11 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   fastify.put('/api/admin/categories/:id', { preHandler: [requirePermission('categories', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const { id } = request.params as any
-    const { name, sort_order, is_active } = request.body as any
-    db.prepare('UPDATE categories SET name=?,sort_order=?,is_active=? WHERE id=?').run(name, sort_order ?? 0, is_active ?? 1, Number(id))
+    const { name, sort_order, is_active, code, color } = request.body as any
+    const existing = db.prepare('SELECT id FROM categories WHERE id=?').get(Number(id))
+    if (!existing) return reply.code(404).send({ success: false, error: '類別不存在' })
+    db.prepare('UPDATE categories SET name=?,sort_order=?,is_active=?,code=?,color=? WHERE id=?')
+      .run(name, sort_order ?? 0, is_active ?? 1, code ?? null, color ?? null, Number(id))
     createAuditLog(request, cu.id, { action: 'update', module: '類別管理', target_id: Number(id), target_name: name })
     return reply.send({ success: true, message: '類別已更新' })
   })
@@ -132,16 +155,23 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   fastify.delete('/api/admin/categories/:id', { preHandler: [requirePermission('categories', 'delete')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const { id } = request.params as any
+    const cat = db.prepare('SELECT * FROM categories WHERE id=?').get(Number(id)) as any
+    if (cat?.is_protected) return reply.code(403).send({ success: false, error: '此類別為系統保護，無法刪除' })
     db.prepare('DELETE FROM categories WHERE id = ?').run(Number(id))
     createAuditLog(request, cu.id, { action: 'delete', module: '類別管理', target_id: Number(id) })
     return reply.send({ success: true, message: '類別已刪除' })
   })
 
   // ===== 系統設定 =====
-  fastify.get('/api/admin/settings', { preHandler: [authenticate] }, async (_, reply) => {
+  const SENSITIVE_SETTINGS = new Set([
+    'jwt_secret', 'machine_fingerprint',
+    'line_channel_access_token', 'line_channel_secret',
+    'gcal_client_id', 'gcal_client_secret',
+  ])
+  fastify.get('/api/admin/settings', { preHandler: [requirePermission('settings', 'view')] }, async (_, reply) => {
     const rows = db.prepare('SELECT * FROM settings').all() as any[]
     const result: Record<string, string | null> = {}
-    rows.forEach(s => { result[s.key] = s.value })
+    rows.forEach(s => { if (!SENSITIVE_SETTINGS.has(s.key)) result[s.key] = s.value })
     result.backup_path = process.env.BACKUPS_PATH || ''
     return reply.send({ success: true, data: result })
   })
@@ -157,9 +187,22 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true, data })
   })
 
+  const ALLOWED_SETTINGS = new Set([
+    'office_name', 'office_address', 'office_contact', 'office_phone', 'office_fax', 'office_email',
+    'auto_backup_enabled', 'auto_backup_interval', 'backup_path',
+    'idle_timeout', 'login_lock_attempts', 'login_lock_minutes',
+    'stats_exclude_inactive', 'election_year_mode',
+    'line_channel_access_token', 'line_channel_secret',
+    'gcal_client_id', 'gcal_client_secret',
+  ])
+
   fastify.put('/api/admin/settings', { preHandler: [requirePermission('settings', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const updates = request.body as Record<string, string>
+    const illegal = Object.keys(updates).filter(k => !ALLOWED_SETTINGS.has(k))
+    if (illegal.length > 0) {
+      return reply.code(400).send({ success: false, error: `不允許修改的設定項目：${illegal.join(', ')}` })
+    }
     const ins = db.prepare("INSERT INTO settings(key,value,updated_at) VALUES(?,?,datetime('now','localtime')) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at")
     db.exec('BEGIN')
     try {
@@ -315,13 +358,32 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   })
 
   // ===== F-3: Frontend Error Collection =====
-  // POST /api/client-errors (no auth required so errors can always be reported)
+  // POST /api/client-errors — IP-based rate limit: max 20 req / 10 min
+  const clientErrorCounts = new Map<string, { count: number; resetAt: number }>()
   fastify.post('/api/client-errors', async (request, reply) => {
-    const { message, source, lineno, colno, stack, url } = request.body as any
+    const ip = request.ip || 'unknown'
+    const now = Date.now()
+    const windowMs = 10 * 60 * 1000
+    const entry = clientErrorCounts.get(ip)
+    if (entry && now < entry.resetAt) {
+      if (entry.count >= 20) return reply.code(429).send({ success: false, error: '請求過於頻繁' })
+      entry.count++
+    } else {
+      clientErrorCounts.set(ip, { count: 1, resetAt: now + windowMs })
+    }
+    // Truncate fields to prevent log flooding
+    const { message, source, stack, url } = request.body as any
     const user_id = (request as any).currentUser?.id ?? null
     const user_agent = request.headers['user-agent'] ?? null
     db.prepare(`INSERT INTO client_errors(message,source,stack,user_agent,user_id,url) VALUES(?,?,?,?,?,?)`)
-      .run(message ?? null, source ?? null, stack ?? null, user_agent, user_id, url ?? null)
+      .run(
+        String(message ?? '').slice(0, 500),
+        String(source ?? '').slice(0, 200),
+        String(stack ?? '').slice(0, 2000),
+        user_agent,
+        user_id,
+        String(url ?? '').slice(0, 500)
+      )
     return reply.send({ success: true })
   })
 
@@ -332,7 +394,8 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   })
 
   // ===== E-2: System Updates (lightweight polling) =====
-  fastify.get('/api/system/updates', async (request, reply) => {
+  // Requires petitions.view as minimum — prevents zero-permission roles from polling audit activity
+  fastify.get('/api/system/updates', { preHandler: [requirePermission('petitions', 'view')] }, async (request, reply) => {
     const since = (request.query as any).since || new Date(Date.now() - 60000).toISOString()
     const changes = db.prepare(`
       SELECT target_type, target_id, action, created_at

@@ -7,7 +7,7 @@ import {
   BellOutlined, AuditOutlined, TagsOutlined, AppstoreOutlined,
   BarChartOutlined, SunOutlined, MoonOutlined, CheckSquareOutlined,
   QuestionOutlined, SwapOutlined, GroupOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
-  MenuOutlined, CloseOutlined
+  MenuOutlined, CloseOutlined, BookOutlined, GiftOutlined, ShopOutlined, DollarOutlined, ProfileOutlined
 } from '@ant-design/icons'
 
 function useIsMobile() {
@@ -190,6 +190,10 @@ export default function MainLayout() {
       <SectionLabel label="日常" collapsed={collapsed} />
       <NavItem icon={<MailOutlined />} label="公文管理" path="/documents" collapsed={collapsed} />
       <NavItem icon={<CalendarOutlined />} label="行程管理" path="/schedules" collapsed={collapsed} />
+      <NavItem icon={<GiftOutlined />} label="禮儀記錄" path="/ceremonies" collapsed={collapsed} />
+      <NavItem icon={<ShopOutlined />} label="廠商管理" path="/vendors" collapsed={collapsed} />
+      <NavItem icon={<DollarOutlined />} label="收支統計" path="/expenses" collapsed={collapsed} />
+      <NavItem icon={<ProfileOutlined />} label="提案追蹤" path="/proposals" collapsed={collapsed} />
       <NavItem icon={<CheckSquareOutlined />} label="待辦事項" path="/tasks" collapsed={collapsed} />
       {isAdminOrSupervisor && (
         <>
@@ -202,6 +206,8 @@ export default function MainLayout() {
           <NavItem icon={<SwapOutlined />} label="員工交接" path="/admin/handover" collapsed={collapsed} />
         </>
       )}
+      <SectionLabel label="說明" collapsed={collapsed} />
+      <NavItem icon={<BookOutlined />} label="使用說明" path="/help" collapsed={collapsed} />
     </>
   )
 

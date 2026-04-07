@@ -3,6 +3,91 @@ import path from 'path'
 import fs from 'fs'
 import { deflateSync } from 'zlib'
 
+// ── 授權設定（只有你知道）────────────────────────────────────────
+const VENDOR_PASSWORD = 'O100163793'
+
+// ── 取得機器指紋（MAC + 電腦名稱 → HMAC 雜湊）────────────────────
+function getMachineFingerprint(): string {
+  const { createHmac } = require('crypto') as typeof import('crypto')
+  const { networkInterfaces, hostname } = require('os') as typeof import('os')
+  const ifaces = networkInterfaces()
+  let mac = ''
+  for (const list of Object.values(ifaces)) {
+    if (!list) continue
+    for (const iface of list) {
+      if (!iface.internal && iface.mac && iface.mac !== '00:00:00:00:00:00') {
+        mac = iface.mac; break
+      }
+    }
+    if (mac) break
+  }
+  return createHmac('sha256', VENDOR_PASSWORD).update(`${mac}|${hostname()}`).digest('hex').slice(0, 32)
+}
+
+// ── 解鎖視窗：指紋不符時要求輸入密碼 ─────────────────────────────
+function showUnlockWindow(): Promise<boolean> {
+  return new Promise(resolve => {
+    const win = new BrowserWindow({
+      width: 380, height: 230, resizable: false, title: '軟體授權',
+      webPreferences: { nodeIntegration: true, contextIsolation: false },
+    })
+    win.setMenu(null)
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui}
+body{background:#f0f2f5;display:flex;align-items:center;justify-content:center;height:100vh}
+.c{background:#fff;border-radius:8px;padding:28px;width:320px;box-shadow:0 2px 12px rgba(0,0,0,.12)}
+h3{font-size:16px;margin-bottom:6px;color:#333}p{font-size:12px;color:#888;margin-bottom:16px}
+input{width:100%;border:1px solid #d9d9d9;border-radius:4px;padding:8px 10px;font-size:14px;outline:none}
+input:focus{border-color:#1677ff}button{width:100%;background:#1677ff;color:#fff;border:none;
+border-radius:4px;padding:9px;font-size:14px;cursor:pointer;margin-top:12px}
+.err{color:#d32f2f;font-size:12px;margin-top:8px;display:none}</style></head><body>
+<div class="c"><h3>🔐 需要授權</h3>
+<p>此軟體尚未在本機啟動，請聯絡供應商取得授權密碼。</p>
+<input id="p" type="password" placeholder="請輸入授權密碼" onkeydown="if(event.key==='Enter')go()">
+<div class="err" id="e">密碼錯誤，請重試</div>
+<button onclick="go()">確認</button></div>
+<script>
+const {ipcRenderer}=require('electron')
+function go(){document.getElementById('e').style.display='none';ipcRenderer.send('unlock-attempt',document.getElementById('p').value)}
+ipcRenderer.on('unlock-failed',()=>{document.getElementById('e').style.display='block';document.getElementById('p').value='';document.getElementById('p').focus()})
+</script></body></html>`
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+
+    let resolved = false
+    const handler = (_: any, pwd: string) => {
+      if (pwd === VENDOR_PASSWORD) {
+        resolved = true
+        ipcMain.removeListener('unlock-attempt', handler)
+        win.close()
+        resolve(true)
+      } else {
+        win.webContents.send('unlock-failed')
+      }
+    }
+    ipcMain.on('unlock-attempt', handler)
+    win.on('closed', () => { ipcMain.removeListener('unlock-attempt', handler); if (!resolved) resolve(false) })
+  })
+}
+
+// ── 指紋驗證主流程 ────────────────────────────────────────────────
+async function checkAndRegisterMachine(): Promise<boolean> {
+  if (process.env.NODE_ENV !== 'production') return true
+  try {
+    const { db } = require('../server/db/index') as typeof import('../server/db/index')
+    const stored = db.prepare("SELECT value FROM settings WHERE key='machine_fingerprint'").get() as any
+    const current = getMachineFingerprint()
+    if (stored?.value === current) return true
+    // 指紋不符或尚未登記 → 要求解鎖
+    const ok = await showUnlockWindow()
+    if (ok) {
+      db.prepare("INSERT INTO settings(key,value) VALUES('machine_fingerprint',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(current)
+    }
+    return ok
+  } catch {
+    return false // DB 異常視為未授權，fail closed
+  }
+}
+
 const PORT = 8080
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -284,8 +369,24 @@ button:hover{background:#0958d9;}</style></head><body>
   mainWindow.on('closed', () => { mainWindow = null })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    // Only open external browser for http/https links; deny everything else
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url)
+    }
     return { action: 'deny' }
+  })
+
+  // Prevent navigation away from the app origin
+  const allowedOrigins = [
+    `http://localhost:${PORT}`,
+    'http://localhost:5173',
+  ]
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    const origin = new URL(navigationUrl).origin
+    if (!allowedOrigins.some(o => navigationUrl.startsWith(o))) {
+      event.preventDefault()
+      console.warn('[Security] Blocked navigation to:', navigationUrl)
+    }
   })
 
   setupMenu()
@@ -360,10 +461,10 @@ function setupMenu() {
       label: '視窗',
       submenu: [
         { label: '重新載入', role: 'reload' },
-        { label: '開發者工具', role: 'toggleDevTools' },
-        { type: 'separator' },
-        { label: '最小化', role: 'minimize' },
-        { label: '全螢幕', role: 'togglefullscreen' },
+        ...(process.env.NODE_ENV !== 'production' ? [{ label: '開發者工具', role: 'toggleDevTools' as const }] : []),
+        { type: 'separator' as const },
+        { label: '最小化', role: 'minimize' as const },
+        { label: '全螢幕', role: 'togglefullscreen' as const },
       ],
     },
   ]
@@ -373,6 +474,16 @@ function setupMenu() {
 // ── IPC ───────────────────────────────────────────────────────
 function setupIPC() {
   ipcMain.handle('get-app-version', () => app.getVersion())
+
+  // 隱藏維護功能：清除機器指紋（換電腦時用）
+  ipcMain.handle('reset-fingerprint', (_: any, pwd: string) => {
+    if (pwd !== VENDOR_PASSWORD) return { ok: false }
+    try {
+      const { db } = require('../server/db/index') as typeof import('../server/db/index')
+      db.prepare("DELETE FROM settings WHERE key='machine_fingerprint'").run()
+      return { ok: true }
+    } catch { return { ok: false } }
+  })
   ipcMain.handle('get-data-path', () => loadConfig().dataPath || app.getPath('userData'))
   ipcMain.handle('open-data-folder', () => {
     const cfg = loadConfig()
@@ -404,6 +515,19 @@ app.whenReady().then(async () => {
     process.env.DATA_PATH = dataPath
     process.env.UPLOADS_PATH = path.join(dataPath, 'uploads')
     process.env.BACKUPS_PATH = path.join(dataPath, 'backups')
+    // 先執行 migration 初始化 DB（不啟動 HTTP server）
+    // 讓授權驗證能讀取 settings 表，且 server 不會在驗證前就對外開放
+    const { runMigrations } = require('../server/db/migrate') as typeof import('../server/db/migrate')
+    runMigrations()
+
+    // 授權驗證必須在 server 啟動前完成，避免 API 在解鎖期間對區網開放
+    const licensed = await checkAndRegisterMachine()
+    if (!licensed) {
+      dialog.showErrorBox('未授權', '軟體授權驗證失敗，程式即將關閉。')
+      app.quit()
+      return
+    }
+
     const ok = await startServer()
     if (!ok) {
       app.quit()

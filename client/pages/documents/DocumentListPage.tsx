@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import AttachmentUpload from '../../components/AttachmentUpload'
 import { Table, Button, Space, Input, Select, Tag, Typography, Card, Drawer, Form, DatePicker, message, Tabs, Row, Col, Divider, Descriptions, Empty, Popconfirm } from 'antd'
-import { PlusOutlined, SearchOutlined, PrinterOutlined, FileWordOutlined, EyeOutlined, FilterOutlined, DeleteOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, PrinterOutlined, FileWordOutlined, EyeOutlined, FilterOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
+import AIButton from '../../components/ai/AIButton'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 
@@ -80,8 +81,35 @@ ${doc.content_summary ? `<div class="subject">說明</div><div class="content">$
   setTimeout(() => { if (!w.closed) { w.focus(); w.print() } }, 500)
 }
 
-function exportDocumentWord(doc: any, officeName: string) {
+function exportDocumentWord(doc: any, officeName: string, officeInfo?: { address?: string; phone?: string; fax?: string; email?: string; contact?: string }) {
   const isIncoming = doc.doc_type === 'incoming'
+
+  // 機關聯絡資訊區塊（地址、聯絡人、電話、傳真、電子信箱）
+  const contactLines: string[] = []
+  if (officeInfo?.address)  contactLines.push(`<p class="contact-line"><span class="cl">地　　址：</span>${officeInfo.address}</p>`)
+  if (officeInfo?.contact)  contactLines.push(`<p class="contact-line"><span class="cl">聯 絡 人：</span>${officeInfo.contact}</p>`)
+  if (officeInfo?.phone)    contactLines.push(`<p class="contact-line"><span class="cl">電　　話：</span>${officeInfo.phone}</p>`)
+  if (officeInfo?.fax)      contactLines.push(`<p class="contact-line"><span class="cl">傳　　真：</span>${officeInfo.fax}</p>`)
+  if (officeInfo?.email)    contactLines.push(`<p class="contact-line"><span class="cl">電子信箱：</span>${officeInfo.email}</p>`)
+  const contactBlock = contactLines.length > 0
+    ? `<div class="contact-block">${contactLines.join('')}</div>`
+    : ''
+
+  // 說明欄：將換行後的每行包成條列（一、二、三…）
+  let mingLines = ''
+  if (doc.content_summary) {
+    const lines = doc.content_summary.split('\n').map((l: string) => l.trim()).filter(Boolean)
+    const nums = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+    if (lines.length === 1) {
+      mingLines = `<p style="margin:0 0 0 2em; text-indent:-2em;">${lines[0]}</p>`
+    } else {
+      mingLines = lines.map((l: string, i: number) => {
+        const n = i < nums.length ? nums[i] : String(i + 1)
+        return `<p style="margin:0 0 0 2em; text-indent:-2em;">${n}、${l}</p>`
+      }).join('')
+    }
+  }
+
   const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
 <head><meta charset="UTF-8">
 <!--[if gte mso 9]><xml>
@@ -94,7 +122,7 @@ function exportDocumentWord(doc: any, officeName: string) {
 <style>
 @page {
   size: 21cm 29.7cm;
-  margin: 2.5cm 2.5cm 2cm 3cm;
+  margin: 3cm 2.5cm 2.5cm 3cm;
   mso-page-orientation: portrait;
 }
 body {
@@ -103,111 +131,102 @@ body {
   line-height: 200%;
   color: #000000;
   margin: 0;
+  padding: 0;
 }
-table {
-  border-collapse: collapse;
-  width: 100%;
-}
-.outer {
-  border: 2pt solid #000000;
-  width: 100%;
-}
-.outer td {
-  padding: 4pt 8pt;
-  vertical-align: top;
-}
+p { margin: 0; padding: 0; line-height: 200%; }
 .agency {
-  font-size: 20pt;
+  font-size: 22pt;
   font-weight: bold;
   text-align: center;
-  letter-spacing: 6pt;
-  padding: 8pt 4pt;
-  border-bottom: 2pt solid #000000;
+  letter-spacing: 8pt;
+  margin-bottom: 0;
 }
-.speed-row {
-  border-bottom: 1pt solid #000000;
-  font-size: 12pt;
+.doc-type {
+  font-size: 18pt;
+  font-weight: bold;
+  text-align: center;
+  letter-spacing: 12pt;
+  margin-top: 0;
+  margin-bottom: 14pt;
+}
+.field-line {
+  margin: 0;
+  padding: 0;
+  line-height: 220%;
 }
 .field-label {
+  font-size: 14pt;
+}
+.section-title {
+  font-size: 14pt;
   font-weight: bold;
-  white-space: nowrap;
+  margin-top: 6pt;
+  margin-bottom: 0;
 }
-.mid-row {
-  border-bottom: 1pt solid #000000;
+.section-body {
+  font-size: 14pt;
+  margin-left: 2em;
+  margin-bottom: 0;
 }
-.section-row {
-  border-bottom: 1pt solid #000000;
-  padding: 6pt 8pt;
+.divider {
+  border: none;
+  border-top: 1pt solid #000;
+  margin: 12pt 0 8pt 0;
 }
-.sign-area {
+.copy-section {
+  font-size: 12pt;
+  line-height: 190%;
+  margin-top: 4pt;
+}
+.sign-section {
   text-align: right;
   font-size: 14pt;
-  line-height: 250%;
-  padding-top: 12pt;
+  line-height: 220%;
+  margin-top: 20pt;
 }
-.copy-area {
+.contact-block {
+  margin-bottom: 6pt;
+}
+.contact-line {
+  margin: 0;
+  padding: 0;
   font-size: 12pt;
-  border-top: 1pt solid #000000;
-  margin-top: 8pt;
-  padding-top: 4pt;
-  line-height: 180%;
+  line-height: 190%;
+}
+.cl {
+  font-size: 12pt;
 }
 </style>
 </head>
 <body>
-<table class="outer">
-  <tr>
-    <td colspan="4" class="agency">${officeName}</td>
-  </tr>
-  <tr class="speed-row">
-    <td width="25%"><span class="field-label">速　　別：</span>普通件</td>
-    <td width="25%"><span class="field-label">密　　等：</span>普通</td>
-    <td width="25%">&nbsp;</td>
-    <td width="25%">&nbsp;</td>
-  </tr>
-  <tr class="mid-row">
-    <td colspan="2"><span class="field-label">${isIncoming ? '來文機關' : '受　文　者'}：</span>${doc.org_name || '　　　　'}</td>
-    <td><span class="field-label">發文日期：</span>${toROC(doc.doc_date)}</td>
-    <td><span class="field-label">發文字號：</span>${doc.doc_number}</td>
-  </tr>
-  ${isIncoming ? `
-  <tr class="mid-row">
-    <td><span class="field-label">來文字號：</span>${doc.org_doc_number || '　　　　'}</td>
-    <td><span class="field-label">來文日期：</span>${toROC(doc.org_doc_date)}</td>
-    <td><span class="field-label">承　辦　人：</span>${doc.assignee_name || '　　'}</td>
-    <td><span class="field-label">類　　別：</span>${doc.category || '　　'}</td>
-  </tr>` : `
-  <tr class="mid-row">
-    <td><span class="field-label">承　辦　人：</span>${doc.assignee_name || '　　'}</td>
-    <td><span class="field-label">類　　別：</span>${doc.category || '　　'}</td>
-    <td colspan="2"><span class="field-label">附　　　件：</span></td>
-  </tr>`}
-  <tr>
-    <td colspan="4" class="section-row">
-      <span class="field-label">主　　　旨：</span>${doc.subject || ''}。
-    </td>
-  </tr>
-  ${doc.content_summary ? `
-  <tr>
-    <td colspan="4" class="section-row">
-      <div><span class="field-label">說　　　明：</span></div>
-      <div style="margin-left:2em; white-space:pre-wrap; line-height:200%;">${doc.content_summary.replace(/\n/g, '<br>')}</div>
-    </td>
-  </tr>` : ''}
-  <tr>
-    <td colspan="4" style="padding: 12pt 8pt;">
-      <div class="sign-area">
-        ${officeName}<br>
-        機關首長：________________<br>
-        &nbsp;
-      </div>
-      <div class="copy-area">
-        正　　本：${isIncoming ? (doc.org_name || '（來文機關）') : '（受文者）'}<br>
-        副　　本：
-      </div>
-    </td>
-  </tr>
-</table>
+<p class="agency">${officeName}</p>
+<p class="doc-type">函</p>
+
+${contactBlock}
+
+<p class="field-line"><span class="field-label">受文者：</span>${doc.org_name || '　　　　　　'}</p>
+<p class="field-line"><span class="field-label">發文日期：</span>${toROC(doc.doc_date)}</p>
+<p class="field-line"><span class="field-label">發文字號：</span>${doc.doc_number || '　　字第　　　　號'}</p>
+<p class="field-line"><span class="field-label">速　　別：</span>普通件</p>
+<p class="field-line"><span class="field-label">密等及解密條件或保密期限：</span>普通</p>
+<p class="field-line"><span class="field-label">附　　件：</span>${isIncoming ? (doc.org_doc_number ? `來文字號 ${doc.org_doc_number}` : '無') : '無'}</p>
+
+<br>
+<p class="field-line"><span class="field-label">主　　旨：</span>${doc.subject || ''}。</p>
+
+${doc.content_summary ? `
+<p class="section-title">說　　明：</p>
+<div class="section-body">${mingLines}</div>
+` : ''}
+
+<br>
+<p class="field-line" style="font-size:12pt;">正　　本：${isIncoming ? (doc.org_name || '（來文機關）') : (doc.org_name || '（受文者）')}</p>
+<p class="field-line" style="font-size:12pt;">副　　本：</p>
+
+<div class="sign-section">
+  ${officeName}　<br>
+  首長：
+</div>
 </body>
 </html>`
 
@@ -215,7 +234,7 @@ table {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${doc.doc_number}.doc`
+  a.download = `${doc.doc_number || '公文'}.doc`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -235,12 +254,23 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
   const [users, setUsers] = useState<any[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [officeName, setOfficeName] = useState('選民服務系統')
+  const [officeInfo, setOfficeInfo] = useState<{ address?: string; phone?: string; fax?: string; email?: string; contact?: string }>({})
   const [petitionOptions, setPetitionOptions] = useState<any[]>([])
 
   useEffect(() => {
     api.get('/users/list').then(r => setUsers(r.data.data || [])).catch(() => {})
     api.get('/admin/categories?type=doc_category').then(r => setCategories(r.data.data?.map((c: any) => c.name) || [])).catch(() => {})
-    api.get('/admin/settings').then(r => { if (r.data.data?.office_name) setOfficeName(r.data.data.office_name) }).catch(() => {})
+    api.get('/admin/settings').then(r => {
+      const s = r.data.data || {}
+      if (s.office_name) setOfficeName(s.office_name)
+      setOfficeInfo({
+        address: s.office_address || '',
+        phone: s.office_phone || '',
+        fax: s.office_fax || '',
+        email: s.office_email || '',
+        contact: s.office_contact || '',
+      })
+    }).catch(() => {})
   }, [])
 
   const searchPetitions = async (val: string) => {
@@ -399,7 +429,25 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
             <Col span={12}><Form.Item name="deadline" label="處理期限"><DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" /></Form.Item></Col>
             <Col span={12}><Form.Item name="assignee_id" label="承辦人"><Select allowClear>{users.map(u => <Option key={u.id} value={u.id}>{u.name}</Option>)}</Select></Form.Item></Col>
           </Row>
-          <Form.Item name="content_summary" label="內容摘要"><TextArea rows={3} /></Form.Item>
+          <Form.Item
+            name="content_summary"
+            label={
+              <Space>
+                <span>內容摘要</span>
+                <AIButton
+                  label="AI 摘要"
+                  size="small"
+                  type="link"
+                  tooltip="根據主旨用 AI 生成摘要草稿"
+                  endpoint="/ai/summarize"
+                  payload={{ text: form.getFieldValue('content_summary') || form.getFieldValue('subject') || '', type: 'general' }}
+                  onResult={(d) => form.setFieldsValue({ content_summary: d.summary })}
+                />
+              </Space>
+            }
+          >
+            <TextArea rows={3} />
+          </Form.Item>
           <Form.Item name="related_petition_id" label="關聯陳情">
             <Select
               showSearch allowClear placeholder="輸入案號或選民姓名搜尋"
@@ -421,7 +469,7 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
       <Drawer
         title={selectedDoc ? `${selectedDoc.doc_type === 'incoming' ? '收文' : '發文'}　${selectedDoc.doc_number}` : '公文詳情'}
         open={detailDrawerOpen}
-        onClose={() => setDetailDrawerOpen(false)}
+        onClose={() => { setDetailDrawerOpen(false); transferForm.resetFields() }}
         width={600}
         extra={
           <Space>
@@ -433,7 +481,7 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
             </Button>
             <Button
               icon={<FileWordOutlined />}
-              onClick={() => selectedDoc && exportDocumentWord(selectedDoc, officeName)}
+              onClick={() => selectedDoc && exportDocumentWord(selectedDoc, officeName, officeInfo)}
             >
               匯出 Word
             </Button>
@@ -473,7 +521,20 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
             <Descriptions.Item label="狀態">
               <Tag color={STATUS_COLORS[selectedDoc.status]}>{STATUS_LABELS[selectedDoc.status]}</Tag>
             </Descriptions.Item>
-            <Descriptions.Item label="主旨" span={2}>{selectedDoc.subject}</Descriptions.Item>
+            <Descriptions.Item label="主旨" span={2}>
+              <Space wrap>
+                <span>{selectedDoc.subject}</span>
+                <AIButton
+                  label="AI 摘要"
+                  size="small"
+                  type="dashed"
+                  tooltip="用 AI 整理公文重點"
+                  endpoint="/ai/summarize"
+                  payload={{ text: selectedDoc.content_summary || selectedDoc.subject, type: 'general' }}
+                  onResult={(d) => message.info({ content: d.summary, duration: 10, icon: <RobotOutlined /> })}
+                />
+              </Space>
+            </Descriptions.Item>
             {selectedDoc.content_summary && (
               <Descriptions.Item label="內容摘要" span={2}>
                 <div style={{ whiteSpace: 'pre-wrap' }}>{selectedDoc.content_summary}</div>

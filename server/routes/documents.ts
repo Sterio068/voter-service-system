@@ -25,7 +25,10 @@ function generateDocNumber(type: string): string {
 
 export default async function documentRoutes(fastify: FastifyInstance) {
   fastify.get('/api/documents', { preHandler: [requirePermission('documents', 'view')] }, async (request, reply) => {
-    const { page = 1, pageSize = 20, doc_type, status, category, assignee_id, start_date, end_date, search } = request.query as any
+    const _q = request.query as any
+    const page = Math.max(1, Number(_q.page) || 1)
+    const pageSize = Math.min(200, Math.max(1, Number(_q.pageSize) || 20))
+    const { doc_type, status, category, assignee_id, start_date, end_date, search } = _q
     const conds: string[] = []
     const params: any[] = []
     if (doc_type) { conds.push('d.doc_type=?'); params.push(doc_type) }

@@ -236,9 +236,12 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_voters_mobile ON voters(mobile);
     CREATE INDEX IF NOT EXISTS idx_voters_active ON voters(is_active);
     CREATE INDEX IF NOT EXISTS idx_voters_city ON voters(household_city);
+    CREATE INDEX IF NOT EXISTS idx_voters_city_district ON voters(household_city, household_district);
+    CREATE INDEX IF NOT EXISTS idx_voters_city_district_village ON voters(household_city, household_district, household_village);
     CREATE INDEX IF NOT EXISTS idx_voter_tags_tag ON voter_tags(tag);
     CREATE INDEX IF NOT EXISTS idx_voter_tags_voter ON voter_tags(voter_id);
     CREATE INDEX IF NOT EXISTS idx_petitions_status ON petitions(status);
+    CREATE INDEX IF NOT EXISTS idx_petitions_status_created ON petitions(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_petitions_voter ON petitions(voter_id);
     CREATE INDEX IF NOT EXISTS idx_petitions_date ON petitions(petition_date);
     CREATE INDEX IF NOT EXISTS idx_petitions_assignee ON petitions(assignee_id);
@@ -574,6 +577,10 @@ export function runMigrations() {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_status ON notifications(status, created_at)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_schedules_type ON schedules(schedule_type)') } catch {}
+  // 複合索引：縣市/區篩選 + 陳情 status+created_at 排序優化
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_voters_city_district ON voters(household_city, household_district)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_voters_city_district_village ON voters(household_city, household_district, household_village)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_petitions_status_created ON petitions(status, created_at)') } catch {}
 
   // B-1: Index for birthday lookups (month-day portion)
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_voters_birth_date ON voters(birth_date) WHERE birth_date IS NOT NULL") } catch {}
@@ -608,10 +615,201 @@ export function runMigrations() {
     )`)
   } catch {}
 
+  // E-1: 禮儀 / 廠商 / 收支模組
+  db.exec(`CREATE TABLE IF NOT EXISTS gift_categories (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    unit        TEXT DEFAULT '份',
+    default_price INTEGER DEFAULT 0,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    sort_order  INTEGER DEFAULT 0
+  )`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS vendors (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    category        TEXT DEFAULT 'other',
+    contact_person  TEXT,
+    phone           TEXT,
+    line_id         TEXT,
+    address         TEXT,
+    bank_account    TEXT,
+    note            TEXT,
+    rating          INTEGER DEFAULT 0,
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  )`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS ceremony_records (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    schedule_id       INTEGER REFERENCES schedules(id) ON DELETE SET NULL,
+    voter_id          INTEGER REFERENCES voters(id) ON DELETE SET NULL,
+    ceremony_type     TEXT NOT NULL DEFAULT 'other',
+    recipient_name    TEXT NOT NULL,
+    recipient_relation TEXT,
+    event_date        TEXT,
+    event_location    TEXT,
+    is_joint          INTEGER DEFAULT 0,
+    joint_note        TEXT,
+    status            TEXT NOT NULL DEFAULT 'planned',
+    total_amount      INTEGER DEFAULT 0,
+    note              TEXT,
+    created_by        INTEGER REFERENCES users(id),
+    created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  )`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS ceremony_items (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    ceremony_id     INTEGER NOT NULL REFERENCES ceremony_records(id) ON DELETE CASCADE,
+    category_id     INTEGER REFERENCES gift_categories(id) ON DELETE SET NULL,
+    item_name       TEXT NOT NULL,
+    vendor_id       INTEGER REFERENCES vendors(id) ON DELETE SET NULL,
+    quantity        INTEGER DEFAULT 1,
+    unit_price      INTEGER DEFAULT 0,
+    amount          INTEGER DEFAULT 0,
+    payment_method  TEXT DEFAULT 'cash',
+    payment_status  TEXT DEFAULT 'pending',
+    receipt_no      TEXT,
+    note            TEXT
+  )`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS expense_budgets (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    year            INTEGER NOT NULL,
+    month           INTEGER,
+    budget_type     TEXT DEFAULT 'total',
+    reference_id    TEXT,
+    amount          INTEGER NOT NULL DEFAULT 0,
+    note            TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  )`)
+
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_ceremony_schedule ON ceremony_records(schedule_id)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_ceremony_voter ON ceremony_records(voter_id)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_ceremony_date ON ceremony_records(event_date)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_ceremony_type ON ceremony_records(ceremony_type)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_ceremony_items_ceremony ON ceremony_items(ceremony_id)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_ceremony_items_vendor ON ceremony_items(vendor_id)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_vendors_active ON vendors(is_active)') } catch {}
+
+  // E-2: 公祭特殊行程資訊欄位
+  try { db.exec("ALTER TABLE schedules ADD COLUMN funeral_info TEXT") } catch {}
+  // E-3: 選民頭銜、團體成員頭銜
+  try { db.exec("ALTER TABLE voters ADD COLUMN title TEXT") } catch {}
+  try { db.exec("ALTER TABLE group_members ADD COLUMN title TEXT") } catch {}
+
+  // E-4: categories 擴充欄位（行程類型用）
+  try { db.exec("ALTER TABLE categories ADD COLUMN code TEXT") } catch {}
+  try { db.exec("ALTER TABLE categories ADD COLUMN color TEXT") } catch {}
+  try { db.exec("ALTER TABLE categories ADD COLUMN is_protected INTEGER DEFAULT 0") } catch {}
+
+  // E-4: 預設行程類型 seed
+  try {
+    const existing = db.prepare("SELECT COUNT(*) as c FROM categories WHERE type='schedule_type'").get() as any
+    if (!existing.c) {
+      const ins = db.prepare("INSERT INTO categories (type,code,name,color,sort_order,is_protected) VALUES (?,?,?,?,?,?)")
+      db.exec('BEGIN')
+      try {
+        for (const [i, [code, name, color, prot]] of [
+          ['meeting',        '會議',   '#007AFF', 0],
+          ['visit',          '拜訪',   '#52c41a',  0],
+          ['inspection',     '會勘',   '#fa8c16',  0],
+          ['event',          '活動',   '#722ed1',  0],
+          ['dinner',         '餐敘',   '#13c2c2',  0],
+          ['service',        '選民服務', '#36cfc9', 0],
+          ['consultation',   '法律諮詢','#fa541c',  0],
+          ['wedding',        '婚禮',   '#f759ab',  0],
+          ['public_memorial','公祭',   '#4a1942',  1],
+          ['other',          '其他',   '#8c8c8c',  0],
+        ].entries()) ins.run('schedule_type', code, name, color, i + 1, prot)
+        db.exec('COMMIT')
+      } catch (e) { db.exec('ROLLBACK') }
+    }
+  } catch {}
+
+  // E-1: Seed default gift categories
+  try {
+    const existing = db.prepare("SELECT COUNT(*) as c FROM gift_categories").get() as any
+    if (!existing.c) {
+      const ins = db.prepare("INSERT INTO gift_categories (name, unit, default_price, sort_order) VALUES (?,?,?,?)")
+      db.exec('BEGIN')
+      try {
+        for (const [i, [n, u, p]] of [
+          ['現金紅包', '包', 2000],
+          ['奠儀', '包', 2000],
+          ['喜儀', '包', 2000],
+          ['花籃', '個', 1200],
+          ['花圈', '個', 1500],
+          ['禮盒', '份', 800],
+          ['餐盒', '份', 150],
+          ['贈品', '份', 500],
+        ].entries()) ins.run(n, u, p, i + 1)
+        db.exec('COMMIT')
+      } catch (e) { db.exec('ROLLBACK') }
+    }
+  } catch {}
+
+  // Security: voters.mobile UNIQUE index（防止競態條件產生重複選民）
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_voters_mobile_unique ON voters(mobile) WHERE mobile IS NOT NULL AND mobile != \'\'') } catch {}
+
+  // group_members.title 欄位（供群組成員頭銜使用）
+  try { db.exec("ALTER TABLE group_members ADD COLUMN title TEXT") } catch {}
+
+  // Performance: 複合索引優化
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_petitions_active_status ON petitions(is_active, status, created_at)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_contact_records_voter_date ON contact_records(voter_id, contact_date DESC)') } catch {}
+
   // D-2: Insert schema version record
   try {
     db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('4.1.0', 'v4.0 audit optimizations: merge history, views, indexes')
   } catch {}
+  try {
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('5.0.0', 'E-1: 禮儀 / 廠商 / 收支模組')
+  } catch {}
+  try {
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('5.1.0', 'Security: mobile unique index, group_members.title, compound indexes')
+  } catch {}
+
+  // P-1: 提案追蹤模組
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS proposals (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      session             TEXT,
+      meeting             TEXT,
+      proposal_number     TEXT,
+      proposal_date       TEXT,
+      title               TEXT NOT NULL,
+      category            TEXT,
+      proposal_type       TEXT DEFAULT '議員提案',
+      proposer            TEXT,
+      co_signers          TEXT,
+      content             TEXT,
+      status              TEXT NOT NULL DEFAULT 'pending',
+      result              TEXT,
+      track_note          TEXT,
+      source_url          TEXT,
+      related_petition_ids TEXT DEFAULT '[]',
+      created_by          INTEGER REFERENCES users(id),
+      created_at          TEXT DEFAULT (datetime('now','localtime')),
+      updated_at          TEXT DEFAULT (datetime('now','localtime')),
+      is_active           INTEGER NOT NULL DEFAULT 1
+    )`)
+    db.exec('CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status, created_at)')
+    db.exec('CREATE INDEX IF NOT EXISTS idx_proposals_date ON proposals(proposal_date)')
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('5.2.0', 'P-1: 提案追蹤模組')
+  } catch(e: any) { if (!e.message?.includes('already exists')) console.error('proposals migration:', e.message) }
+
+  // AI-1: AI 設定
+  try {
+    db.prepare("INSERT OR IGNORE INTO settings(key,value,description) VALUES(?,?,?)").run('ai_provider', 'none', 'AI 供應商：none / anthropic / openai / ollama')
+    db.prepare("INSERT OR IGNORE INTO settings(key,value,description) VALUES(?,?,?)").run('ai_model', '', 'AI 模型名稱')
+    db.prepare("INSERT OR IGNORE INTO settings(key,value,description) VALUES(?,?,?)").run('ai_api_key', '', 'AI API 金鑰（Anthropic 或 OpenAI）')
+    db.prepare("INSERT OR IGNORE INTO settings(key,value,description) VALUES(?,?,?)").run('ai_base_url', 'http://localhost:11434', 'Ollama 本地端點（預設 http://localhost:11434）')
+    db.prepare("INSERT OR IGNORE INTO settings(key,value,description) VALUES(?,?,?)").run('ai_max_tokens', '1024', 'AI 最大回覆 Token 數')
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('5.3.0', 'AI-1: AI 設定')
+  } catch(e: any) { if (!e.message?.includes('already exists') && !e.message?.includes('UNIQUE')) console.error('AI migration:', e.message) }
 
   seedDefaultData()
 }

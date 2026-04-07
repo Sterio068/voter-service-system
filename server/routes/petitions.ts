@@ -4,6 +4,10 @@ import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
 
+function escapeLike(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
 const CreatePetitionSchema = z.object({
   content: z.string().min(1, '陳情內容為必填'),
   petition_date: z.string().min(1, '陳情日期為必填'),
@@ -43,8 +47,11 @@ function generateCaseNumber(): string {
 
 export default async function petitionRoutes(fastify: FastifyInstance) {
   fastify.get('/api/petitions', { preHandler: [requirePermission('petitions', 'view')] }, async (request, reply) => {
-    const { page = 1, pageSize = 20, status, category, urgency, assignee_id, start_date, end_date, search, voter_id } = request.query as any
-    const conds: string[] = []
+    const _q = request.query as any
+    const page = Math.max(1, Number(_q.page) || 1)
+    const pageSize = Math.min(200, Math.max(1, Number(_q.pageSize) || 20))
+    const { status, category, urgency, assignee_id, start_date, end_date, search, voter_id } = _q
+    const conds: string[] = ['p.is_active=1']
     const params: any[] = []
     if (status) { conds.push('p.status = ?'); params.push(status) }
     if (category) { conds.push('p.category = ?'); params.push(category) }
@@ -53,7 +60,7 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
     if (voter_id) { conds.push('p.voter_id = ?'); params.push(Number(voter_id)) }
     if (start_date) { conds.push('p.petition_date >= ?'); params.push(start_date) }
     if (end_date) { conds.push('p.petition_date <= ?'); params.push(end_date) }
-    if (search) { conds.push('p.content LIKE ?'); params.push(`%${search}%`) }
+    if (search) { conds.push("p.content LIKE ? ESCAPE '\\'"); params.push(`%${escapeLike(search)}%`) }
     const where = conds.length ? 'WHERE ' + conds.join(' AND ') : ''
     const total = (db.prepare(`SELECT COUNT(*) as count FROM petitions p ${where}`).get(...params) as any).count
     const data = db.prepare(`
@@ -73,7 +80,7 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
         COUNT(satisfaction_rating) as collected_rating,
         AVG(CASE WHEN satisfaction_rating IS NOT NULL THEN satisfaction_rating END) as avg_rating
       FROM petitions
-      WHERE status IN ('closed','replied')
+      WHERE status IN ('closed','replied') AND is_active=1
     `).get() as any
     const total_closed = row.total_closed || 0
     const collected = row.collected_satisfaction || 0
@@ -85,17 +92,18 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
   fastify.get('/api/petitions/overdue-count', { preHandler: [requirePermission('petitions', 'view')] }, async (request, reply) => {
     const today = new Date().toISOString().slice(0, 10)
     const row = db.prepare(
-      `SELECT COUNT(*) as count FROM petitions WHERE due_date IS NOT NULL AND due_date < ? AND status NOT IN ('closed','cancelled','replied')`
+      `SELECT COUNT(*) as count FROM petitions WHERE is_active=1 AND due_date IS NOT NULL AND due_date < ? AND status NOT IN ('closed','cancelled','replied')`
     ).get(today) as any
     return reply.send({ success: true, data: { count: row.count } })
   })
 
   fastify.get('/api/petitions/stats', { preHandler: [requirePermission('petitions', 'view')] }, async (request, reply) => {
     const { year = new Date().getFullYear().toString() } = request.query as any
-    const byStatus = db.prepare(`SELECT status, COUNT(*) as count FROM petitions WHERE strftime('%Y',petition_date)=? GROUP BY status`).all(year)
-    const byCategory = db.prepare(`SELECT category, COUNT(*) as count FROM petitions WHERE strftime('%Y',petition_date)=? GROUP BY category ORDER BY count DESC`).all(year)
-    const byMonth = db.prepare(`SELECT strftime('%m',petition_date) as month, COUNT(*) as count FROM petitions WHERE strftime('%Y',petition_date)=? GROUP BY month ORDER BY month`).all(year)
-    const byUrgency = db.prepare(`SELECT urgency, COUNT(*) as count FROM petitions WHERE strftime('%Y',petition_date)=? GROUP BY urgency`).all(year)
+    if (!/^\d{4}$/.test(String(year))) return reply.code(400).send({ success: false, error: 'year 需為 4 位數年份' })
+    const byStatus = db.prepare(`SELECT status, COUNT(*) as count FROM petitions WHERE is_active=1 AND strftime('%Y',petition_date)=? GROUP BY status`).all(year)
+    const byCategory = db.prepare(`SELECT category, COUNT(*) as count FROM petitions WHERE is_active=1 AND strftime('%Y',petition_date)=? GROUP BY category ORDER BY count DESC`).all(year)
+    const byMonth = db.prepare(`SELECT strftime('%m',petition_date) as month, COUNT(*) as count FROM petitions WHERE is_active=1 AND strftime('%Y',petition_date)=? GROUP BY month ORDER BY month`).all(year)
+    const byUrgency = db.prepare(`SELECT urgency, COUNT(*) as count FROM petitions WHERE is_active=1 AND strftime('%Y',petition_date)=? GROUP BY urgency`).all(year)
     return reply.send({ success: true, data: { byStatus, byCategory, byMonth, byUrgency } })
   })
 
@@ -104,7 +112,7 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
     const petition = db.prepare(`
       SELECT p.*, v.name as voter_name, u.name as assignee_name
       FROM petitions p LEFT JOIN voters v ON p.voter_id=v.id LEFT JOIN users u ON p.assignee_id=u.id
-      WHERE p.id=?
+      WHERE p.id=? AND p.is_active=1
     `).get(Number(id)) as any
     if (!petition) return reply.code(404).send({ success: false, error: '陳情案件不存在' })
     const logs = db.prepare(`
@@ -121,23 +129,44 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ success: false, error: parsedBody.error.issues[0].message })
     }
     const body = request.body as any
+
+    // ── 自動串連選民：若未帶 voter_id 但有聯絡電話，嘗試比對或新增選民 ──
+    let resolvedVoterId = body.voter_id ?? null
+    if (!resolvedVoterId && body.contact_phone?.trim()) {
+      const phone = String(body.contact_phone).trim()
+      const found = db.prepare('SELECT id FROM voters WHERE mobile=? AND is_active=1 LIMIT 1').get(phone) as any
+      if (found) {
+        resolvedVoterId = found.id
+      } else if (body.contact_name?.trim()) {
+        // 有姓名 → 建立新選民
+        const vr = db.prepare("INSERT INTO voters (name,mobile,created_by,created_at,updated_at) VALUES (?,?,?,datetime('now','localtime'),datetime('now','localtime'))")
+          .run(String(body.contact_name).trim(), phone, cu.id)
+        resolvedVoterId = vr.lastInsertRowid as number
+        createAuditLog(request, cu.id, { action: 'create', module: '選民管理', target_type: 'voter', target_id: resolvedVoterId as number, target_name: body.contact_name })
+      }
+    }
+
     const case_number = generateCaseNumber()
     const fields = ['case_number','petition_date','voter_id','contact_phone','channel','category','subcategory','content','area_city','area_district','area_village','area_address','urgency','status','assignee_id']
-    const values = fields.map(f => f === 'case_number' ? case_number : (body[f] ?? null))
+    const values = fields.map(f => {
+      if (f === 'case_number') return case_number
+      if (f === 'voter_id') return resolvedVoterId
+      return body[f] ?? null
+    })
     const r = db.prepare(`INSERT INTO petitions (${fields.join(',')},created_by) VALUES (${fields.map(() => '?').join(',')},?)`)
       .run(...values, cu.id)
     const newId = r.lastInsertRowid as number
     db.prepare("INSERT INTO petition_logs (petition_id,action_type,content,created_by) VALUES (?,?,?,?)")
       .run(newId, '受理', `案件受理，陳情方式：${body.channel || '未指定'}`, cu.id)
     createAuditLog(request, cu.id, { action: 'create', module: '陳情管理', target_type: 'petition', target_id: newId, target_name: case_number })
-    return reply.code(201).send({ success: true, data: { id: newId, case_number }, message: '陳情案件已建立' })
+    return reply.code(201).send({ success: true, data: { id: newId, case_number, voter_id: resolvedVoterId }, message: '陳情案件已建立' })
   })
 
   fastify.put('/api/petitions/:id', { preHandler: [requirePermission('petitions', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const { id } = request.params as any
     const body = request.body as any
-    const petition = db.prepare('SELECT * FROM petitions WHERE id=?').get(Number(id)) as any
+    const petition = db.prepare('SELECT * FROM petitions WHERE id=? AND is_active=1').get(Number(id)) as any
     if (!petition) return reply.code(404).send({ success: false, error: '陳情案件不存在' })
     // Only allow known updateable fields
     const allowedFields = ['status','urgency','assignee_id','satisfaction','satisfaction_rating','category','subcategory',
@@ -163,8 +192,15 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
       }
     }
 
+    if (body.satisfaction_rating !== undefined && body.satisfaction_rating !== null) {
+      const r = Number(body.satisfaction_rating)
+      if (!Number.isInteger(r) || r < 1 || r > 5) {
+        return reply.code(400).send({ success: false, error: '滿意度評分必須為 1–5 的整數' })
+      }
+    }
+
     if (body.status === 'closed' && petition.status !== 'closed')
-      updateData.closed_at = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
+      updateData.closed_at = new Date().toISOString().replace('T', ' ').slice(0, 19)
     if (Object.keys(updateData).length === 0) {
       return reply.code(400).send({ success: false, error: '沒有可更新的欄位' })
     }
@@ -190,7 +226,7 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
       if (body.assignee_id && body.assignee_id !== petition.assignee_id) {
         try {
           // notification_recipients uses voter_id (not user_id), so only create the notification record
-          db.prepare(`INSERT INTO notifications(channel,status,subject,content,created_by,created_at) VALUES(?,?,?,?,?,datetime('now','localtime'))`)
+          db.prepare(`INSERT INTO notifications(channel,status,title,content,created_by,created_at) VALUES(?,?,?,?,?,datetime('now','localtime'))`)
             .run('app', 'sent', '新案件指派', `案件 ${petition.case_number} 已指派給您，請盡快處理。`, cu.id)
         } catch {}
       }
@@ -205,6 +241,10 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
     const { id } = request.params as any
     const { action_type, content, referred_to } = request.body as any
     if (!action_type) return reply.code(400).send({ success: false, error: '處理方式為必填' })
+    const VALID_ACTION_TYPES = ['受理', '轉介', '回覆', '結案', '追蹤', '重新分派', '備註', '補充', '電話聯絡', '親訪']
+    if (!VALID_ACTION_TYPES.includes(action_type)) {
+      return reply.code(400).send({ success: false, error: `無效的處理方式，允許值：${VALID_ACTION_TYPES.join('、')}` })
+    }
     if (!content || !String(content).trim()) return reply.code(400).send({ success: false, error: '處理內容為必填' })
     const petition = db.prepare('SELECT * FROM petitions WHERE id=?').get(Number(id)) as any
     if (!petition) return reply.code(404).send({ success: false, error: '陳情案件不存在' })
@@ -220,20 +260,19 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
     const data = db.prepare(`
       SELECT p.*, v.name as voter_name, u.name as assignee_name
       FROM petitions p LEFT JOIN voters v ON p.voter_id=v.id LEFT JOIN users u ON p.assignee_id=u.id
-      WHERE p.follow_up_date <= ? AND p.status NOT IN ('closed','cancelled')
+      WHERE p.is_active=1 AND p.follow_up_date <= ? AND p.status NOT IN ('closed','cancelled')
       ORDER BY p.follow_up_date ASC LIMIT 50
     `).all(today)
     return reply.send({ success: true, data })
   })
 
-  // 刪除陳情案件
+  // 刪除陳情案件（軟刪除，保留紀錄與關聯資料）
   fastify.delete('/api/petitions/:id', { preHandler: [requirePermission('petitions', 'delete')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const { id } = request.params as any
-    const petition = db.prepare('SELECT * FROM petitions WHERE id=?').get(Number(id)) as any
+    const petition = db.prepare('SELECT * FROM petitions WHERE id=? AND is_active=1').get(Number(id)) as any
     if (!petition) return reply.code(404).send({ success: false, error: '陳情案件不存在' })
-    db.prepare('DELETE FROM petition_logs WHERE petition_id=?').run(Number(id))
-    db.prepare('DELETE FROM petitions WHERE id=?').run(Number(id))
+    db.prepare("UPDATE petitions SET is_active=0, updated_at=datetime('now','localtime') WHERE id=?").run(Number(id))
     createAuditLog(request, cu.id, { action: 'delete', module: '陳情管理', target_type: 'petition', target_id: Number(id), target_name: petition.case_number })
     return reply.send({ success: true, message: '陳情案件已刪除' })
   })

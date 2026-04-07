@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import { db } from '../db/index'
 
-export type PermissionAction = 'view' | 'create' | 'edit' | 'delete' | 'export' | 'print'
+export type PermissionAction = 'view' | 'create' | 'edit' | 'delete' | 'export' | 'print' | 'use'
 
 const rolePermissions: Record<string, Record<string, PermissionAction[]>> = {
   admin: {
@@ -22,6 +22,8 @@ const rolePermissions: Record<string, Record<string, PermissionAction[]>> = {
     events: ['view', 'create', 'edit', 'delete'],
     surveys: ['view', 'create', 'edit', 'delete'],
     contact_records: ['view', 'create', 'edit', 'delete'],
+    proposals: ['view', 'create', 'edit', 'delete', 'export'],
+    ai: ['use', 'view'],
   },
   supervisor: {
     system: ['view'], admin: [], users: [], audit_logs: ['view'],
@@ -37,6 +39,8 @@ const rolePermissions: Record<string, Record<string, PermissionAction[]>> = {
     events: ['view', 'create', 'edit', 'delete'],
     surveys: ['view', 'create', 'edit'],
     contact_records: ['view', 'create', 'edit'],
+    proposals: ['view', 'create', 'edit', 'delete', 'export'],
+    ai: ['use', 'view'],
   },
   assistant: {
     system: [], admin: [], users: [], audit_logs: [],
@@ -52,6 +56,8 @@ const rolePermissions: Record<string, Record<string, PermissionAction[]>> = {
     events: ['view', 'create', 'edit'],
     surveys: ['view'],
     contact_records: ['view', 'create', 'edit'],
+    proposals: ['view', 'create', 'edit'],
+    ai: ['use'],
   },
   volunteer: {
     system: [], admin: [], users: [], audit_logs: [],
@@ -60,6 +66,8 @@ const rolePermissions: Record<string, Record<string, PermissionAction[]>> = {
     categories: ['view'], settings: [],
     notifications: [], reports: [], events: ['view'], surveys: [],
     contact_records: ['view'],
+    proposals: ['view'],
+    ai: [],
   },
 }
 

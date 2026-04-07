@@ -36,7 +36,7 @@ export default function BasicTab({ voterId, voterData: voter }: Props) {
           setHouseholdVoters(others)
         }).catch(() => {})
     }
-  }, [voterId])
+  }, [voterId, voter?.household_address])
 
   const handleSaveTopics = async () => {
     setSavingTopics(true)
@@ -68,6 +68,7 @@ export default function BasicTab({ voterId, voterData: voter }: Props) {
         <Descriptions.Item label="職業">{voter.occupation || '-'}</Descriptions.Item>
         <Descriptions.Item label="服務單位">{voter.company || '-'}</Descriptions.Item>
         <Descriptions.Item label="職稱">{voter.job_title || '-'}</Descriptions.Item>
+        <Descriptions.Item label="頭銜">{voter.title || '-'}</Descriptions.Item>
         <Descriptions.Item label="支持度">
           <Space size={2}>
             {[1,2,3,4,5].map(n => (

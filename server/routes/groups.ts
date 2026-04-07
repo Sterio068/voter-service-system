@@ -93,4 +93,57 @@ export default async function groupRoutes(fastify: FastifyInstance) {
     createAuditLog(request, cu.id, { action: 'delete', module: '團體管理', target_type: 'group_member', target_id: Number(id) })
     return reply.send({ success: true, message: '成員已移除' })
   })
+
+  // Update member role/title
+  fastify.put('/api/groups/:id/members/:voter_id', { preHandler: [requirePermission('groups', 'edit')] }, async (request, reply) => {
+    const { id, voter_id } = request.params as any
+    const { role, title } = request.body as any
+    db.prepare('UPDATE group_members SET role=?, title=? WHERE group_id=? AND voter_id=?').run(role ?? null, title ?? null, Number(id), Number(voter_id))
+    return reply.send({ success: true, message: '成員資料已更新' })
+  })
+
+  // Get schedules linked to this group
+  fastify.get('/api/groups/:id/schedules', { preHandler: [requirePermission('groups', 'view')] }, async (request, reply) => {
+    const { id } = request.params as any
+    const rows = db.prepare(`
+      SELECT s.*, u.name as creator_name FROM schedules s
+      LEFT JOIN users u ON s.created_by = u.id
+      WHERE s.is_active = 1 AND s.related_group_ids IS NOT NULL
+      AND (
+        s.related_group_ids LIKE '%[' || ? || ']%'
+        OR s.related_group_ids LIKE '%,' || ? || ',%'
+        OR s.related_group_ids LIKE '%[' || ? || ',%'
+        OR s.related_group_ids LIKE '%,' || ? || ']%'
+      )
+      ORDER BY s.start_time DESC LIMIT 100
+    `).all(String(id), String(id), String(id), String(id))
+    return reply.send({ success: true, data: rows })
+  })
+
+  // Get ceremony expenses linked to this group (via schedules)
+  fastify.get('/api/groups/:id/expenses', { preHandler: [requirePermission('groups', 'view')] }, async (request, reply) => {
+    const { id } = request.params as any
+    // First get schedule IDs linked to this group
+    const scheduleRows = db.prepare(`
+      SELECT id FROM schedules WHERE is_active=1 AND related_group_ids IS NOT NULL
+      AND (
+        related_group_ids LIKE '%[' || ? || ']%'
+        OR related_group_ids LIKE '%,' || ? || ',%'
+        OR related_group_ids LIKE '%[' || ? || ',%'
+        OR related_group_ids LIKE '%,' || ? || ']%'
+      )
+    `).all(String(id), String(id), String(id), String(id)) as any[]
+    if (!scheduleRows.length) return reply.send({ success: true, data: [], total: 0 })
+    const sids = scheduleRows.map((r: any) => r.id)
+    const placeholders = sids.map(() => '?').join(',')
+    const ceremonies = db.prepare(`
+      SELECT cr.*,
+        COALESCE((SELECT SUM(ci.amount) FROM ceremony_items ci WHERE ci.ceremony_id=cr.id), 0) as computed_total
+      FROM ceremony_records cr
+      WHERE cr.schedule_id IN (${placeholders})
+      ORDER BY cr.event_date DESC, cr.id DESC
+    `).all(...sids) as any[]
+    const total = ceremonies.reduce((s: number, r: any) => s + (r.computed_total || 0), 0)
+    return reply.send({ success: true, data: ceremonies, total })
+  })
 }

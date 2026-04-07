@@ -23,6 +23,11 @@ import AuditLogPage from './pages/admin/AuditLogPage'
 import CategoryPage from './pages/admin/CategoryPage'
 import SettingsPage from './pages/admin/SettingsPage'
 import HandoverPage from './pages/admin/HandoverPage'
+import HelpPage from './pages/HelpPage'
+import CeremonyPage from './pages/ceremonies/CeremonyPage'
+import VendorPage from './pages/ceremonies/VendorPage'
+import ExpensePage from './pages/ceremonies/ExpensePage'
+import ProposalsPage from './pages/proposals/ProposalsPage'
 
 // Global error reporting
 window.onerror = (message, source, lineno, colno, error) => {
@@ -165,6 +170,10 @@ export default function App() {
             <Route path="petitions/:id" element={<PetitionDetailPage />} />
             <Route path="documents" element={<DocumentListPage />} />
             <Route path="schedules" element={<SchedulePage />} />
+            <Route path="ceremonies" element={<CeremonyPage />} />
+            <Route path="vendors" element={<VendorPage />} />
+            <Route path="expenses" element={<ExpensePage />} />
+            <Route path="proposals" element={<ProposalsPage />} />
             <Route path="tasks" element={<TasksPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="admin/users" element={<UserManagePage />} />
@@ -172,6 +181,7 @@ export default function App() {
             <Route path="admin/categories" element={<CategoryPage />} />
             <Route path="admin/settings" element={<SettingsPage />} />
             <Route path="admin/handover" element={<HandoverPage />} />
+            <Route path="help" element={<HelpPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

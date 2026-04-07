@@ -231,9 +231,11 @@ export default async function surveyRoutes(fastify: FastifyInstance) {
     const { id } = request.params as any
     const survey = db.prepare('SELECT * FROM surveys WHERE id=?').get(Number(id)) as any
     if (!survey) return reply.code(404).send({ success: false, error: '問卷不存在' })
-    db.prepare('DELETE FROM survey_responses WHERE survey_id=?').run(Number(id))
-    db.prepare('DELETE FROM survey_questions WHERE survey_id=?').run(Number(id))
-    db.prepare('DELETE FROM surveys WHERE id=?').run(Number(id))
+    db.transaction(() => {
+      db.prepare('DELETE FROM survey_responses WHERE survey_id=?').run(Number(id))
+      db.prepare('DELETE FROM survey_questions WHERE survey_id=?').run(Number(id))
+      db.prepare('DELETE FROM surveys WHERE id=?').run(Number(id))
+    })()
     createAuditLog(request, cu.id, { action: 'delete', module: '問卷管理', target_type: 'survey', target_id: Number(id), target_name: survey.title })
     return reply.send({ success: true, message: '問卷已刪除' })
   })

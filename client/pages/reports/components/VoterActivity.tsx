@@ -12,7 +12,7 @@ export default function VoterActivity() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
-  const maxScore = Math.max(...data.map(d => d.activity_score), 1)
+  const maxScore = Math.max(...data.map(d => Number(d.activity_score) || 0), 1)
   return (
     <Table dataSource={data} rowKey="id" loading={loading} size="small"
       columns={[

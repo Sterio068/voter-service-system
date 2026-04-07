@@ -72,7 +72,8 @@ function lineSDF(px, py, ax, ay, bx, by, thickness) {
 }
 
 // ── Draw the icon at given size ───────────────────────────────
-function generateIconRGBA(S) {
+// cornerRadius: 0 = square (Windows), S * 0.225 = iOS rounded (Mac)
+function generateIconRGBA(S, cornerRadius) {
   const rgba = new Uint8Array(S * S * 4)
 
   // Color palette
@@ -83,7 +84,7 @@ function generateIconRGBA(S) {
   const PALE      = [0xB8, 0xD8, 0xFF]   // pale blue line
 
   const cx = S / 2, cy = S / 2
-  const radius = S * 0.225           // iOS-style corner radius
+  const radius = (cornerRadius !== undefined) ? cornerRadius : S * 0.225
 
   // Document shape params (centered, slightly above center)
   const DW = S * 0.38, DH = S * 0.46
@@ -275,24 +276,27 @@ function generateICNS(png256, png512, png1024) {
 // ── Generate ──────────────────────────────────────────────────
 if (!existsSync('resources')) mkdirSync('resources')
 
-console.log('  生成 1024px 圖示...')
-const rgba1024 = generateIconRGBA(1024)
+// Mac：iOS 圓角
+console.log('  生成 1024px 圖示（Mac 圓角）...')
+const rgba1024 = generateIconRGBA(1024, 1024 * 0.225)
 const png1024  = buildPNG(1024, 1024, rgba1024)
 
-console.log('  縮放 512px...')
+console.log('  縮放 512px（Mac）...')
 const rgba512  = scaleDown(rgba1024, 1024, 512)
 const png512   = buildPNG(512, 512, rgba512)
 
-console.log('  縮放 256px...')
+console.log('  縮放 256px（Mac）...')
 const rgba256  = scaleDown(rgba1024, 1024, 256)
 const png256   = buildPNG(256, 256, rgba256)
 
-console.log('  縮放 64px (ICO)...')
-const rgba64WB = toRGBA_whiteComposite(scaleDown(rgba1024, 1024, 256), 256)
-const png64ico = buildPNG(256, 256, rgba64WB)
+// Windows：方角（radius = 0）
+console.log('  生成 256px 圖示（Windows 方角）...')
+const rgba256Win = generateIconRGBA(256, 0)
+const rgba256WinWB = toRGBA_whiteComposite(rgba256Win, 256)
+const png256ico  = buildPNG(256, 256, rgba256WinWB)
 
 writeFileSync(join('resources', 'icon.png'),  png1024)
-writeFileSync(join('resources', 'icon.ico'),  generateICO(png64ico))
+writeFileSync(join('resources', 'icon.ico'),  generateICO(png256ico))
 writeFileSync(join('resources', 'icon.icns'), generateICNS(png256, png512, png1024))
 
 console.log('✅ Icon files generated in resources/')

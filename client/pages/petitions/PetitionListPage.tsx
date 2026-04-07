@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   Table, Button, Space, Input, Select, Tag, Typography, Card,
   Drawer, Form, DatePicker, message, Popconfirm, Row, Col, Divider, Empty, Modal
@@ -51,6 +51,7 @@ export default function PetitionListPage() {
   const [searchParams] = useSearchParams()
   const { user } = useAuthStore()
   const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [data, setData] = useState<any[]>([])
   const [total, setTotal] = useState(0)
@@ -59,7 +60,12 @@ export default function PetitionListPage() {
 
   // Restore filters from sessionStorage (URL param takes precedence for status)
   const _savedFilters = (() => {
-    try { return JSON.parse(sessionStorage.getItem('petition_filters') || '{}') } catch { return {} }
+    try {
+      const raw = sessionStorage.getItem('petition_filters')
+      if (!raw) return {}
+      const parsed = JSON.parse(raw)
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch { return {} }
   })()
   const [filterStatus, setFilterStatus] = useState(searchParams.get('status') || _savedFilters.filterStatus || '')
   const [filterCategory, setFilterCategory] = useState(_savedFilters.filterCategory || '')
@@ -144,12 +150,16 @@ export default function PetitionListPage() {
     }
   }
 
-  const searchVoters = async (q: string) => {
+  const searchVoterTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchVoters = (q: string) => {
+    if (searchVoterTimer.current) clearTimeout(searchVoterTimer.current)
     if (!q) return
-    try {
-      const res = await api.get(`/voters/search?q=${q}`)
-      setVoterOptions(res.data.data || [])
-    } catch {}
+    searchVoterTimer.current = setTimeout(async () => {
+      try {
+        const res = await api.get(`/voters/search?q=${encodeURIComponent(q)}`)
+        setVoterOptions(res.data.data || [])
+      } catch {}
+    }, 300)
   }
 
   const handleExport = async () => {
@@ -176,6 +186,8 @@ export default function PetitionListPage() {
   }
 
   const handleSave = async (values: any) => {
+    if (submitting) return
+    setSubmitting(true)
     try {
       const payload = {
         ...values,
@@ -188,6 +200,8 @@ export default function PetitionListPage() {
       fetchPetitions()
     } catch (err: any) {
       message.error(err.response?.data?.error || '建立失敗')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -216,6 +230,8 @@ export default function PetitionListPage() {
   }
 
   const handleQuickCreate = async (values: any) => {
+    if (submitting) return
+    setSubmitting(true)
     try {
       await api.post('/petitions', {
         ...values,
@@ -226,6 +242,7 @@ export default function PetitionListPage() {
       message.success('案件已快速立案')
       setQuickOpen(false); quickForm.resetFields(); fetchPetitions()
     } catch { message.error('立案失敗') }
+    finally { setSubmitting(false) }
   }
 
   const columns: ColumnsType<any> = [
@@ -410,7 +427,7 @@ export default function PetitionListPage() {
         footer={
           <Space>
             <Button onClick={() => setDrawerOpen(false)}>取消</Button>
-            <Button type="primary" onClick={() => form.submit()}>送出</Button>
+            <Button type="primary" loading={submitting} onClick={() => form.submit()}>送出</Button>
           </Space>
         }
       >

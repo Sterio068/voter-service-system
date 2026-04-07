@@ -106,7 +106,7 @@ export default function EngagementTab({ voterId, voterData: voter }: Props) {
           <Space wrap>{(voter.tags || []).length > 0 ? (voter.tags || []).map((t: string) => <Tag key={t} color={TAG_COLORS[t] || 'blue'}>{t}</Tag>) : '—'}</Space>
         </Descriptions.Item>
         <Descriptions.Item label="最後聯絡日">
-          {contacts.length > 0 ? dayjs(contacts[0].contact_date).format('YYYY-MM-DD') : '—'}
+          {contacts.length > 0 && contacts[0].contact_date ? dayjs(contacts[0].contact_date).format('YYYY-MM-DD') : '—'}
         </Descriptions.Item>
         <Descriptions.Item label="介紹人" span={2}>
           {voter.referrer_name || '—'}

@@ -246,11 +246,20 @@ export default function VoterDetailPage() {
             <Col span={8}><Form.Item name="household_village" label="村里"><Input /></Form.Item></Col>
             <Col span={24}><Form.Item name="household_address" label="詳細地址"><Input /></Form.Item></Col>
           </Row>
-          <Form.Item name="tags" label="標籤">
-            <Select mode="multiple" placeholder="選擇標籤">
-              {tags.map(t => <Option key={t} value={t}>{t}</Option>)}
-            </Select>
-          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="title" label="頭銜">
+                <Input placeholder="如：里長、社區主委" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="tags" label="標籤">
+                <Select mode="multiple" placeholder="選擇標籤">
+                  {tags.map(t => <Option key={t} value={t}>{t}</Option>)}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item name="note" label="備註">
             <Input.TextArea rows={3} />
           </Form.Item>

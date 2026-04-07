@@ -3,10 +3,12 @@ import {
   Card, Tabs, Descriptions, Tag, Button, Space, Typography, Timeline,
   Form, Input, Select, Modal, message, Breadcrumb, Spin, Empty, Badge, Divider, Row, Col, Rate, Popconfirm, DatePicker
 } from 'antd'
-import { ArrowLeftOutlined, PlusOutlined, CheckCircleOutlined, CheckSquareOutlined, PaperClipOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, PlusOutlined, CheckCircleOutlined, CheckSquareOutlined, PaperClipOutlined, EditOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../../utils/api'
+import { useDataSync } from '../../hooks/useDataSync'
 import AttachmentUpload from '../../components/AttachmentUpload'
+import AIButton from '../../components/ai/AIButton'
 import dayjs from 'dayjs'
 
 const { Title, Text } = Typography
@@ -48,10 +50,20 @@ export default function PetitionDetailPage() {
   const [newAssigneeId, setNewAssigneeId] = useState<any>(null)
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [taskForm] = Form.useForm()
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [editForm] = Form.useForm()
+  const [voters, setVoters] = useState<any[]>([])
+  const [categories, setCategories] = useState<string[]>([])
+
+  useDataSync((events) => {
+    const relevant = events.some(e => e.target_type === 'petition' && String(e.target_id) === String(id))
+    if (relevant) loadData()
+  }, [id ?? ''])
 
   useEffect(() => {
     if (id) loadData()
     fetchUsers()
+    api.get('/admin/categories?type=petition_category').then(r => setCategories((r.data.data || []).map((c: any) => c.name))).catch(() => {})
   }, [id])
 
   const loadData = async () => {
@@ -99,6 +111,45 @@ export default function PetitionDetailPage() {
     } catch (err: any) {
       message.error(err.response?.data?.error || '新增失敗')
     }
+  }
+
+  const handleEdit = async (values: any) => {
+    try {
+      await api.put(`/petitions/${id}`, {
+        content: values.content,
+        petition_date: values.petition_date ? dayjs(values.petition_date).format('YYYY-MM-DD') : undefined,
+        channel: values.channel,
+        category: values.category,
+        subcategory: values.subcategory,
+        area_city: values.area_city,
+        area_district: values.area_district,
+        area_village: values.area_village,
+        area_address: values.area_address,
+        contact_phone: values.contact_phone,
+        urgency: values.urgency,
+        voter_id: values.voter_id || undefined,
+      })
+      message.success('案件已更新')
+      setEditModalOpen(false)
+      editForm.resetFields()
+      loadData()
+    } catch (err: any) { message.error(err.response?.data?.error || '更新失敗') }
+  }
+
+  const handleDelete = async () => {
+    try {
+      await api.delete(`/petitions/${id}`)
+      message.success('案件已刪除')
+      navigate('/petitions')
+    } catch (err: any) { message.error(err.response?.data?.error || '刪除失敗') }
+  }
+
+  const searchVoters = async (q: string) => {
+    if (!q) return
+    try {
+      const res = await api.get(`/voters?search=${encodeURIComponent(q)}&pageSize=20`)
+      setVoters(res.data.data || [])
+    } catch {}
   }
 
   const handleUpdateStatus = async (values: any) => {
@@ -152,6 +203,26 @@ export default function PetitionDetailPage() {
           <Tag color={URGENCY_COLORS[petition.urgency]}>{URGENCY_LABELS[petition.urgency]}</Tag>
         </Space>
         <Space>
+          <Button icon={<EditOutlined />} onClick={() => {
+            editForm.setFieldsValue({
+              content: petition.content,
+              petition_date: petition.petition_date ? dayjs(petition.petition_date) : undefined,
+              channel: petition.channel,
+              category: petition.category,
+              subcategory: petition.subcategory,
+              area_city: petition.area_city,
+              area_district: petition.area_district,
+              area_village: petition.area_village,
+              area_address: petition.area_address,
+              contact_phone: petition.contact_phone,
+              urgency: petition.urgency,
+              voter_id: petition.voter_id,
+            })
+            setEditModalOpen(true)
+          }}>編輯案件</Button>
+          <Popconfirm title="確定刪除此案件？" description="刪除後無法復原" onConfirm={handleDelete} okText="刪除" okType="danger" cancelText="取消">
+            <Button danger icon={<DeleteOutlined />}>刪除</Button>
+          </Popconfirm>
           <Button icon={<CheckSquareOutlined />} onClick={() => { taskForm.setFieldsValue({ title: `追蹤案件：${petition?.case_number}` }); setTaskModalOpen(true) }}>
             建立待辦
           </Button>
@@ -210,7 +281,30 @@ export default function PetitionDetailPage() {
                 <Descriptions.Item label="承辦人">{petition.assignee_name || '未指派'}</Descriptions.Item>
                 <Descriptions.Item label="結案時間">{petition.closed_at || '-'}</Descriptions.Item>
                 <Descriptions.Item label="陳情內容" span={2}>
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{petition.content}</div>
+                  <div style={{ whiteSpace: 'pre-wrap', marginBottom: 8 }}>{petition.content}</div>
+                  <Space wrap>
+                    <AIButton
+                      label="AI 摘要"
+                      tooltip="用 AI 整理本案重點"
+                      endpoint="/ai/summarize"
+                      payload={{ text: petition.content, type: 'petition' }}
+                      onResult={(d) => message.info({ content: d.summary, duration: 10, icon: <RobotOutlined /> })}
+                    />
+                    <AIButton
+                      label="AI 分類建議"
+                      tooltip="依內容推薦陳情類別"
+                      endpoint="/ai/classify"
+                      payload={{ title: petition.title || petition.content?.slice(0, 80), content: petition.content }}
+                      onResult={(d) => message.success({ content: `建議類別：${d.category}`, duration: 6 })}
+                    />
+                    <AIButton
+                      label="AI 備註建議"
+                      tooltip="生成追蹤備註草稿"
+                      endpoint="/ai/suggest-note"
+                      payload={{ title: petition.title || petition.content?.slice(0, 80), content: petition.content, status: petition.status, category: petition.category, type: 'petition' }}
+                      onResult={(d) => { logForm.setFieldsValue({ content: d.note }); setLogModalOpen(true) }}
+                    />
+                  </Space>
                 </Descriptions.Item>
                 <Descriptions.Item label="處理區域" span={2}>
                   {[petition.area_city, petition.area_address].filter(Boolean).join(' ') || '-'}
@@ -287,17 +381,18 @@ export default function PetitionDetailPage() {
         okText="確認"
         cancelText="取消"
         onOk={async () => {
-          if (newAssigneeId) {
-            try {
-              await api.put(`/petitions/${id}`, { assignee_id: newAssigneeId })
-              message.success('案件已轉派')
-              setReassignOpen(false)
-              loadData()
-            } catch {
-              message.error('轉派失敗')
-            }
-          } else {
+          if (!newAssigneeId) {
             message.warning('請選擇承辦人')
+            return Promise.reject()
+          }
+          try {
+            await api.put(`/petitions/${id}`, { assignee_id: newAssigneeId })
+            message.success('案件已轉派')
+            setReassignOpen(false)
+            loadData()
+          } catch {
+            message.error('轉派失敗')
+            return Promise.reject()
           }
         }}
       >
@@ -367,6 +462,89 @@ export default function PetitionDetailPage() {
               <Option value="unsatisfied">不滿意</Option>
             </Select>
           </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 編輯案件 */}
+      <Modal title="編輯案件資訊" open={editModalOpen} onCancel={() => { setEditModalOpen(false); editForm.resetFields() }}
+        onOk={() => editForm.submit()} okText="儲存" cancelText="取消" width={640} destroyOnClose>
+        <Form form={editForm} layout="vertical" onFinish={handleEdit}>
+          <Form.Item name="content" label="陳情內容" rules={[{ required: true }]}>
+            <Input.TextArea rows={4} />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="petition_date" label="陳情日期" rules={[{ required: true }]}>
+                <DatePicker style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="urgency" label="急迫程度">
+                <Select>
+                  <Option value="normal">一般</Option>
+                  <Option value="urgent">急件</Option>
+                  <Option value="critical">特急</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="channel" label="陳情方式">
+                <Select allowClear>
+                  {['電話','親訪','書信','Email','Line','網路','法律諮詢','其他'].map(c => <Option key={c} value={c}>{c}</Option>)}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="category" label={
+                <Space>
+                  <span>陳情類別</span>
+                  <AIButton
+                    label="AI 推薦"
+                    size="small"
+                    type="link"
+                    endpoint="/ai/classify"
+                    payload={{ title: petition?.title || petition?.content?.slice(0, 80), content: petition?.content }}
+                    onResult={(d) => editForm.setFieldsValue({ category: d.category })}
+                  />
+                </Space>
+              }>
+                <Select allowClear showSearch>
+                  {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="contact_phone" label="聯絡電話">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="voter_id" label="陳情人（選民）">
+                <Select allowClear showSearch filterOption={false} onSearch={searchVoters} placeholder="搜尋選民">
+                  {voters.map(v => <Option key={v.id} value={v.id}>{v.name}{v.mobile ? ` (${v.mobile})` : ''}</Option>)}
+                  {petition?.voter_id && !voters.find((v: any) => v.id === petition.voter_id) && (
+                    <Option value={petition.voter_id}>{petition.voter_name}</Option>
+                  )}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="area_city" label="縣市"><Input /></Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="area_district" label="區域"><Input /></Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="area_address" label="地址"><Input /></Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="subcategory" label="子分類"><Input /></Form.Item>
         </Form>
       </Modal>
     </div>

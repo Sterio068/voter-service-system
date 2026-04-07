@@ -10,15 +10,25 @@ import path from 'path'
 const defaultBackupsDir = process.env.BACKUPS_PATH || path.join(process.cwd(), 'backups')
 if (!fs.existsSync(defaultBackupsDir)) fs.mkdirSync(defaultBackupsDir, { recursive: true })
 
+// 模組級快取，避免每次請求重複讀取 DB
+let _cachedBackupsDir: string | null = null
+
 function getBackupsDir(): string {
+  if (_cachedBackupsDir) return _cachedBackupsDir
   try {
     const saved = getSetting('backup_path')
     const dir = (saved && typeof saved === 'string' && saved.trim()) ? saved.trim() : defaultBackupsDir
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    _cachedBackupsDir = dir
     return dir
   } catch {
     return defaultBackupsDir
   }
+}
+
+/** 轉義路徑中的單引號，用於 VACUUM INTO SQL */
+function escapeSqlPath(p: string): string {
+  return p.replace(/'/g, "''")
 }
 
 function getBackupFileName(): string {
@@ -28,7 +38,7 @@ function getBackupFileName(): string {
 
 export default async function backupRoutes(fastify: FastifyInstance) {
   // ===== 手動備份 — 下載資料庫檔案 =====
-  fastify.get('/api/admin/backup/download', { preHandler: [requirePermission('system', 'view')] }, async (request, reply) => {
+  fastify.get('/api/admin/backup/download', { preHandler: [requirePermission('system', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     // Force WAL checkpoint to ensure all data is in main DB
     try {
@@ -38,8 +48,13 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     }
     // 先用 VACUUM INTO 產生乾淨的備份
     const tmpPath = path.join(getBackupsDir(), getBackupFileName())
-    db.exec(`VACUUM INTO '${tmpPath}'`)
-    const buf = fs.readFileSync(tmpPath)
+    db.exec(`VACUUM INTO '${escapeSqlPath(tmpPath)}'`)
+    let buf: Buffer
+    try {
+      buf = fs.readFileSync(tmpPath)
+    } finally {
+      try { fs.unlinkSync(tmpPath) } catch {}
+    }
     const fname = path.basename(tmpPath)
     createAuditLog(request, cu.id, { action: 'export', module: '系統備份', target_name: fname })
     reply.header('Content-Type', 'application/octet-stream')
@@ -60,7 +75,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
   })
 
   // ===== 備份到本機（不下載，儲存在 backups/ 目錄） =====
-  fastify.post('/api/admin/backup', { preHandler: [requirePermission('system', 'view')] }, async (request, reply) => {
+  fastify.post('/api/admin/backup', { preHandler: [requirePermission('system', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const fname = getBackupFileName()
     const destPath = path.join(getBackupsDir(), fname)
@@ -70,14 +85,14 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     } catch (e) {
       console.warn('[Backup] WAL checkpoint failed:', e)
     }
-    db.exec(`VACUUM INTO '${destPath}'`)
+    db.exec(`VACUUM INTO '${escapeSqlPath(destPath)}'`)
     const stat = fs.statSync(destPath)
     createAuditLog(request, cu.id, { action: 'export', module: '系統備份', target_name: fname })
     return reply.send({ success: true, message: `備份完成：${fname}`, data: { name: fname, size: stat.size } })
   })
 
   // ===== 還原備份 — 上傳 .db 檔案 =====
-  fastify.post('/api/admin/restore', { preHandler: [requirePermission('system', 'view')] }, async (request, reply) => {
+  fastify.post('/api/admin/restore', { preHandler: [requirePermission('system', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const data = await request.file()
     if (!data) return reply.code(400).send({ success: false, error: '請選擇備份檔案' })
@@ -110,7 +125,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     // Step 3: Backup current database before replacing
     const currentBackup = path.join(getBackupsDir(), `pre-restore-${getBackupFileName()}`)
     try {
-      db.exec(`VACUUM INTO '${currentBackup}'`)
+      db.exec(`VACUUM INTO '${escapeSqlPath(currentBackup)}'`)
     } catch (e) {
       try { fs.unlinkSync(tempPath) } catch {}
       return reply.code(500).send({ success: false, error: '無法備份目前資料庫：' + String(e) })
@@ -136,7 +151,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     return reply.send({
       success: true,
       message: '還原檔案已驗證並上傳，請重新啟動系統以完成還原',
-      data: { restorePath, currentBackup: path.basename(currentBackup) },
+      data: { restoreFile: path.basename(restorePath), currentBackup: path.basename(currentBackup) },
     })
   })
 
@@ -180,7 +195,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
   })
 
   // ===== 刪除本機備份 =====
-  fastify.delete('/api/admin/backup/:name', { preHandler: [requirePermission('system', 'view')] }, async (request, reply) => {
+  fastify.delete('/api/admin/backup/:name', { preHandler: [requirePermission('system', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const { name } = request.params as any
     // 防路徑穿越
@@ -201,23 +216,30 @@ export default async function backupRoutes(fastify: FastifyInstance) {
   })
 
   // ===== 設定備份目錄 =====
-  fastify.post('/api/admin/backup/path', { preHandler: [requirePermission('system', 'view')] }, async (request, reply) => {
+  fastify.post('/api/admin/backup/path', { preHandler: [requirePermission('system', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const { path: newPath } = request.body as any
     if (!newPath || typeof newPath !== 'string') {
       return reply.code(400).send({ success: false, error: '請提供備份目錄路徑' })
     }
+    // 防路徑穿越：解析絕對路徑後確認不含 '..' 元件
+    const resolvedPath = path.resolve(newPath)
+    if (resolvedPath !== path.normalize(resolvedPath) || newPath.includes('..')) {
+      return reply.code(400).send({ success: false, error: '路徑不合法（含 .. 穿越片段）' })
+    }
     // 驗證可寫入
     try {
-      fs.mkdirSync(newPath, { recursive: true })
-      const testFile = path.join(newPath, '.write-test')
+      fs.mkdirSync(resolvedPath, { recursive: true })
+      const testFile = path.join(resolvedPath, '.write-test')
       fs.writeFileSync(testFile, '')
       fs.unlinkSync(testFile)
     } catch (e) {
       return reply.code(400).send({ success: false, error: `無法寫入目錄：${String(e)}` })
     }
-    setSetting('backup_path', newPath)
-    createAuditLog(request, cu.id, { action: 'update', module: '備份設定', target_name: newPath })
-    return reply.send({ success: true, message: '備份目錄已更新', data: { path: newPath } })
+    setSetting('backup_path', resolvedPath)
+    // 清除快取，下次請求重新讀取新路徑
+    _cachedBackupsDir = null
+    createAuditLog(request, cu.id, { action: 'update', module: '備份設定', target_name: resolvedPath })
+    return reply.send({ success: true, message: '備份目錄已更新', data: { path: resolvedPath } })
   })
 }

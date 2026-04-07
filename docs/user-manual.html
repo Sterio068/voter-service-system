@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>選民服務系統 — 使用手冊</title>
+  <title>選民服務系統 — 使用手冊 v1.2</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -188,7 +188,7 @@
 <aside class="sidebar">
   <div class="sidebar-header">
     <h1>選民服務系統</h1>
-    <p>使用手冊 v1.1</p>
+    <p>使用手冊 v1.2</p>
   </div>
   <nav>
     <span class="section-label">入門</span>
@@ -198,13 +198,15 @@
     <span class="section-label">核心功能</span>
     <a href="#voters">4. 選民資料管理</a>
     <a href="#petitions">5. 陳情案件處理</a>
-    <a href="#documents">6. 公文管理</a>
-    <a href="#schedule">7. 行程與待辦</a>
+    <a href="#proposals">6. 提案追蹤</a>
+    <a href="#documents">7. 公文管理</a>
+    <a href="#schedule">8. 行程與待辦</a>
     <span class="section-label">分析與設定</span>
-    <a href="#reports">8. 統計報表</a>
-    <a href="#settings">9. 系統設定</a>
-    <a href="#mobile">10. 行動裝置使用</a>
-    <a href="#shortcuts">11. 鍵盤快捷鍵</a>
+    <a href="#reports">9. 統計報表</a>
+    <a href="#ai">10. AI 助理功能</a>
+    <a href="#settings">11. 系統設定</a>
+    <a href="#mobile">12. 行動裝置使用</a>
+    <a href="#shortcuts">13. 鍵盤快捷鍵</a>
   </nav>
 </aside>
 
@@ -212,7 +214,7 @@
 <div class="content">
 <header>
   <h1>選民服務系統 使用手冊</h1>
-  <p>完整功能說明 &nbsp;|&nbsp; 版本 1.1 &nbsp;|&nbsp; 2026 年</p>
+  <p>完整功能說明 &nbsp;|&nbsp; 版本 1.2 &nbsp;|&nbsp; 2026 年</p>
 </header>
 
 <main>
@@ -255,6 +257,16 @@
       <p>週報、月報、陳情分析、選民互動統計</p>
     </div>
     <div class="func-card">
+      <div class="icon">📑</div>
+      <h4>提案追蹤</h4>
+      <p>管理議員提案、市府提案進度，支援 AI 智慧匯入</p>
+    </div>
+    <div class="func-card">
+      <div class="icon">🤖</div>
+      <h4>AI 助理</h4>
+      <p>智慧摘要、自動分類、備註建議，支援 Gemini / OpenAI / Ollama</p>
+    </div>
+    <div class="func-card">
       <div class="icon">🔍</div>
       <h4>全文搜尋</h4>
       <p>跨模組快速搜尋選民、案件、公文</p>
@@ -262,7 +274,7 @@
     <div class="func-card">
       <div class="icon">⚙️</div>
       <h4>系統設定</h4>
-      <p>帳戶管理、自動備份、選區設定</p>
+      <p>帳戶管理、自動備份、AI 設定、選區設定</p>
     </div>
   </div>
 
@@ -491,17 +503,129 @@
   <h3>5.7 刪除案件</h3>
   <p>在案件清單的操作欄點擊「🗑 刪除」圖示，確認後即可永久刪除該案件（含所有處理記錄）。刪除前系統會彈出確認提示，請謹慎操作。</p>
 
+  <h3>5.8 AI 輔助功能</h3>
+  <p>陳情案件提供三項 AI 輔助功能，需先完成 AI 設定（見第 11 章）：</p>
+  <table>
+    <thead><tr><th>功能</th><th>位置</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>AI 摘要</td><td>案件詳情頁「AI 摘要」按鈕</td><td>自動摘要陳情內容，條列主要訴求</td></tr>
+      <tr><td>AI 分類建議</td><td>類別欄位旁「AI 推薦」連結</td><td>根據主旨與內容推薦最適類別</td></tr>
+      <tr><td>AI 備註建議</td><td>追蹤備註欄旁「AI 建議」按鈕</td><td>建議後續處理方向與注意事項</td></tr>
+    </tbody>
+  </table>
+
   <div class="callout tip">
     <strong>批次操作</strong>
     在案件清單中勾選多個案件後，可批次變更狀態、指派負責人或匯出選取案件。
   </div>
 </section>
 
-<!-- 6. 公文管理 -->
-<section id="documents">
-  <h2>6. 公文管理</h2>
+<!-- 6. 提案追蹤 -->
+<section id="proposals">
+  <h2>6. 提案追蹤</h2>
+  <p>提案追蹤模組協助辦公室記錄與追蹤議員提案、市府提案的議會進度，支援 AI 智慧匯入、摘要與備註建議功能。</p>
 
-  <h3>6.1 公文類型</h3>
+  <h3>6.1 提案狀態說明</h3>
+  <table>
+    <thead><tr><th>狀態</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip blue">待審議</span></td><td>提案已送出，等待議會排程審議</td></tr>
+      <tr><td><span class="chip orange">審議中</span></td><td>正在議會委員會或大會進行審議</td></tr>
+      <tr><td><span class="chip green">通過</span></td><td>提案已通過決議</td></tr>
+      <tr><td><span class="chip red">否決</span></td><td>提案未獲通過</td></tr>
+      <tr><td><span class="chip gray">撤回</span></td><td>提案人主動撤回</td></tr>
+      <tr><td><span class="chip gray">歸檔</span></td><td>屆期不連續，已歸檔存查</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.2 提案類型</h3>
+  <table>
+    <thead><tr><th>類型</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>議員提案</td><td>由議員個人或聯署提出的議案</td></tr>
+      <tr><td>市府提案</td><td>市政府行政機關所提出的議案</td></tr>
+      <tr><td>臨時動議</td><td>會議中臨時提出的動議事項</td></tr>
+      <tr><td>請願提案</td><td>由民眾請願轉入議會程序的提案</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.3 新增提案</h3>
+  <ol class="step-list">
+    <li><div class="content"><strong>點擊左側選單「提案追蹤」</strong>進入提案清單頁面。</div></li>
+    <li><div class="content"><strong>點擊右上角「新增提案」</strong>開啟新增表單。</div></li>
+    <li>
+      <div class="content">
+        <strong>填寫提案資料</strong>
+        <ul>
+          <li><strong>提案主旨</strong>（必填）：提案標題</li>
+          <li><strong>提案日期</strong>：格式為 YYYY-MM-DD（例如 2026-04-01）</li>
+          <li><strong>提案類型</strong>：議員提案 / 市府提案 / 臨時動議 / 請願提案</li>
+          <li><strong>屆次</strong>：例如「第 12 屆」</li>
+          <li><strong>會議名稱</strong>：例如「第 3 次定期大會」</li>
+          <li><strong>類別</strong>：提案主題分類關鍵字</li>
+          <li><strong>提案人</strong>：提出議員姓名</li>
+          <li><strong>連署人</strong>：多位連署人以逗號分隔</li>
+          <li><strong>提案內容</strong>：完整說明文字</li>
+          <li><strong>來源網址</strong>：議會公報或相關連結（僅允許 http / https）</li>
+          <li><strong>追蹤備註</strong>：辦公室內部進度備忘</li>
+        </ul>
+      </div>
+    </li>
+    <li><div class="content"><strong>點擊「儲存」</strong>完成新增。</div></li>
+  </ol>
+
+  <h3>6.4 AI 智慧匯入提案</h3>
+  <p>若您已有提案的文字版本（例如從議會公報複製的文字），可使用 AI 智慧匯入功能自動解析欄位，省去逐欄填寫的時間。</p>
+  <div class="callout info">
+    <strong>前置條件</strong>
+    需先在「系統設定」→「AI 助理設定」中完成 AI 供應商設定。
+  </div>
+  <ol class="step-list">
+    <li><div class="content"><strong>點擊「AI 匯入」按鈕</strong>（位於新增提案表單右上角）。</div></li>
+    <li><div class="content"><strong>貼上提案原文</strong>：將完整提案文字貼入文字框（最多 8,000 字）。</div></li>
+    <li><div class="content"><strong>點擊「解析」</strong>，AI 自動提取提案編號、日期、主旨、提案人、連署人、內容等欄位。</div></li>
+    <li><div class="content"><strong>確認並修正</strong>：檢查 AI 解析結果，如有誤可手動修正後點擊「套用」。</div></li>
+  </ol>
+
+  <h3>6.5 AI 功能輔助</h3>
+  <table>
+    <thead><tr><th>功能</th><th>按鈕位置</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>AI 優化摘要</td><td>提案詳情頁的「AI 優化」按鈕</td><td>以 2–3 句話摘要提案主要訴求，可貼入說明欄</td></tr>
+      <tr><td>AI 建議備註</td><td>追蹤備註欄旁的「AI 建議」按鈕</td><td>根據提案狀態建議後續追蹤重點</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.6 提案清單與篩選</h3>
+  <p>提案清單頂部提供多條件篩選：</p>
+  <ul>
+    <li><strong>關鍵字搜尋</strong>：同時搜尋主旨、提案編號、內容</li>
+    <li><strong>狀態篩選</strong>：依審議狀態篩選</li>
+    <li><strong>提案類型</strong>：依議員提案、市府提案等篩選</li>
+    <li><strong>屆次</strong>：依會期篩選</li>
+    <li><strong>類別</strong>：依主題類別篩選</li>
+    <li><strong>提案人</strong>：搜尋特定議員提案</li>
+  </ul>
+  <p>清單頂部的統計欄顯示各狀態提案的數量總覽。</p>
+
+  <h3>6.7 提案統計</h3>
+  <p>清單頁面頂部的狀態統計列可快速了解目前：</p>
+  <ul>
+    <li>待審議、審議中的提案總數</li>
+    <li>已通過、否決、撤回的歷史記錄</li>
+  </ul>
+
+  <div class="callout tip">
+    <strong>提案來源連結</strong>
+    若填寫了「來源網址」，在提案詳情頁會顯示「查看原始連結」按鈕，直接開啟議會公報頁面。僅接受 http 或 https 開頭的網址。
+  </div>
+</section>
+
+<!-- 7. 公文管理 -->
+<section id="documents">
+  <h2>7. 公文管理</h2>
+
+  <h3>7.1 公文類型</h3>
   <table>
     <thead><tr><th>類型</th><th>說明</th></tr></thead>
     <tbody>
@@ -510,7 +634,7 @@
     </tbody>
   </table>
 
-  <h3>6.2 民國日期說明</h3>
+  <h3>7.2 民國日期說明</h3>
   <p>本系統所有日期均採用中華民國年號：</p>
   <ul>
     <li>格式：<code>民國年/月/日</code>，例如民國 115 年 3 月 15 日輸入 <code>115/03/15</code></li>
@@ -518,7 +642,7 @@
     <li>輸入時可省略前導零，<code>115/3/5</code> 與 <code>115/03/05</code> 均可接受</li>
   </ul>
 
-  <h3>6.3 新增公文</h3>
+  <h3>7.3 新增公文</h3>
   <ol class="step-list">
     <li><div class="content"><strong>選擇公文類型</strong>收文或發文。</div></li>
     <li>
@@ -537,7 +661,7 @@
     <li><div class="content"><strong>點擊「儲存」</strong></div></li>
   </ol>
 
-  <h3>6.4 附件與刪除</h3>
+  <h3>7.4 附件與刪除</h3>
   <p>開啟公文詳細後，可在抽屜下方的「附件」區域上傳相關文件：</p>
   <ul>
     <li>支援格式：<strong>PDF</strong>、<strong>JPG / PNG</strong> 等圖片</li>
@@ -546,7 +670,7 @@
   </ul>
   <p>點擊詳細頁右上角「🗑 刪除公文」按鈕可永久刪除該公文（含附件）。</p>
 
-  <h3>6.5 發文匯出 Word（公文格式）</h3>
+  <h3>7.5 發文匯出 Word（公文格式）</h3>
   <p>開啟發文後點擊「匯出 Word」，系統依據台灣行政機關公文格式（函）產生 <code>.doc</code> 檔：</p>
   <ul>
     <li>A4 直式，外框線</li>
@@ -559,7 +683,7 @@
     產生的檔案為 <code>.doc</code> 格式（Word 97-2003），可直接用 Microsoft Word、LibreOffice、WPS 開啟。
   </div>
 
-  <h3>6.6 公文搜尋</h3>
+  <h3>7.6 公文搜尋</h3>
   <p>支援以下搜尋條件：</p>
   <ul>
     <li>文號、主旨關鍵字</li>
@@ -568,19 +692,22 @@
     <li>辦理狀態（待辦、已辦、逾期）</li>
   </ul>
 
-  <h3>6.7 逾期公文提醒</h3>
+  <h3>7.7 逾期公文提醒</h3>
   <p>辦理期限設定後，系統會在以下地方提示：</p>
   <ul>
     <li>儀表板「待辦提醒」區塊</li>
     <li>公文清單中以紅色標示逾期項目</li>
   </ul>
+
+  <h3>7.8 AI 摘要功能</h3>
+  <p>開啟公文詳情抽屜後，點擊主旨旁的「AI 摘要」按鈕，可快速摘要公文的主旨與說明事項。需先完成 AI 設定（見第 11 章）。</p>
 </section>
 
-<!-- 7. 行程安排 -->
+<!-- 8. 行程安排 -->
 <section id="schedule">
-  <h2>7. 行程安排與待辦事項</h2>
+  <h2>8. 行程安排與待辦事項</h2>
 
-  <h3>7.1 行程月曆</h3>
+  <h3>8.1 行程月曆</h3>
   <p>從左側選單點擊「行程」進入月曆頁面，提供三種檢視模式：</p>
   <table>
     <thead><tr><th>模式</th><th>適用情境</th></tr></thead>
@@ -591,7 +718,7 @@
     </tbody>
   </table>
 
-  <h3>7.2 新增行程</h3>
+  <h3>8.2 新增行程</h3>
   <p>在月曆上點擊任意日期，或點擊右上角「新增行程」按鈕：</p>
   <ul>
     <li><strong>標題</strong>（必填）：行程名稱</li>
@@ -602,7 +729,7 @@
     <li><strong>全日行程</strong>：勾選後不需填寫時間</li>
   </ul>
 
-  <h3>7.3 待辦事項</h3>
+  <h3>8.3 待辦事項</h3>
   <p>「待辦事項」是比行程更輕量的追蹤工具，適合記錄需要完成但無固定時間的工作：</p>
   <ul>
     <li>新增待辦：輸入內容、截止日期、優先等級（高/中/低）</li>
@@ -611,16 +738,16 @@
     <li>逾期提醒：超過截止日的待辦以紅色顯示於儀表板</li>
   </ul>
 
-  <h3>7.4 行程搜尋與篩選</h3>
+  <h3>8.4 行程搜尋與篩選</h3>
   <p>月曆頂部提供搜尋功能，輸入關鍵字可搜尋標題和說明。側邊可依活動類型篩選顯示的行程。</p>
 </section>
 
-<!-- 8. 統計報表 -->
+<!-- 9. 統計報表 -->
 <section id="reports">
-  <h2>8. 統計報表</h2>
+  <h2>9. 統計報表</h2>
   <p>從左側選單點擊「報表」進入統計分析頁面，提供多種報表類型。</p>
 
-  <h3>8.1 週報</h3>
+  <h3>9.1 週報</h3>
   <p>自動統計指定週次的工作概要：</p>
   <ul>
     <li>本週新增陳情案件數</li>
@@ -631,7 +758,7 @@
   </ul>
   <p>可選擇任意週次查看，並支援列印或匯出 PDF。</p>
 
-  <h3>8.2 月報</h3>
+  <h3>9.2 月報</h3>
   <p>更詳細的月度統計，包含：</p>
   <ul>
     <li>陳情案件月趨勢折線圖（近 12 個月比較）</li>
@@ -640,7 +767,7 @@
     <li>處理人員績效統計（結案數、平均處理天數）</li>
   </ul>
 
-  <h3>8.3 陳情分析報表</h3>
+  <h3>9.3 陳情分析報表</h3>
   <table>
     <thead><tr><th>報表名稱</th><th>內容</th></tr></thead>
     <tbody>
@@ -651,7 +778,7 @@
     </tbody>
   </table>
 
-  <h3>8.4 選民互動統計</h3>
+  <h3>9.4 選民互動統計</h3>
   <table>
     <thead><tr><th>報表名稱</th><th>內容</th></tr></thead>
     <tbody>
@@ -662,7 +789,7 @@
     </tbody>
   </table>
 
-  <h3>8.5 匯出報表</h3>
+  <h3>9.5 匯出報表</h3>
   <p>大多數報表支援以下匯出格式：</p>
   <ul>
     <li><strong>Excel (.xlsx)</strong>：原始數據，可進一步加工</li>
@@ -670,19 +797,115 @@
   </ul>
 </section>
 
-<!-- 9. 系統設定 -->
+<!-- 10. AI 助理功能 -->
+<section id="ai">
+  <h2>10. AI 助理功能</h2>
+  <p>本系統內建 AI 助理功能，可協助自動摘要陳情內容、分類案件類別、建議追蹤備註，以及智慧解析提案文件。支援雲端模型（Google Gemini、OpenAI）與本地模型（Ollama）。</p>
+
+  <div class="callout warning">
+    <strong>功能前置條件</strong>
+    所有 AI 功能需先由管理員在「系統設定」→「AI 助理設定」中完成供應商設定，才能使用。若尚未設定，點擊 AI 按鈕時系統會引導您至設定頁面。
+  </div>
+
+  <h3>10.1 各模組 AI 功能一覽</h3>
+  <table>
+    <thead><tr><th>模組</th><th>AI 功能</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>陳情案件</td>
+        <td>AI 摘要</td>
+        <td>以 2–3 句話摘要陳情內容重點，含訴求與關鍵資訊</td>
+      </tr>
+      <tr>
+        <td>陳情案件</td>
+        <td>AI 分類建議</td>
+        <td>根據主旨與內容，從系統類別清單中推薦最適合的分類</td>
+      </tr>
+      <tr>
+        <td>陳情案件</td>
+        <td>AI 備註建議</td>
+        <td>根據陳情資訊，建議後續處理方向或聯絡要點（2–4 句話）</td>
+      </tr>
+      <tr>
+        <td>公文管理</td>
+        <td>AI 摘要</td>
+        <td>快速摘要公文主旨與說明事項</td>
+      </tr>
+      <tr>
+        <td>提案追蹤</td>
+        <td>AI 匯入解析</td>
+        <td>將提案原文自動解析為結構化欄位（編號、日期、提案人等）</td>
+      </tr>
+      <tr>
+        <td>提案追蹤</td>
+        <td>AI 優化摘要</td>
+        <td>摘要提案主要訴求與目的</td>
+      </tr>
+      <tr>
+        <td>提案追蹤</td>
+        <td>AI 備註建議</td>
+        <td>根據提案狀態建議後續應注意事項或跟進方向</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>10.2 使用 AI 功能的步驟</h3>
+  <ol class="step-list">
+    <li><div class="content"><strong>開啟對應記錄</strong>：例如開啟陳情案件詳情或新增提案表單。</div></li>
+    <li><div class="content"><strong>點擊 AI 功能按鈕</strong>：按鈕通常顯示為「🤖 AI 摘要」、「AI 分類」或「AI 建議」。</div></li>
+    <li><div class="content"><strong>等待 AI 回應</strong>：依網路速度通常需 1–5 秒（本地 Ollama 模型依硬體而異）。</div></li>
+    <li><div class="content"><strong>確認結果</strong>：AI 回應僅供參考，建議人工審閱後再使用。可直接套用或手動調整。</div></li>
+  </ol>
+
+  <h3>10.3 AI 供應商選擇建議</h3>
+  <table>
+    <thead><tr><th>供應商</th><th>優點</th><th>適用情境</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Google Gemini</td>
+        <td>效果佳、速度快，有免費額度</td>
+        <td>一般辦公室使用首選；需要網路連線</td>
+      </tr>
+      <tr>
+        <td>OpenAI</td>
+        <td>業界標準，準確率高</td>
+        <td>需要高精度的摘要與分類；需要網路連線</td>
+      </tr>
+      <tr>
+        <td>Ollama（本地）</td>
+        <td>完全離線，資料不外傳</td>
+        <td>重視資料隱私或無網路環境；需要較高規格的主機硬體</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>10.4 AI 回應品質注意事項</h3>
+  <ul>
+    <li>AI 摘要為自動生成，可能存在遺漏或不準確，請人工確認後再使用</li>
+    <li>AI 分類為建議性質，最終類別仍由操作人員決定</li>
+    <li>提案解析效果依原文格式而異，議會公報格式工整的文件效果最佳</li>
+    <li>所有 AI 功能的輸入資料僅用於本次請求，不會被系統長期儲存用於訓練</li>
+  </ul>
+
+  <div class="callout tip">
+    <strong>Gemini 免費 API 金鑰申請</strong>
+    前往 <code>aistudio.google.com</code> 可免費申請 Gemini API 金鑰（每日有免費呼叫額度），適合小型辦公室使用。
+  </div>
+</section>
+
+<!-- 11. 系統設定 -->
 <section id="settings">
-  <h2>9. 系統設定</h2>
+  <h2>11. 系統設定</h2>
   <p>僅管理員可存取完整系統設定。從左側選單點擊「設定」進入。</p>
 
-  <h3>9.1 辦公室基本設定</h3>
+  <h3>11.1 辦公室基本設定</h3>
   <ul>
     <li>辦公室名稱（顯示於系統標題與報表表頭）</li>
     <li>聯絡電話、地址</li>
     <li>選區設定（里別清單）</li>
   </ul>
 
-  <h3>9.2 自動備份設定</h3>
+  <h3>11.2 自動備份設定</h3>
   <table>
     <thead><tr><th>設定項目</th><th>說明</th></tr></thead>
     <tbody>
@@ -697,7 +920,7 @@
     預設備份位置與程式同磁碟，若硬碟損壞則備份一併遺失。建議在「設定」→「資料庫備份」→「變更目錄」中指定外部儲存裝置路徑。
   </div>
 
-  <h3>9.3 手動備份與還原</h3>
+  <h3>11.3 手動備份與還原</h3>
   <ol>
     <li>前往「設定」→「備份管理」</li>
     <li>點擊「立即備份」建立手動備份</li>
@@ -708,19 +931,47 @@
     還原操作會覆蓋目前所有資料，且無法撤銷。執行還原前請確認已備份目前資料。
   </div>
 
-  <h3>9.4 資料路徑管理</h3>
+  <h3>11.4 資料路徑管理</h3>
   <p>點擊應用程式上方選單「系統」→「變更資料位置...」可重新設定資料儲存路徑。變更後需重新啟動才會生效。</p>
 
-  <h3>9.5 系統資訊</h3>
+  <h3>11.5 AI 助理設定</h3>
+  <p>前往「設定」→「AI 助理設定」可配置 AI 供應商（僅管理員可修改）。</p>
+  <table>
+    <thead><tr><th>設定項目</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>AI 供應商</td><td>選擇 <strong>停用</strong> / <strong>Google Gemini</strong> / <strong>OpenAI</strong> / <strong>Ollama（本地）</strong></td></tr>
+      <tr><td>模型名稱</td><td>
+        Gemini 可選：<code>gemini-2.5-flash</code>（推薦）、<code>gemini-2.5-pro</code>、<code>gemini-1.5-flash</code><br>
+        OpenAI 可選：<code>gpt-4o-mini</code>（推薦）、<code>gpt-4o</code><br>
+        Ollama 輸入已安裝的模型名稱，例如 <code>llama3.2</code>
+      </td></tr>
+      <tr><td>API 金鑰</td><td>Gemini 或 OpenAI 的 API 金鑰；Ollama 不需填寫</td></tr>
+      <tr><td>Ollama 端點</td><td>僅 Ollama 供應商需填，預設 <code>http://localhost:11434</code></td></tr>
+      <tr><td>最大 Token 數</td><td>每次回應的最大字數（64–4096），預設 1024，一般無需調整</td></tr>
+    </tbody>
+  </table>
+  <ol class="step-list">
+    <li><div class="content"><strong>選擇供應商</strong>：從下拉選單選擇您的 AI 服務。</div></li>
+    <li><div class="content"><strong>填入 API 金鑰</strong>：Gemini / OpenAI 需填入對應的 API 金鑰。</div></li>
+    <li><div class="content"><strong>選擇模型</strong>：從下拉選單或直接輸入模型名稱。</div></li>
+    <li><div class="content"><strong>點擊「儲存 AI 設定」</strong>確認儲存。</div></li>
+    <li><div class="content"><strong>點擊「測試連線」</strong>確認 AI 服務可正常連線運作。</div></li>
+  </ol>
+  <div class="callout info">
+    <strong>API 金鑰安全說明</strong>
+    API 金鑰儲存於本機資料庫，設定頁面僅顯示末 4 碼（<code>***xxxx</code>）遮罩。金鑰不會外傳，但建議定期從供應商後台輪換金鑰。
+  </div>
+
+  <h3>11.6 系統資訊</h3>
   <p>「設定」頁面最下方的「系統資訊」卡片顯示目前安裝的版本號（例如 <code>v1.0.0</code>）。</p>
 </section>
 
-<!-- 10. 行動裝置 -->
+<!-- 12. 行動裝置 -->
 <section id="mobile">
-  <h2>10. 行動裝置使用</h2>
+  <h2>12. 行動裝置使用</h2>
   <p>在手機或平板上透過 WiFi 連線至主機 IP，系統自動切換行動版介面。</p>
 
-  <h3>10.1 連線方式</h3>
+  <h3>12.1 連線方式</h3>
   <ol class="step-list">
     <li><div class="content"><strong>確認主機與手機在同一 WiFi</strong></div></li>
     <li><div class="content"><strong>查詢主機 IP</strong>：在主機的「設定」→「網路資訊」中可看到區域網路 IP（例如 <code>192.168.1.100</code>）</div></li>
@@ -728,7 +979,7 @@
     <li><div class="content"><strong>正常登入</strong>即可使用</div></li>
   </ol>
 
-  <h3>10.2 行動版介面差異</h3>
+  <h3>12.2 行動版介面差異</h3>
   <table>
     <thead><tr><th>項目</th><th>桌面版</th><th>行動版（< 768px）</th></tr></thead>
     <tbody>
@@ -743,7 +994,7 @@
     在 Safari（iOS）或 Chrome（Android）點擊「分享」→「加入主畫面」，即可建立 App 捷徑，啟動時全螢幕顯示。
   </div>
 
-  <h3>10.3 注意事項</h3>
+  <h3>12.3 注意事項</h3>
   <ul>
     <li>行動版僅支援查詢與新增，部分複雜表單（如批次匯入）建議在桌面操作</li>
     <li>手機無法直接執行備份下載，請在主機桌面端操作</li>
@@ -751,9 +1002,9 @@
   </ul>
 </section>
 
-<!-- 11. 快捷鍵 -->
+<!-- 13. 快捷鍵 -->
 <section id="shortcuts">
-  <h2>11. 鍵盤快捷鍵速查表</h2>
+  <h2>13. 鍵盤快捷鍵速查表</h2>
 
   <h3>全域快捷鍵</h3>
   <table class="shortcut-table">
@@ -812,7 +1063,7 @@
 </main>
 
 <footer>
-  選民服務系統 &copy; 2026 &nbsp;|&nbsp; 使用手冊 v1.1 &nbsp;|&nbsp; 技術支援請聯繫系統管理員
+  選民服務系統 &copy; 2026 &nbsp;|&nbsp; 使用手冊 v1.2 &nbsp;|&nbsp; 技術支援請聯繫系統管理員
 </footer>
 </div>
 

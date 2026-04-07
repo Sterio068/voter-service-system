@@ -34,7 +34,7 @@ export interface Voter {
   household_city?: string
   household_district?: string
   household_village?: string
-  household_neighbor?: string
+
   household_address?: string
   mailing_address?: string
   occupation?: string

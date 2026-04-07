@@ -72,14 +72,29 @@ export const DOC_STATUS_LABELS: Record<string, string> = {
 
 export const SCHEDULE_TYPE_COLORS: Record<string, string> = {
   meeting: '#007AFF', visit: '#52c41a', inspection: '#fa8c16',
-  event: '#722ed1', dinner: '#13c2c2', ceremony: '#eb2f96',
-  hearing: '#faad14', consultation: '#fa541c', other: '#8c8c8c',
+  event: '#722ed1', dinner: '#13c2c2', service: '#36cfc9',
+  consultation: '#fa541c', wedding: '#f759ab',
+  public_memorial: '#4a1942', other: '#8c8c8c',
+  // 舊類型向下相容（顯示用）
+  funeral: '#595959', celebration: '#d4b106', ceremony: '#eb2f96', hearing: '#faad14',
 }
 
 export const SCHEDULE_TYPE_LABELS: Record<string, string> = {
   meeting: '會議', visit: '拜訪', inspection: '會勘',
-  event: '活動', dinner: '餐敘', ceremony: '典禮',
-  hearing: '公聽會', consultation: '法律諮詢', other: '其他',
+  event: '活動', dinner: '餐敘', service: '選民服務',
+  consultation: '法律諮詢', wedding: '婚禮',
+  public_memorial: '公祭', other: '其他',
+  // 舊類型向下相容（顯示用）
+  funeral: '喪禮', celebration: '喜慶', ceremony: '典禮', hearing: '公聽會',
+}
+
+// 觸發禮儀子表單的行程類型
+export const CEREMONY_SCHEDULE_TYPES = ['wedding', 'public_memorial']
+
+export const CEREMONY_TYPE_LABELS: Record<string, string> = {
+  wedding: '婚禮', funeral: '喪禮', birthday: '壽宴', full_moon: '彌月',
+  opening: '開幕喬遷', graduation: '升學', election: '選舉祝賀',
+  condolence: '慰問探視', festival: '節慶送禮', other: '其他',
 }
 
 export const ROLE_LABELS: Record<string, string> = {

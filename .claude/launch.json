@@ -3,19 +3,19 @@
   "configurations": [
     {
       "name": "Backend API Server",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "/opt/homebrew/bin/npm",
       "runtimeArgs": ["run", "dev:server"],
       "port": 8080
     },
     {
       "name": "Frontend Vite Dev Server",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:client"],
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": [".claude/start-client.sh"],
       "port": 5173
     },
     {
       "name": "All (Backend + Frontend + Electron)",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "/opt/homebrew/bin/npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5173
     }

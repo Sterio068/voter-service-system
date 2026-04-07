@@ -1,15 +1,16 @@
 import { FastifyInstance } from 'fastify'
 import { google } from 'googleapis'
 import { db } from '../db/index'
+import { getSetting, setSetting } from '../utils/settings'
 import { requirePermission, authenticate } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
 
-// ── 取得 OAuth2 client ──────────────────────────────────────
+// ── 取得 OAuth2 client（經由 getSetting 快取，避免每次直接讀 DB）──
 export function getOAuth2Client() {
-  const clientId     = (db.prepare("SELECT value FROM settings WHERE key='gcal_client_id'").get() as any)?.value
-  const clientSecret = (db.prepare("SELECT value FROM settings WHERE key='gcal_client_secret'").get() as any)?.value
+  const clientId     = getSetting('gcal_client_id')
+  const clientSecret = getSetting('gcal_client_secret')
   if (!clientId || !clientSecret) return null
-  const port = (db.prepare("SELECT value FROM settings WHERE key='port'").get() as any)?.value || '3000'
+  const port = getSetting('port') || '3000'
   const redirectUri = `http://localhost:${port}/api/integrations/gcal/callback`
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri)
 }
@@ -62,15 +63,18 @@ export async function syncScheduleToGCal(scheduleId: number, action: 'create' | 
           continue
         }
 
+        // 將 SQLite 本地時間字串（無時區）加上台灣 +08:00，
+        // 避免 toISOString() 轉成 UTC Z 後被 Google API 誤解析
+        const toTaipeiDT = (s: string) => s.replace(' ', 'T') + '+08:00'
         const event = {
           summary:     schedule.title,
           location:    schedule.location || undefined,
           description: schedule.note || undefined,
           start: schedule.end_time
-            ? { dateTime: new Date(schedule.start_time).toISOString(), timeZone: 'Asia/Taipei' }
+            ? { dateTime: toTaipeiDT(schedule.start_time), timeZone: 'Asia/Taipei' }
             : { date: schedule.start_time.slice(0, 10) },
           end: schedule.end_time
-            ? { dateTime: new Date(schedule.end_time).toISOString(), timeZone: 'Asia/Taipei' }
+            ? { dateTime: toTaipeiDT(schedule.end_time), timeZone: 'Asia/Taipei' }
             : { date: schedule.start_time.slice(0, 10) },
         }
 
@@ -97,8 +101,8 @@ export async function syncScheduleToGCal(scheduleId: number, action: 'create' | 
 export default async function googleCalendarRoutes(fastify: FastifyInstance) {
   // 取得 OAuth 設定狀態與已連結帳號
   fastify.get('/api/integrations/gcal/status', { preHandler: [requirePermission('settings', 'edit')] }, async (_, reply) => {
-    const clientId     = (db.prepare("SELECT value FROM settings WHERE key='gcal_client_id'").get() as any)?.value || ''
-    const clientSecret = (db.prepare("SELECT value FROM settings WHERE key='gcal_client_secret'").get() as any)?.value || ''
+    const clientId     = getSetting('gcal_client_id') || ''
+    const clientSecret = getSetting('gcal_client_secret') || ''
     const accounts = db.prepare('SELECT id,label,email,calendar_id,is_active,created_at FROM google_calendar_accounts ORDER BY id').all()
     return reply.send({ success: true, data: { configured: !!(clientId && clientSecret), clientId, accounts } })
   })
@@ -107,8 +111,8 @@ export default async function googleCalendarRoutes(fastify: FastifyInstance) {
   fastify.post('/api/integrations/gcal/credentials', { preHandler: [requirePermission('settings', 'edit')] }, async (request, reply) => {
     const { client_id, client_secret } = request.body as any
     if (!client_id || !client_secret) return reply.code(400).send({ success: false, error: '請填寫用戶端 ID 和密鑰' })
-    db.prepare("INSERT INTO settings(key,value) VALUES('gcal_client_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(client_id)
-    db.prepare("INSERT INTO settings(key,value) VALUES('gcal_client_secret',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(client_secret)
+    setSetting('gcal_client_id', client_id)
+    setSetting('gcal_client_secret', client_secret)
     return reply.send({ success: true })
   })
 

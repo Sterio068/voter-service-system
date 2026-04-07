@@ -32,6 +32,8 @@ export default function VoterListPage() {
   const [pageSize, setPageSize] = useState(20)
   const [search, setSearch] = useState('')
   const [filterCity, setFilterCity] = useState('')
+  const [filterDistrict, setFilterDistrict] = useState('')
+  const [filterVillage, setFilterVillage] = useState('')
   const [filterTag, setFilterTag] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingVoter, setEditingVoter] = useState<any>(null)
@@ -68,6 +70,8 @@ export default function VoterListPage() {
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleVoterHover = (voterId: number) => {
+    // 清除前一個未觸發的計時器，防止快速滑動時積累請求
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
     hoverTimerRef.current = setTimeout(async () => {
       setHoverLoading(true)
       try {
@@ -107,10 +111,13 @@ export default function VoterListPage() {
 
   useEffect(() => {
     fetchVoters()
-  }, [page, pageSize, search, filterCity, filterTag])
+  }, [page, pageSize, search, filterCity, filterDistrict, filterVillage, filterTag])
 
   useEffect(() => {
     fetchTags()
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
+    }
   }, [])
 
   useDataSync((events) => {
@@ -176,12 +183,12 @@ export default function VoterListPage() {
     }
     undoDataRef.current = { ids, field: 'tags', oldValues }
 
-    let done = 0
+    let done = 0; let failed = 0
     for (const id of ids) {
       const voter = data.find((v: any) => v.id === id)
       const existingTags: string[] = voter?.tags || []
       const mergedTags = Array.from(new Set([...existingTags, ...batchTags]))
-      try { await api.put(`/voters/${id}`, { tags: mergedTags }) } catch {}
+      try { await api.put(`/voters/${id}`, { tags: mergedTags }) } catch { failed++ }
       done++
       setBatchProgress(Math.round((done / ids.length) * 100))
     }
@@ -189,9 +196,9 @@ export default function VoterListPage() {
     setBatchTagModalOpen(false)
     setBatchTags([])
     setSelectedRowKeys([])
-    notification.success({
+    notification[failed ? 'warning' : 'success']({
       key: undoNotificationKey,
-      message: `已完成批次更新 ${ids.length} 位選民`,
+      message: failed ? `批次更新完成，${failed} 位失敗` : `已完成批次更新 ${ids.length} 位選民`,
       description: '標籤已批次套用',
       btn: <Button size="small" onClick={handleUndo}>撤銷</Button>,
       duration: 30,
@@ -214,9 +221,9 @@ export default function VoterListPage() {
     }
     undoDataRef.current = { ids, field: 'support_level', oldValues }
 
-    let done = 0
+    let done = 0; let failed = 0
     for (const id of ids) {
-      try { await api.put(`/voters/${id}`, { support_level: batchSupportLevel }) } catch {}
+      try { await api.put(`/voters/${id}`, { support_level: batchSupportLevel }) } catch { failed++ }
       done++
       setBatchProgress(Math.round((done / ids.length) * 100))
     }
@@ -224,9 +231,9 @@ export default function VoterListPage() {
     setBatchSupportModalOpen(false)
     setBatchSupportLevel(null)
     setSelectedRowKeys([])
-    notification.success({
+    notification[failed ? 'warning' : 'success']({
       key: undoNotificationKey,
-      message: `已完成批次更新 ${ids.length} 位選民`,
+      message: failed ? `批次更新完成，${failed} 位失敗` : `已完成批次更新 ${ids.length} 位選民`,
       description: '支持度已批次套用',
       btn: <Button size="small" onClick={handleUndo}>撤銷</Button>,
       duration: 30,
@@ -247,6 +254,8 @@ export default function VoterListPage() {
       const params: any = { page, pageSize }
       if (search) params.search = search
       if (filterCity) params.city = filterCity
+      if (filterDistrict) params.district = filterDistrict
+      if (filterVillage) params.village = filterVillage
       if (filterTag) params.tag = filterTag
 
       const res = await api.get('/voters', { params })
@@ -311,6 +320,8 @@ export default function VoterListPage() {
       const params: any = {}
       if (search) params.search = search
       if (filterCity) params.city = filterCity
+      if (filterDistrict) params.district = filterDistrict
+      if (filterVillage) params.village = filterVillage
       if (filterTag) params.tag = filterTag
       const res = await api.get('/voters/export', { params, responseType: 'blob' })
       const url = URL.createObjectURL(res.data)
@@ -481,18 +492,32 @@ export default function VoterListPage() {
             onSearch={(v) => { setSearch(v); setPage(1) }}
             prefix={<SearchOutlined />}
           />
-          <Select placeholder="縣市篩選" allowClear style={{ width: 130 }} value={filterCity || undefined} onChange={(v) => { setFilterCity(v || ''); setPage(1) }}>
+          <Select placeholder="縣市篩選" allowClear style={{ width: 130 }} value={filterCity || undefined} onChange={(v) => { setFilterCity(v || ''); setFilterDistrict(''); setFilterVillage(''); setPage(1) }}>
             {['台北市', '新北市', '桃園市', '台中市', '台南市', '高雄市', '基隆市', '新竹市', '嘉義市',
               '新竹縣', '苗栗縣', '彰化縣', '南投縣', '雲林縣', '嘉義縣', '屏東縣', '宜蘭縣', '花蓮縣', '台東縣',
               '澎湖縣', '金門縣', '連江縣'].map(c => <Option key={c} value={c}>{c}</Option>)}
           </Select>
+          <Input
+            placeholder="鄉鎮市區"
+            allowClear
+            style={{ width: 110 }}
+            value={filterDistrict}
+            onChange={(e) => { setFilterDistrict(e.target.value); setPage(1) }}
+          />
+          <Input
+            placeholder="村里"
+            allowClear
+            style={{ width: 90 }}
+            value={filterVillage}
+            onChange={(e) => { setFilterVillage(e.target.value); setPage(1) }}
+          />
           <Select placeholder="標籤篩選" allowClear style={{ width: 120 }} value={filterTag || undefined} onChange={(v) => { setFilterTag(v || ''); setPage(1) }}>
             {tags.map(t => <Option key={t} value={t}>{t}</Option>)}
           </Select>
-          {(search || filterCity || filterTag) && (
+          {(search || filterCity || filterDistrict || filterVillage || filterTag) && (
             <Button
               icon={<FilterOutlined />}
-              onClick={() => { setSearch(''); setFilterCity(''); setFilterTag(''); setPage(1) }}
+              onClick={() => { setSearch(''); setFilterCity(''); setFilterDistrict(''); setFilterVillage(''); setFilterTag(''); setPage(1) }}
             >
               清除篩選
             </Button>
@@ -513,7 +538,7 @@ export default function VoterListPage() {
             onChange: (keys) => setSelectedRowKeys(keys),
           }}
           locale={{
-            emptyText: (search || filterCity || filterTag)
+            emptyText: (search || filterCity || filterDistrict || filterVillage || filterTag)
               ? <Empty description="查無符合條件的資料" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               : <Empty description="尚無資料" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
           }}
@@ -582,17 +607,46 @@ export default function VoterListPage() {
             <Button icon={<UploadOutlined />}>選擇 Excel 檔案</Button>
           </Upload>
           {preCheckResult && (
-            <Alert
-              type={preCheckResult.error_count > 0 ? 'warning' : 'success'}
-              message={`預檢結果：${preCheckResult.valid_count} 筆可匯入，${preCheckResult.error_count} 筆有錯誤`}
-              description={preCheckResult.errors?.length > 0 && (
-                <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12 }}>
-                  {preCheckResult.errors.map((e: string, i: number) => (
-                    <li key={i}>{e}</li>
-                  ))}
-                </ul>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Alert
+                type={preCheckResult.error_count > 0 ? 'warning' : 'success'}
+                message={`預檢結果：${preCheckResult.valid_count} 筆可匯入，${preCheckResult.error_count} 筆有錯誤`}
+                description={preCheckResult.errors?.length > 0 && (
+                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12 }}>
+                    {preCheckResult.errors.map((e: string, i: number) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                )}
+              />
+              {preCheckResult.address_preview?.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, color: '#8e8e93', marginBottom: 4 }}>
+                    📍 地址解析預覽（前 {preCheckResult.address_preview.length} 筆）
+                  </div>
+                  <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: '#f5f5f7' }}>
+                        {['姓名', '縣市', '鄉鎮區', '村里', '門牌'].map(h => (
+                          <th key={h} style={{ padding: '3px 6px', border: '1px solid #e0e0e0', fontWeight: 500, textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preCheckResult.address_preview.map((p: any, i: number) => (
+                        <tr key={i}>
+                          <td style={{ padding: '3px 6px', border: '1px solid #e0e0e0' }}>{p.name}</td>
+                          <td style={{ padding: '3px 6px', border: '1px solid #e0e0e0', color: p.household_city ? '#000' : '#ccc' }}>{p.household_city || '—'}</td>
+                          <td style={{ padding: '3px 6px', border: '1px solid #e0e0e0', color: p.household_district ? '#000' : '#ccc' }}>{p.household_district || '—'}</td>
+                          <td style={{ padding: '3px 6px', border: '1px solid #e0e0e0', color: p.household_village ? '#000' : '#ccc' }}>{p.household_village || '—'}</td>
+                          <td style={{ padding: '3px 6px', border: '1px solid #e0e0e0', color: p.household_address ? '#000' : '#ccc' }}>{p.household_address || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            />
+            </div>
           )}
           {importResult && (
             <div>
