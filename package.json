@@ -123,7 +123,9 @@
       "icon": "resources/icon.icns",
       "category": "public.app-category.productivity",
       "darkModeSupport": true,
-      "identity": null
+      "identity": null,
+      "gatekeeperAssess": false,
+      "hardenedRuntime": false
     },
     "nsis": {
       "oneClick": false,
