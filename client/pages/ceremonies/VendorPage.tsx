@@ -140,11 +140,11 @@ export default function VendorPage() {
     { title: '品項', dataIndex: 'item_name', key: 'item_name' },
     {
       title: '數量', key: 'qty', width: 70,
-      render: (_: any, r: any) => `${r.quantity} × ${r.unit_price.toLocaleString()}`
+      render: (_: any, r: any) => `${r.quantity ?? 1} × ${(r.unit_price ?? 0).toLocaleString()}`
     },
     {
       title: '金額', dataIndex: 'amount', key: 'amount', width: 90,
-      render: (v: number) => <Text strong>NT$ {v.toLocaleString()}</Text>
+      render: (v: number) => <Text strong>NT$ {(v ?? 0).toLocaleString()}</Text>
     },
     {
       title: '付款', dataIndex: 'payment_status', key: 'payment_status', width: 70,

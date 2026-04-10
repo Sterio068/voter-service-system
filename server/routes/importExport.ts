@@ -485,4 +485,185 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     reply.header('Content-Disposition', `attachment; filename*=UTF-8''petitions_${new Date().toISOString().slice(0, 10)}.xlsx`)
     return reply.send(buf)
   })
+
+  // ===== 陳情範本下載 =====
+  fastify.get('/api/petitions/import/template', { preHandler: [authenticate] }, async (_req, reply) => {
+    const headers = ['陳情日期', '陳情人姓名', '聯絡電話', '陳情方式', '陳情類別', '急迫程度', '陳情內容', '區域縣市', '區域鄉鎮市區', '區域村里', '詳細地址']
+    const example = ['2026-04-01', '王小明', '0912345678', '電話', '道路交通', '一般', '住家前方路燈故障，已黑暗多日，請協助修繕。', '臺北市', '大安區', '某里', '某路某段某號']
+    const helpRows = [
+      ['欄位', '說明', '必填'],
+      ['陳情日期', 'YYYY-MM-DD 格式，例如 2026-04-01', '必填'],
+      ['陳情人姓名', '留空則建立匿名案件', '選填'],
+      ['聯絡電話', '用於比對現有選民', '選填'],
+      ['陳情方式', '電話 / 面訪 / 書信 / 網路 / 現場', '選填'],
+      ['陳情類別', '需與系統類別管理中的名稱一致', '選填'],
+      ['急迫程度', '一般 / 急件 / 特急', '選填，預設一般'],
+      ['陳情內容', '案件說明，不可空白', '必填'],
+      ['區域縣市', '例如：臺北市', '選填'],
+      ['區域鄉鎮市區', '例如：大安區', '選填'],
+      ['區域村里', '例如：某里', '選填'],
+      ['詳細地址', '例如：某路某段某號', '選填'],
+    ]
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet([headers, example])
+    ws['!cols'] = headers.map((_, i) => ({ wch: [12, 12, 12, 10, 12, 10, 40, 8, 10, 8, 20][i] || 15 }))
+    XLSX.utils.book_append_sheet(wb, ws, '陳情資料')
+    const helpWs = XLSX.utils.aoa_to_sheet(helpRows)
+    helpWs['!cols'] = [{ wch: 14 }, { wch: 35 }, { wch: 10 }]
+    XLSX.utils.book_append_sheet(wb, helpWs, '欄位說明')
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+    reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    reply.header('Content-Disposition', "attachment; filename*=UTF-8''petition_import_template.xlsx")
+    return reply.send(buf)
+  })
+
+  // ===== 陳情批量匯入 =====
+  fastify.post('/api/petitions/import', { preHandler: [requirePermission('petitions', 'create')] }, async (request, reply) => {
+    const cu = (request as any).currentUser
+    const data = await request.file()
+    if (!data) return reply.code(400).send({ success: false, error: '請上傳 Excel 檔案' })
+
+    const buf = await data.toBuffer()
+    const wb = XLSX.read(buf, { type: 'buffer' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+    if (rows.length < 2) return reply.code(400).send({ success: false, error: '檔案無資料列' })
+
+    const COL = { date: 0, name: 1, phone: 2, channel: 3, category: 4, urgency: 5, content: 6, city: 7, district: 8, village: 9, address: 10 }
+    const URGENCY_MAP: Record<string, string> = { '一般': 'normal', '急件': 'urgent', '特急': 'critical' }
+    const CHANNEL_MAP: Record<string, string> = { '電話': 'phone', '面訪': 'visit', '書信': 'letter', '網路': 'online', '現場': 'walkin' }
+
+    let imported = 0, failed = 0
+    const errors: { row: number; error: string }[] = []
+
+    const importStmt = db.prepare(`
+      INSERT INTO petitions (case_number,petition_date,voter_id,voter_name,contact_phone,channel,category,content,area_city,area_district,area_village,area_address,urgency,status,created_by,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'normal','pending',?,datetime('now','localtime'),datetime('now','localtime'))
+    `)
+
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i]
+      if (!r || r.every((c: any) => !c)) continue
+      try {
+        const dateStr = String(r[COL.date] || '').trim()
+        if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) throw new Error('陳情日期格式錯誤（需 YYYY-MM-DD）')
+        const content = String(r[COL.content] || '').trim()
+        if (!content) throw new Error('陳情內容不可空白')
+
+        const nameRaw = String(r[COL.name] || '').trim()
+        const phoneRaw = String(r[COL.phone] || '').trim()
+        let voterId: number | null = null
+        if (phoneRaw) {
+          const v = db.prepare("SELECT id FROM voters WHERE (mobile=? OR phone=?) AND is_active=1 LIMIT 1").get(phoneRaw, phoneRaw) as any
+          if (v) voterId = v.id
+        }
+        const urgencyRaw = String(r[COL.urgency] || '').trim()
+        const urgency = URGENCY_MAP[urgencyRaw] || 'normal'
+        const channelRaw = String(r[COL.channel] || '').trim()
+        const channel = CHANNEL_MAP[channelRaw] || channelRaw || null
+
+        // 產生案件編號
+        const year = dateStr.slice(0, 4)
+        const maxRow = db.prepare(`SELECT COALESCE(MAX(CAST(SUBSTR(case_number,6) AS INTEGER)),0) AS m FROM petitions WHERE case_number LIKE ?`).get(`${year}-%`) as any
+        const seq = String((maxRow?.m ?? 0) + 1).padStart(5, '0')
+        const caseNum = `${year}-${seq}`
+
+        importStmt.run(
+          caseNum, dateStr, voterId, nameRaw || null, phoneRaw || null, channel,
+          String(r[COL.category] || '').trim() || null,
+          content,
+          String(r[COL.city] || '').trim() || null,
+          String(r[COL.district] || '').trim() || null,
+          String(r[COL.village] || '').trim() || null,
+          String(r[COL.address] || '').trim() || null,
+          cu.id
+        )
+        imported++
+      } catch (e: any) {
+        failed++
+        errors.push({ row: i + 1, error: e.message })
+      }
+    }
+
+    createAuditLog(request, cu.id, { action: 'import', module: '陳情管理', target_type: 'petition_import', target_id: 0, target_name: `匯入 ${imported} 筆陳情` })
+    return reply.send({ success: true, message: `匯入完成：新增 ${imported} 筆，失敗 ${failed} 筆`, imported, errors: errors.slice(0, 20).map(e => e.error) })
+  })
+
+  // ===== 團體範本下載 =====
+  fastify.get('/api/groups/import/template', { preHandler: [authenticate] }, async (_req, reply) => {
+    const headers = ['團體名稱', '類別', '聯絡電話', '地址', '預估成員數', '備註']
+    const example = ['大安社區發展協會', '社區', '02-12345678', '臺北市大安區某路某段', '50', '每月第一週六聚會']
+    const helpRows = [
+      ['欄位', '說明', '必填'],
+      ['團體名稱', '不可重複，不可空白', '必填'],
+      ['類別', '需與系統類別管理中的名稱一致，例如：社區、工商、宗教', '選填'],
+      ['聯絡電話', '市話或手機均可', '選填'],
+      ['地址', '團體所在地址', '選填'],
+      ['預估成員數', '數字，例如：50', '選填'],
+      ['備註', '其他說明', '選填'],
+    ]
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet([headers, example])
+    ws['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 24 }, { wch: 10 }, { wch: 20 }]
+    XLSX.utils.book_append_sheet(wb, ws, '團體資料')
+    const helpWs = XLSX.utils.aoa_to_sheet(helpRows)
+    helpWs['!cols'] = [{ wch: 14 }, { wch: 35 }, { wch: 10 }]
+    XLSX.utils.book_append_sheet(wb, helpWs, '欄位說明')
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+    reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    reply.header('Content-Disposition', "attachment; filename*=UTF-8''group_import_template.xlsx")
+    return reply.send(buf)
+  })
+
+  // ===== 團體批量匯入 =====
+  fastify.post('/api/groups/import', { preHandler: [requirePermission('groups', 'create')] }, async (request, reply) => {
+    const cu = (request as any).currentUser
+    const data = await request.file()
+    if (!data) return reply.code(400).send({ success: false, error: '請上傳 Excel 檔案' })
+
+    const buf = await data.toBuffer()
+    const wb = XLSX.read(buf, { type: 'buffer' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+    if (rows.length < 2) return reply.code(400).send({ success: false, error: '檔案無資料列' })
+
+    const COL = { name: 0, category: 1, phone: 2, address: 3, member_count: 4, note: 5 }
+
+    let imported = 0, failed = 0
+    const errors: { row: number; error: string }[] = []
+
+    const insertStmt = db.prepare(`
+      INSERT INTO groups (name, category, phone, address, member_count, note, is_active, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, datetime('now','localtime'), datetime('now','localtime'))
+    `)
+
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i]
+      if (!r || r.every((c: any) => !c)) continue
+      try {
+        const name = String(r[COL.name] || '').trim()
+        if (!name) throw new Error('團體名稱不可空白')
+        const existing = db.prepare("SELECT id FROM groups WHERE name=? AND is_active=1 LIMIT 1").get(name)
+        if (existing) throw new Error(`「${name}」已存在`)
+        const memberCountRaw = String(r[COL.member_count] || '').trim()
+        const memberCount = memberCountRaw && !isNaN(Number(memberCountRaw)) ? Number(memberCountRaw) : null
+        insertStmt.run(
+          name,
+          String(r[COL.category] || '').trim() || null,
+          String(r[COL.phone] || '').trim() || null,
+          String(r[COL.address] || '').trim() || null,
+          memberCount,
+          String(r[COL.note] || '').trim() || null,
+          cu.id
+        )
+        imported++
+      } catch (e: any) {
+        failed++
+        errors.push({ row: i + 1, error: e.message })
+      }
+    }
+
+    createAuditLog(request, cu.id, { action: 'import', module: '團體管理', target_type: 'group_import', target_id: 0, target_name: `匯入 ${imported} 筆團體` })
+    return reply.send({ success: true, message: `匯入完成：新增 ${imported} 筆，失敗 ${failed} 筆`, imported, failed, errors: errors.slice(0, 20).map(e => `第 ${e.row} 列：${e.error}`) })
+  })
 }

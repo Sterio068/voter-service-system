@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Table, Button, Space, Input, Select, Tag, Typography, Card, Drawer, Form, message, Popconfirm, Row, Col } from 'antd'
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Table, Button, Space, Input, Select, Tag, Typography, Card, Drawer, Form, message, Popconfirm, Row, Col, Modal, Upload, Alert } from 'antd'
+import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, DeleteOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
 import dayjs from 'dayjs'
@@ -22,6 +22,9 @@ export default function GroupListPage() {
   const [editingGroup, setEditingGroup] = useState<any>(null)
   const [form] = Form.useForm()
   const [categories, setCategories] = useState<string[]>([])
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<any>(null)
 
   useEffect(() => { fetchCategories() }, [])
   useEffect(() => { fetchGroups() }, [page, search, filterCategory])
@@ -59,6 +62,29 @@ export default function GroupListPage() {
     } catch (err: any) { message.error(err.response?.data?.error || '儲存失敗') }
   }
 
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await api.get('/groups/import/template', { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url; a.download = 'group_import_template.xlsx'; a.click()
+      URL.revokeObjectURL(url)
+    } catch { message.error('下載範本失敗') }
+  }
+
+  const handleImportFile = async (file: File) => {
+    setImporting(true); setImportResult(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await api.post('/groups/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      setImportResult(res.data)
+      if (res.data.imported > 0) fetchGroups()
+    } catch { message.error('匯入失敗') }
+    finally { setImporting(false) }
+    return false
+  }
+
   const handleDelete = async (id: number, name: string) => {
     try {
       await api.delete(`/groups/${id}`)
@@ -91,7 +117,10 @@ export default function GroupListPage() {
     <div>
       <div className="page-header">
         <Title level={4} style={{ margin: 0 }}>🏢 團體資料</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingGroup(null); form.resetFields(); setDrawerOpen(true) }}>新增團體</Button>
+        <Space>
+          <Button icon={<UploadOutlined />} onClick={() => { setImportResult(null); setImportModalOpen(true) }}>批量匯入</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingGroup(null); form.resetFields(); setDrawerOpen(true) }}>新增團體</Button>
+        </Space>
       </div>
       <Card style={{ marginBottom: 16 }}>
         <Space wrap>
@@ -122,6 +151,38 @@ export default function GroupListPage() {
           <Form.Item name="note" label="備註"><Input.TextArea rows={3} /></Form.Item>
         </Form>
       </Drawer>
+      {/* 批量匯入 Modal */}
+      <Modal
+        title="批量匯入團體"
+        open={importModalOpen}
+        onCancel={() => setImportModalOpen(false)}
+        footer={null}
+        width={460}
+        destroyOnClose
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Alert type="info" showIcon message="請先下載範本，依格式填寫後上傳" description="支援欄位：團體名稱、類別、聯絡電話、地址、預估成員數、備註" />
+          <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate} block>下載 Excel 範本</Button>
+          <Upload.Dragger accept=".xlsx,.xls" beforeUpload={handleImportFile} showUploadList={false} disabled={importing}>
+            <p className="ant-upload-drag-icon"><UploadOutlined /></p>
+            <p className="ant-upload-text">點擊或拖曳 Excel 檔案至此上傳</p>
+            <p className="ant-upload-hint">僅支援 .xlsx / .xls 格式</p>
+          </Upload.Dragger>
+          {importing && <div style={{ textAlign: 'center' }}>匯入中，請稍候...</div>}
+          {importResult && (
+            <Alert
+              type={importResult.failed > 0 ? 'warning' : 'success'}
+              showIcon
+              message={`匯入完成：成功 ${importResult.imported} 筆，失敗 ${importResult.failed} 筆`}
+              description={importResult.errors?.length > 0 && (
+                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  {importResult.errors.map((e: string, i: number) => <li key={i}>{e}</li>)}
+                </ul>
+              )}
+            />
+          )}
+        </Space>
+      </Modal>
     </div>
   )
 }
