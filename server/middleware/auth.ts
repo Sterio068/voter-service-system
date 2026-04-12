@@ -23,6 +23,9 @@ const rolePermissions: Record<string, Record<string, PermissionAction[]>> = {
     surveys: ['view', 'create', 'edit', 'delete'],
     contact_records: ['view', 'create', 'edit', 'delete'],
     proposals: ['view', 'create', 'edit', 'delete', 'export'],
+    vendors: ['view', 'create', 'edit', 'delete'],
+    ceremonies: ['view', 'create', 'edit', 'delete'],
+    expenses: ['view', 'create', 'edit', 'delete'],
     ai: ['use', 'view'],
   },
   supervisor: {
@@ -40,6 +43,9 @@ const rolePermissions: Record<string, Record<string, PermissionAction[]>> = {
     surveys: ['view', 'create', 'edit'],
     contact_records: ['view', 'create', 'edit'],
     proposals: ['view', 'create', 'edit', 'delete', 'export'],
+    vendors: ['view', 'create', 'edit'],
+    ceremonies: ['view', 'create', 'edit'],
+    expenses: ['view', 'create', 'edit'],
     ai: ['use', 'view'],
   },
   assistant: {
@@ -57,6 +63,9 @@ const rolePermissions: Record<string, Record<string, PermissionAction[]>> = {
     surveys: ['view'],
     contact_records: ['view', 'create', 'edit'],
     proposals: ['view', 'create', 'edit'],
+    vendors: ['view'],
+    ceremonies: ['view'],
+    expenses: ['view'],
     ai: ['use'],
   },
   volunteer: {
@@ -67,6 +76,9 @@ const rolePermissions: Record<string, Record<string, PermissionAction[]>> = {
     notifications: [], reports: [], events: ['view'], surveys: [],
     contact_records: ['view'],
     proposals: ['view'],
+    vendors: ['view'],
+    ceremonies: ['view'],
+    expenses: [],
     ai: [],
   },
 }
