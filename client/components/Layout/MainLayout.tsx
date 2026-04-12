@@ -7,7 +7,7 @@ import {
   BellOutlined, AuditOutlined, TagsOutlined, AppstoreOutlined,
   BarChartOutlined, SunOutlined, MoonOutlined, CheckSquareOutlined,
   QuestionOutlined, SwapOutlined, GroupOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
-  MenuOutlined, CloseOutlined, BookOutlined, GiftOutlined, ShopOutlined, DollarOutlined, ProfileOutlined
+  MenuOutlined, CloseOutlined, BookOutlined, GiftOutlined, ShopOutlined, DollarOutlined, ProfileOutlined, FormOutlined
 } from '@ant-design/icons'
 
 function useIsMobile() {
@@ -204,6 +204,7 @@ export default function MainLayout() {
           <NavItem icon={<TagsOutlined />} label="類別管理" path="/admin/categories" collapsed={collapsed} />
           <NavItem icon={<AppstoreOutlined />} label="系統設定" path="/admin/settings" collapsed={collapsed} />
           <NavItem icon={<SwapOutlined />} label="員工交接" path="/admin/handover" collapsed={collapsed} />
+          {(user?.role === 'admin' || user?.role === 'supervisor') && <NavItem icon={<FormOutlined />} label="每日日誌" path="/admin/daily-log" collapsed={collapsed} />}
         </>
       )}
       <SectionLabel label="說明" collapsed={collapsed} />

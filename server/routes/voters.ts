@@ -578,6 +578,51 @@ export default async function voterRoutes(fastify: FastifyInstance) {
     return reply.code(201).send({ success: true, data: { id: r.lastInsertRowid } })
   })
 
+  // GET /api/voters/:id/relations
+  fastify.get('/api/voters/:id/relations', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
+    const { id } = request.params as any
+    const voter = db.prepare('SELECT id FROM voters WHERE id=?').get(Number(id)) as any
+    if (!voter) return reply.code(404).send({ success: false, error: '選民不存在' })
+    const data = db.prepare(`
+      SELECT r.*, v.name as related_name, v.mobile as related_mobile, v.phone as related_phone, v.address as related_address
+      FROM voter_relations r
+      LEFT JOIN voters v ON r.related_voter_id = v.id
+      WHERE r.voter_id = ?
+      ORDER BY r.id DESC
+    `).all(Number(id))
+    return reply.send({ success: true, data })
+  })
+
+  // POST /api/voters/:id/relations
+  fastify.post('/api/voters/:id/relations', { preHandler: [requirePermission('voters', 'edit')] }, async (request, reply) => {
+    const cu = (request as any).currentUser
+    const { id } = request.params as any
+    const body = request.body as any
+    if (!body.related_voter_id || !body.relation_type) {
+      return reply.code(400).send({ success: false, error: '關聯選民與關係類型為必填' })
+    }
+    const voter = db.prepare('SELECT id,name FROM voters WHERE id=?').get(Number(id)) as any
+    if (!voter) return reply.code(404).send({ success: false, error: '選民不存在' })
+    const related = db.prepare('SELECT id,name FROM voters WHERE id=?').get(Number(body.related_voter_id)) as any
+    if (!related) return reply.code(404).send({ success: false, error: '關聯選民不存在' })
+    const exists = db.prepare('SELECT id FROM voter_relations WHERE voter_id=? AND related_voter_id=?').get(Number(id), Number(body.related_voter_id))
+    if (exists) return reply.code(409).send({ success: false, error: '此關聯已存在' })
+    const r = db.prepare('INSERT INTO voter_relations (voter_id,related_voter_id,relation_type,note) VALUES (?,?,?,?)').run(Number(id), Number(body.related_voter_id), body.relation_type, body.note ?? null)
+    createAuditLog(request, cu.id, { action: 'create', module: '選民管理', target_type: 'voter_relation', target_id: r.lastInsertRowid as number, target_name: `${voter.name} → ${related.name}` })
+    return reply.code(201).send({ success: true, data: { id: r.lastInsertRowid } })
+  })
+
+  // DELETE /api/voters/:id/relations/:rid
+  fastify.delete('/api/voters/:id/relations/:rid', { preHandler: [requirePermission('voters', 'edit')] }, async (request, reply) => {
+    const cu = (request as any).currentUser
+    const { id, rid } = request.params as any
+    const rel = db.prepare('SELECT * FROM voter_relations WHERE id=? AND voter_id=?').get(Number(rid), Number(id)) as any
+    if (!rel) return reply.code(404).send({ success: false, error: '關聯不存在' })
+    db.prepare('DELETE FROM voter_relations WHERE id=?').run(Number(rid))
+    createAuditLog(request, cu.id, { action: 'delete', module: '選民管理', target_type: 'voter_relation', target_id: Number(rid), target_name: `關聯 ${rid}` })
+    return reply.send({ success: true, message: '關聯已刪除' })
+  })
+
   // PUT /api/voters/:id/engagement
   fastify.put('/api/voters/:id/engagement', { preHandler: [requirePermission('voters', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser

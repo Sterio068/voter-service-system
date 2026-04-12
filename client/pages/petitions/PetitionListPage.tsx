@@ -53,6 +53,8 @@ export default function PetitionListPage() {
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([])
+  const [batchLoading, setBatchLoading] = useState(false)
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<any>(null)
@@ -163,6 +165,18 @@ export default function PetitionListPage() {
         setVoterOptions(res.data.data || [])
       } catch {}
     }, 300)
+  }
+
+  const handleBatchStatusChange = async (status: string) => {
+    if (selectedRowKeys.length === 0) return
+    setBatchLoading(true)
+    try {
+      await Promise.all(selectedRowKeys.map(id => api.put(`/petitions/${id}`, { status })))
+      message.success(`已將 ${selectedRowKeys.length} 筆案件更新為「${STATUS_LABELS[status]}」`)
+      setSelectedRowKeys([])
+      fetchPetitions()
+    } catch { message.error('批量更新失敗') }
+    finally { setBatchLoading(false) }
   }
 
   const handleDownloadTemplate = async () => {
@@ -427,6 +441,16 @@ export default function PetitionListPage() {
         </Space>
       </Card>
 
+      {selectedRowKeys.length > 0 && (
+        <div style={{ background: '#e6f4ff', padding: '8px 16px', marginBottom: 8, borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span>已選 <strong>{selectedRowKeys.length}</strong> 筆，批量變更狀態：</span>
+          {Object.entries(STATUS_LABELS).filter(([v]) => v !== 'cancelled').map(([v, l]) => (
+            <Button key={v} size="small" loading={batchLoading} onClick={() => handleBatchStatusChange(v)}>{l}</Button>
+          ))}
+          <Button size="small" danger loading={batchLoading} onClick={() => handleBatchStatusChange('cancelled')}>已取消</Button>
+          <Button size="small" onClick={() => setSelectedRowKeys([])}>取消選取</Button>
+        </div>
+      )}
       <Card>
         <Table
           columns={columns}
@@ -434,6 +458,7 @@ export default function PetitionListPage() {
           rowKey="id"
           loading={loading}
           size="small"
+          rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys as number[]) }}
           locale={{
             emptyText: (search || filterStatus || filterCategory || filterUrgency)
               ? <Empty description="查無符合條件的資料" image={Empty.PRESENTED_IMAGE_SIMPLE} />

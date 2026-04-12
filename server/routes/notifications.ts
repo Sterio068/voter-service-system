@@ -41,6 +41,24 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
     return reply.code(201).send({ success: true, data: { id: newId }, message: '通知草稿已建立' })
   })
 
+  // PUT /api/notifications/:id (edit draft)
+  fastify.put('/api/notifications/:id', { preHandler: [requirePermission('notifications', 'edit')] }, async (request, reply) => {
+    const cu = (request as any).currentUser
+    const { id } = request.params as any
+    const body = request.body as any
+    const notification = db.prepare('SELECT * FROM notifications WHERE id=?').get(Number(id)) as any
+    if (!notification) return reply.code(404).send({ success: false, error: '通知不存在' })
+    if (notification.status !== 'draft') return reply.code(400).send({ success: false, error: '只能編輯草稿狀態的通知' })
+    const allowed = ['title', 'content', 'channel', 'target_type', 'target_filter']
+    const data: Record<string, any> = {}
+    for (const k of allowed) { if (body[k] !== undefined) data[k] = body[k] }
+    if (Object.keys(data).length === 0) return reply.code(400).send({ success: false, error: '無更新欄位' })
+    const sets = Object.keys(data).map(k => `${k}=?`).join(',')
+    db.prepare(`UPDATE notifications SET ${sets} WHERE id=?`).run(...Object.values(data), Number(id))
+    createAuditLog(request, cu.id, { action: 'update', module: '通知管理', target_type: 'notification', target_id: Number(id), target_name: body.title ?? notification.title })
+    return reply.send({ success: true, message: '通知已更新' })
+  })
+
   // POST /api/notifications/:id/send
   fastify.post('/api/notifications/:id/send', { preHandler: [requirePermission('notifications', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser

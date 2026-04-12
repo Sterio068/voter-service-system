@@ -88,4 +88,23 @@ export default async function consultationRoutes(fastify: FastifyInstance) {
     const r = db.prepare('INSERT OR IGNORE INTO consultation_time_slots (slot_date,slot_time,max_capacity,note) VALUES (?,?,?,?)').run(body.slot_date, body.slot_time, body.max_capacity ?? 3, body.note ?? null)
     return reply.code(201).send({ success: true, data: { id: r.lastInsertRowid } })
   })
+
+  // GET /api/consultations/slots/manage?date=YYYY-MM-DD — list for management
+  fastify.get('/api/consultations/slots/manage', { preHandler: [requirePermission('admin','view')] }, async (req, reply) => {
+    const { date } = req.query as any
+    if (!date) return reply.code(400).send({ success: false, error: '日期為必填' })
+    const data = db.prepare('SELECT * FROM consultation_time_slots WHERE slot_date=? ORDER BY slot_time').all(date)
+    return reply.send({ success: true, data })
+  })
+
+  // DELETE /api/consultations/slots/:id
+  fastify.delete('/api/consultations/slots/:id', { preHandler: [requirePermission('admin','edit')] }, async (req, reply) => {
+    const { id } = req.params as any
+    const slot = db.prepare('SELECT * FROM consultation_time_slots WHERE id=?').get(Number(id)) as any
+    if (!slot) return reply.code(404).send({ success: false, error: '時段不存在' })
+    const booked = (db.prepare("SELECT COUNT(*) as c FROM consultation_appointments WHERE appointment_date=? AND time_slot=? AND status!='cancelled'").get(slot.slot_date, slot.slot_time) as any).c
+    if (booked > 0) return reply.code(409).send({ success: false, error: `此時段已有 ${booked} 筆預約，無法刪除` })
+    db.prepare('DELETE FROM consultation_time_slots WHERE id=?').run(Number(id))
+    return reply.send({ success: true, message: '時段已刪除' })
+  })
 }

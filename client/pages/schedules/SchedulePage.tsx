@@ -33,6 +33,14 @@ export default function SchedulePage() {
   const [officeName, setOfficeName] = useState('選民服務系統')
   const [consultOpen, setConsultOpen] = useState(false)
   const [editingScheduleId, setEditingScheduleId] = useState<number | null>(null)
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [filterType, setFilterType] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [slotMgrOpen, setSlotMgrOpen] = useState(false)
+  const [slotDate, setSlotDate] = useState(dayjs().format('YYYY-MM-DD'))
+  const [slots, setSlots] = useState<any[]>([])
+  const [slotForm] = Form.useForm()
+  const [addingSlot, setAddingSlot] = useState(false)
   const { isDark } = useThemeStore()
 
   // 團體相關 state
@@ -111,6 +119,32 @@ export default function SchedulePage() {
       const res = await api.get('/schedules')
       setSchedules(res.data.data || [])
     } catch { message.error('載入行程失敗') }
+  }
+
+  const fetchSlots = async (d: string) => {
+    try {
+      const res = await api.get(`/consultations/slots/manage?date=${d}`)
+      setSlots(res.data.data || [])
+    } catch {}
+  }
+
+  const handleAddSlot = async (values: any) => {
+    setAddingSlot(true)
+    try {
+      await api.post('/consultations/slots', { slot_date: slotDate, slot_time: values.slot_time, max_capacity: values.max_capacity ?? 3, note: values.note })
+      message.success('時段已新增')
+      slotForm.resetFields()
+      fetchSlots(slotDate)
+    } catch (err: any) { message.error(err.response?.data?.error || '新增失敗') }
+    finally { setAddingSlot(false) }
+  }
+
+  const handleDeleteSlot = async (id: number) => {
+    try {
+      await api.delete(`/consultations/slots/${id}`)
+      message.success('時段已刪除')
+      fetchSlots(slotDate)
+    } catch (err: any) { message.error(err.response?.data?.error || '刪除失敗') }
   }
 
   const openEditDrawer = (schedule: any) => {
@@ -537,7 +571,14 @@ export default function SchedulePage() {
     setPrintModalOpen(false)
   }
 
-  const calendarEvents = schedules.map(s => ({
+  const filteredSchedules = schedules.filter(s => {
+    if (searchKeyword && !s.title?.includes(searchKeyword) && !s.location?.includes(searchKeyword) && !s.note?.includes(searchKeyword)) return false
+    if (filterType && s.schedule_type !== filterType) return false
+    if (filterStatus && s.status !== filterStatus) return false
+    return true
+  })
+
+  const calendarEvents = filteredSchedules.map(s => ({
     id: String(s.id),
     title: s.title,
     start: s.start_time,
@@ -546,7 +587,7 @@ export default function SchedulePage() {
     borderColor: getTypeColor(s.schedule_type || 'other'),
   }))
 
-  const todayConsults = schedules.filter(s =>
+  const todayConsults = filteredSchedules.filter(s =>
     s.schedule_type === 'consultation' &&
     dayjs(s.start_time).format('YYYY-MM-DD') === dayjs().format('YYYY-MM-DD')
   )
@@ -568,10 +609,38 @@ export default function SchedulePage() {
         <Title level={4} style={{ margin: 0 }}>📅 行程管理</Title>
         <Space>
           <Button onClick={() => setConsultOpen(true)}>今日諮詢</Button>
+          <Button onClick={() => { setSlotDate(dayjs().format('YYYY-MM-DD')); fetchSlots(dayjs().format('YYYY-MM-DD')); setSlotMgrOpen(true) }}>諮詢時段</Button>
           <Button icon={<PrinterOutlined />} onClick={() => { setPrintStartDate(dayjs()); setPrintModalOpen(true) }}>列印行程</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setDrawerOpen(true) }}>新增行程</Button>
         </Space>
       </div>
+
+      <Card style={{ marginBottom: 12 }}>
+        <Space wrap>
+          <Input.Search
+            placeholder="搜尋行程標題、地點、備註"
+            allowClear
+            style={{ width: 220 }}
+            value={searchKeyword}
+            onChange={e => { if (!e.target.value) setSearchKeyword('') }}
+            onSearch={v => setSearchKeyword(v)}
+          />
+          <Select placeholder="類型篩選" allowClear style={{ width: 130 }} value={filterType || undefined} onChange={v => setFilterType(v || '')}>
+            {scheduleTypes.map(t => <Option key={t.code} value={t.code}>{t.name}</Option>)}
+          </Select>
+          <Select placeholder="狀態篩選" allowClear style={{ width: 110 }} value={filterStatus || undefined} onChange={v => setFilterStatus(v || '')}>
+            <Option value="confirmed">確認</Option>
+            <Option value="tentative">暫定</Option>
+            <Option value="cancelled">已取消</Option>
+          </Select>
+          {(searchKeyword || filterType || filterStatus) && (
+            <Button onClick={() => { setSearchKeyword(''); setFilterType(''); setFilterStatus('') }}>清除篩選</Button>
+          )}
+          {(searchKeyword || filterType || filterStatus) && (
+            <span style={{ color: '#888', fontSize: 13 }}>顯示 {filteredSchedules.length} / {schedules.length} 筆</span>
+          )}
+        </Space>
+      </Card>
 
       <Card>
         <FullCalendar
@@ -881,6 +950,61 @@ export default function SchedulePage() {
             ]}
           />
         )}
+      </Modal>
+
+      {/* 諮詢時段管理 */}
+      <Modal
+        title="諮詢時段管理"
+        open={slotMgrOpen}
+        onCancel={() => setSlotMgrOpen(false)}
+        footer={null}
+        width={480}
+        destroyOnClose
+      >
+        <Space style={{ marginBottom: 12 }}>
+          <span>選擇日期：</span>
+          <DatePicker
+            value={dayjs(slotDate)}
+            onChange={d => { if (d) { const s = d.format('YYYY-MM-DD'); setSlotDate(s); fetchSlots(s) } }}
+            allowClear={false}
+            format="YYYY-MM-DD"
+          />
+        </Space>
+        <Table
+          size="small"
+          dataSource={slots}
+          rowKey="id"
+          pagination={false}
+          locale={{ emptyText: <Empty description="此日期尚無時段" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+          columns={[
+            { title: '時段', dataIndex: 'slot_time', width: 80 },
+            { title: '容量', dataIndex: 'max_capacity', width: 60 },
+            { title: '備註', dataIndex: 'note', render: (v: string) => v || '—' },
+            {
+              title: '刪除', width: 60,
+              render: (_: any, r: any) => (
+                <Popconfirm title="確定刪除此時段？" onConfirm={() => handleDeleteSlot(r.id)}>
+                  <Button size="small" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              ),
+            },
+          ]}
+        />
+        <Divider />
+        <Form form={slotForm} layout="inline" onFinish={handleAddSlot}>
+          <Form.Item name="slot_time" rules={[{ required: true, message: '必填' }]}>
+            <TimePicker format="HH:mm" placeholder="時間" minuteStep={15} />
+          </Form.Item>
+          <Form.Item name="max_capacity">
+            <InputNumber min={1} max={20} placeholder="容量" style={{ width: 70 }} />
+          </Form.Item>
+          <Form.Item name="note">
+            <Input placeholder="備註" style={{ width: 100 }} />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={addingSlot} icon={<PlusOutlined />}>新增</Button>
+          </Form.Item>
+        </Form>
       </Modal>
 
       {/* 行程詳情 */}

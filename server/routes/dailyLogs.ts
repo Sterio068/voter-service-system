@@ -30,6 +30,16 @@ export default async function dailyLogRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true, data: log })
   })
 
+  // DELETE /api/daily-logs/:date
+  fastify.delete('/api/daily-logs/:date', { preHandler: [requirePermission('admin','edit')] }, async (req, reply) => {
+    const { date } = req.params as any
+    if (!validateDate(date)) return reply.code(400).send({ success: false, error: '日期格式錯誤' })
+    const log = db.prepare('SELECT id FROM daily_logs WHERE log_date=?').get(date)
+    if (!log) return reply.code(404).send({ success: false, error: '日誌不存在' })
+    db.prepare('DELETE FROM daily_logs WHERE log_date=?').run(date)
+    return reply.send({ success: true, message: '日誌已刪除' })
+  })
+
   // PUT /api/daily-logs/:date — upsert
   fastify.put('/api/daily-logs/:date', { preHandler: [requirePermission('admin','edit')] }, async (req, reply) => {
     const cu = (req as any).currentUser

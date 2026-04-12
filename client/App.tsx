@@ -23,6 +23,7 @@ import AuditLogPage from './pages/admin/AuditLogPage'
 import CategoryPage from './pages/admin/CategoryPage'
 import SettingsPage from './pages/admin/SettingsPage'
 import HandoverPage from './pages/admin/HandoverPage'
+import DailyLogPage from './pages/admin/DailyLogPage'
 import HelpPage from './pages/HelpPage'
 import CeremonyPage from './pages/ceremonies/CeremonyPage'
 import VendorPage from './pages/ceremonies/VendorPage'
@@ -181,6 +182,7 @@ export default function App() {
             <Route path="admin/categories" element={<CategoryPage />} />
             <Route path="admin/settings" element={<SettingsPage />} />
             <Route path="admin/handover" element={<HandoverPage />} />
+            <Route path="admin/daily-log" element={<DailyLogPage />} />
             <Route path="help" element={<HelpPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>

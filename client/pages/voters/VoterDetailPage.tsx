@@ -12,6 +12,7 @@ import ContactTab from './components/ContactTab'
 import PetitionTab from './components/PetitionTab'
 import EngagementTab from './components/EngagementTab'
 import TaskTab from './components/TaskTab'
+import RelationsTab from './components/RelationsTab'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -119,6 +120,11 @@ export default function VoterDetailPage() {
       key: 'tasks',
       label: '待辦事項',
       children: <TaskTab voterId={voterId} voterData={voter} />,
+    },
+    {
+      key: 'relations',
+      label: '人際關聯',
+      children: <RelationsTab voterId={voterId} voterData={voter} />,
     },
     {
       key: 'documents',
