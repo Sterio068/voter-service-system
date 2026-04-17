@@ -14,6 +14,25 @@ export default defineConfig({
   build: {
     outDir: '../dist',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'antd-vendor': ['antd', '@ant-design/icons'],
+          'chart-vendor': ['recharts'],
+          'calendar-vendor': [
+            '@fullcalendar/react',
+            '@fullcalendar/core',
+            '@fullcalendar/daygrid',
+            '@fullcalendar/timegrid',
+            '@fullcalendar/interaction',
+          ],
+          'file-vendor': ['xlsx', 'docx'],
+          'util-vendor': ['dayjs', 'axios', 'zustand'],
+        },
+      },
+    },
   },
   resolve: {
     alias: {

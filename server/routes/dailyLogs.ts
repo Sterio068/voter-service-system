@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
+import { createAuditLog } from '../middleware/audit'
 
 function validateDate(date: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false
@@ -32,11 +33,13 @@ export default async function dailyLogRoutes(fastify: FastifyInstance) {
 
   // DELETE /api/daily-logs/:date
   fastify.delete('/api/daily-logs/:date', { preHandler: [requirePermission('admin','edit')] }, async (req, reply) => {
+    const cu = (req as any).currentUser
     const { date } = req.params as any
     if (!validateDate(date)) return reply.code(400).send({ success: false, error: '日期格式錯誤' })
     const log = db.prepare('SELECT id FROM daily_logs WHERE log_date=?').get(date)
     if (!log) return reply.code(404).send({ success: false, error: '日誌不存在' })
     db.prepare('DELETE FROM daily_logs WHERE log_date=?').run(date)
+    createAuditLog(req, cu.id, { action: 'delete', module: '每日日誌', target_type: 'daily_log', target_id: 0, target_name: date })
     return reply.send({ success: true, message: '日誌已刪除' })
   })
 
@@ -54,11 +57,13 @@ export default async function dailyLogRoutes(fastify: FastifyInstance) {
       const sets = Object.keys(data).filter(k=>k!=='log_date').map(k=>`${k}=?`).join(',')
       const vals = Object.entries(data).filter(([k])=>k!=='log_date').map(([,v])=>v)
       db.prepare(`UPDATE daily_logs SET ${sets} WHERE log_date=?`).run(...vals, date)
+      createAuditLog(req, cu.id, { action: 'update', module: '每日日誌', target_type: 'daily_log', target_id: 0, target_name: date })
     } else {
       data.created_by = cu.id
       const cols = Object.keys(data).join(',')
       const placeholders = Object.keys(data).map(()=>'?').join(',')
       db.prepare(`INSERT INTO daily_logs (${cols}) VALUES (${placeholders})`).run(...Object.values(data))
+      createAuditLog(req, cu.id, { action: 'create', module: '每日日誌', target_type: 'daily_log', target_id: 0, target_name: date })
     }
     return reply.send({ success: true, message: '日誌已儲存' })
   })

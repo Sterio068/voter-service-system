@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { db } from '../db/index'
 import { authenticate } from '../middleware/auth'
+import { createAuditLog } from '../middleware/audit'
 
 export default async function ceremonyRoutes(fastify: FastifyInstance) {
   // GET /api/gift-categories
@@ -144,6 +145,7 @@ export default async function ceremonyRoutes(fastify: FastifyInstance) {
         insItem.run(ceremonyId, item.category_id || null, item.item_name.trim(), item.vendor_id || null, Number(item.quantity) || 1, Number(item.unit_price) || 0, item._amount, item.payment_method || 'cash', item.payment_status || 'pending', item.receipt_no || null, item.note || null)
       }
       db.exec('COMMIT')
+      createAuditLog(request, (request as any).currentUser?.id, { action: 'create', module: '禮儀管理', target_type: 'ceremony', target_id: Number(ceremonyId), target_name: body.recipient_name })
       return reply.code(201).send({ success: true, id: ceremonyId })
     } catch (e) {
       db.exec('ROLLBACK')
@@ -174,6 +176,7 @@ export default async function ceremonyRoutes(fastify: FastifyInstance) {
         insItem.run(Number(id), item.category_id || null, item.item_name.trim(), item.vendor_id || null, Number(item.quantity) || 1, Number(item.unit_price) || 0, item._amount, item.payment_method || 'cash', item.payment_status || 'pending', item.receipt_no || null, item.note || null)
       }
       db.exec('COMMIT')
+      createAuditLog(request, (request as any).currentUser?.id, { action: 'update', module: '禮儀管理', target_type: 'ceremony', target_id: Number(id), target_name: body.recipient_name })
       return reply.send({ success: true })
     } catch (e) {
       db.exec('ROLLBACK')
@@ -184,11 +187,13 @@ export default async function ceremonyRoutes(fastify: FastifyInstance) {
   // DELETE /api/ceremonies/:id
   fastify.delete('/api/ceremonies/:id', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as any
+    const existing = db.prepare('SELECT recipient_name FROM ceremony_records WHERE id=?').get(Number(id)) as any
     db.exec('BEGIN')
     try {
       db.prepare('DELETE FROM ceremony_items WHERE ceremony_id=?').run(Number(id))
       db.prepare('DELETE FROM ceremony_records WHERE id=?').run(Number(id))
       db.exec('COMMIT')
+      createAuditLog(request, (request as any).currentUser?.id, { action: 'delete', module: '禮儀管理', target_type: 'ceremony', target_id: Number(id), target_name: existing?.recipient_name || `ceremony ${id}` })
       return reply.send({ success: true })
     } catch (e) {
       db.exec('ROLLBACK')

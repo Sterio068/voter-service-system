@@ -109,10 +109,12 @@ export default async function googleCalendarRoutes(fastify: FastifyInstance) {
 
   // 儲存 OAuth 用戶端憑證
   fastify.post('/api/integrations/gcal/credentials', { preHandler: [requirePermission('settings', 'edit')] }, async (request, reply) => {
+    const cu = (request as any).currentUser
     const { client_id, client_secret } = request.body as any
     if (!client_id || !client_secret) return reply.code(400).send({ success: false, error: '請填寫用戶端 ID 和密鑰' })
     setSetting('gcal_client_id', client_id)
     setSetting('gcal_client_secret', client_secret)
+    createAuditLog(request, cu.id, { action: 'update', module: '系統設定', target_type: 'gcal_credentials', target_id: 0, target_name: '更新 Google Calendar OAuth 憑證' })
     return reply.send({ success: true })
   })
 
@@ -182,8 +184,11 @@ export default async function googleCalendarRoutes(fastify: FastifyInstance) {
 
   // 刪除帳號
   fastify.delete('/api/integrations/gcal/accounts/:id', { preHandler: [requirePermission('settings', 'edit')] }, async (request, reply) => {
+    const cu = (request as any).currentUser
     const { id } = request.params as any
+    const acc = db.prepare('SELECT email, label FROM google_calendar_accounts WHERE id=?').get(Number(id)) as any
     db.prepare('DELETE FROM google_calendar_accounts WHERE id=?').run(Number(id))
+    createAuditLog(request, cu.id, { action: 'delete', module: '系統設定', target_type: 'gcal_account', target_id: Number(id), target_name: acc?.label || acc?.email || `帳號 ${id}` })
     return reply.send({ success: true })
   })
 

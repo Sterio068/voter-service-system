@@ -255,14 +255,17 @@ export default async function voterRoutes(fastify: FastifyInstance) {
     for (const k of allowedFields) { if ((data as any)[k] !== undefined) safeData[k] = (data as any)[k] }
     const cols = Object.keys(safeData).join(',')
     const vals = Object.values(safeData)
-    const r = db.prepare(`INSERT INTO voters (${cols},created_by) VALUES (${vals.map(() => '?').join(',')},?)`).run(...vals, cu.id)
-    const newId = r.lastInsertRowid as number
-    if (tags?.length) {
-      const ins = db.prepare('INSERT INTO voter_tags (voter_id,tag) VALUES (?,?)')
-      db.exec('BEGIN')
-      try { tags.forEach((t: string) => ins.run(newId, t)); db.exec('COMMIT') }
-      catch (e) { db.exec('ROLLBACK'); throw e }
-    }
+    // 以 transaction 保護選民與標籤的原子性寫入
+    const createVoterWithTags = db.transaction(() => {
+      const r = db.prepare(`INSERT INTO voters (${cols},created_by) VALUES (${vals.map(() => '?').join(',')},?)`).run(...vals, cu.id)
+      const id = r.lastInsertRowid as number
+      if (tags?.length) {
+        const ins = db.prepare('INSERT INTO voter_tags (voter_id,tag) VALUES (?,?)')
+        tags.forEach((t: string) => ins.run(id, t))
+      }
+      return id
+    })
+    const newId = createVoterWithTags()
     // F-5: Blacklist audit log
     const bodyAny = request.body as any
     if (bodyAny.is_blacklisted === 1 || bodyAny.is_blacklisted === '1' || bodyAny.is_blacklisted === true) {

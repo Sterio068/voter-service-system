@@ -2,7 +2,7 @@ import { FastifyRequest } from 'fastify'
 import { db } from '../db/index'
 
 export interface AuditOptions {
-  action: 'login' | 'logout' | 'create' | 'update' | 'delete' | 'export' | 'print' | 'query' | 'merge' | 'check'
+  action: 'login' | 'logout' | 'create' | 'update' | 'delete' | 'export' | 'import' | 'print' | 'query' | 'merge' | 'check'
   module: string
   target_type?: string
   target_id?: number

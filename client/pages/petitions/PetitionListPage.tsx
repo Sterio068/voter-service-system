@@ -96,10 +96,14 @@ export default function PetitionListPage() {
     fetchCategories()
     fetchAreas()
     fetchUsers()
+  }, [])
+
+  // URL action 變化時正確反映（支援外部導航、瀏覽器返回）
+  useEffect(() => {
     if (new URLSearchParams(location.search).get('action') === 'new') {
       setDrawerOpen(true)
     }
-  }, [])
+  }, [location.search])
 
   useEffect(() => {
     fetchPetitions()
@@ -136,6 +140,10 @@ export default function PetitionListPage() {
   }
 
   const fetchPetitions = async () => {
+    if (startDate && endDate && startDate > endDate) {
+      message.warning('開始日期不可晚於結束日期')
+      return
+    }
     setLoading(true)
     try {
       const params: any = { page, pageSize }

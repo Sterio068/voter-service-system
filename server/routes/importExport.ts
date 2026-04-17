@@ -358,71 +358,72 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
       })
     }
 
-    // Insert/upsert all valid rows in one transaction
-    db.exec('BEGIN')
-    try {
+    // 每一列獨立的 savepoint（使用 db.transaction 巢狀會自動生成 savepoint）
+    // 單列失敗只會 rollback 該列的變更（含 voter_tags 刪除），不影響其他列
+    const upsertOneRow = db.transaction((obj: any) => {
+      let existingId: number | null = null
+      if (mode === 'upsert') {
+        const matchField = body.match_field || 'mobile'
+        let existing: any = null
+        if (matchField === 'id_number' && obj.id_number) {
+          existing = db.prepare('SELECT id FROM voters WHERE id_number=? AND is_active=1 LIMIT 1').get(obj.id_number)
+        } else {
+          if (obj.mobile) {
+            existing = db.prepare('SELECT id FROM voters WHERE mobile=? AND is_active=1 LIMIT 1').get(obj.mobile)
+          }
+          if (!existing && obj.id_number) {
+            existing = db.prepare('SELECT id FROM voters WHERE id_number=? AND is_active=1 LIMIT 1').get(obj.id_number)
+          }
+        }
+        if (existing) existingId = (existing as any).id
+      }
+
+      if (existingId !== null) {
+        updateVoter.run(
+          obj.name, obj.gender || null, obj.birth_date || null,
+          obj.mobile || null, obj.phone || null, obj.line_id || null, obj.email || null,
+          obj.household_city || null, obj.household_district || null, obj.household_village || null,
+          obj.household_address || null, obj.mailing_address || null, obj.election_area || null,
+          obj.occupation || null, obj.company || null, obj.job_title || null,
+          obj.note || null, existingId
+        )
+        if (obj.__tags) {
+          db.prepare('DELETE FROM voter_tags WHERE voter_id=?').run(existingId)
+          const tags = String(obj.__tags).split(',').map((t: string) => t.trim()).filter(Boolean)
+          tags.forEach((tag: string) => insertTag.run(existingId, tag))
+        }
+        return 'updated'
+      } else {
+        const r = insertVoter.run(
+          obj.name, obj.gender || null, obj.birth_date || null, obj.id_number || null,
+          obj.mobile || null, obj.phone || null, obj.line_id || null, obj.email || null,
+          obj.household_city || null, obj.household_district || null, obj.household_village || null,
+          obj.household_address || null, obj.mailing_address || null, obj.election_area || null,
+          obj.occupation || null, obj.company || null, obj.job_title || null,
+          obj.note || null, cu.id
+        )
+        if (obj.__tags) {
+          const tags = String(obj.__tags).split(',').map((t: string) => t.trim()).filter(Boolean)
+          tags.forEach((tag: string) => insertTag.run(r.lastInsertRowid, tag))
+        }
+        return 'inserted'
+      }
+    })
+
+    // 外層 transaction 批次提交（合併成一筆寫入硬碟，大幅提速）
+    const importAll = db.transaction(() => {
       for (const { obj, rowNum } of validRows) {
         try {
-          // D-N6: upsert mode - check for existing record by match_field (mobile or id_number)
-          let existingId: number | null = null
-          if (mode === 'upsert') {
-            const matchField = body.match_field || 'mobile'
-            let existing: any = null
-            if (matchField === 'id_number' && obj.id_number) {
-              // 以身分證號為主鍵比對
-              existing = db.prepare('SELECT id FROM voters WHERE id_number=? AND is_active=1 LIMIT 1').get(obj.id_number)
-            } else {
-              // 以手機號為主鍵比對；手機空白時再 fallback 身分證
-              if (obj.mobile) {
-                existing = db.prepare('SELECT id FROM voters WHERE mobile=? AND is_active=1 LIMIT 1').get(obj.mobile)
-              }
-              if (!existing && obj.id_number) {
-                existing = db.prepare('SELECT id FROM voters WHERE id_number=? AND is_active=1 LIMIT 1').get(obj.id_number)
-              }
-            }
-            if (existing) existingId = (existing as any).id
-          }
-
-          if (existingId !== null) {
-            updateVoter.run(
-              obj.name, obj.gender || null, obj.birth_date || null,
-              obj.mobile || null, obj.phone || null, obj.line_id || null, obj.email || null,
-              obj.household_city || null, obj.household_district || null, obj.household_village || null,
-              obj.household_address || null, obj.mailing_address || null, obj.election_area || null,
-              obj.occupation || null, obj.company || null, obj.job_title || null,
-              obj.note || null, existingId
-            )
-            if (obj.__tags) {
-              db.prepare('DELETE FROM voter_tags WHERE voter_id=?').run(existingId)
-              const tags = String(obj.__tags).split(',').map((t: string) => t.trim()).filter(Boolean)
-              tags.forEach((tag: string) => insertTag.run(existingId, tag))
-            }
-            updated++
-          } else {
-            const r = insertVoter.run(
-              obj.name, obj.gender || null, obj.birth_date || null, obj.id_number || null,
-              obj.mobile || null, obj.phone || null, obj.line_id || null, obj.email || null,
-              obj.household_city || null, obj.household_district || null, obj.household_village || null,
-              obj.household_address || null, obj.mailing_address || null, obj.election_area || null,
-              obj.occupation || null, obj.company || null, obj.job_title || null,
-              obj.note || null, cu.id
-            )
-            if (obj.__tags) {
-              const tags = String(obj.__tags).split(',').map((t: string) => t.trim()).filter(Boolean)
-              tags.forEach((tag: string) => insertTag.run(r.lastInsertRowid, tag))
-            }
-            imported++
-          }
+          const result = upsertOneRow(obj)
+          if (result === 'updated') updated++
+          else imported++
         } catch (e: any) {
           errors.push({ row: rowNum, error: `第${rowNum}列：${e.message}` })
           failed++
         }
       }
-      db.exec('COMMIT')
-    } catch (e) {
-      db.exec('ROLLBACK')
-      throw e
-    }
+    })
+    importAll()
 
     createAuditLog(request, cu.id, { action: 'create', module: '選民管理', target_name: `批次匯入 ${imported} 筆，更新 ${updated} 筆` })
     return reply.send({

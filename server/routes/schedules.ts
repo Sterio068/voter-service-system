@@ -17,13 +17,13 @@ function logGCalError(request: any, action: string, id: number, err: unknown) {
 }
 
 const CreateScheduleSchema = z.object({
-  title: z.string().min(1, '行程標題為必填'),
+  title: z.string().min(1, '行程標題為必填').max(200, '行程標題最長 200 字'),
   start_time: z.string().min(1, '開始時間為必填'),
   end_time: z.string().optional(),
-  schedule_type: z.string().optional(),
-  location: z.string().optional(),
-  note: z.string().optional(),
-  status: z.string().optional(),
+  schedule_type: z.string().max(50).optional(),
+  location: z.string().max(200).optional(),
+  note: z.string().max(2000).optional(),
+  status: z.string().max(20).optional(),
 })
 
 export default async function scheduleRoutes(fastify: FastifyInstance) {

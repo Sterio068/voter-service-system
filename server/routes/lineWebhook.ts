@@ -82,7 +82,8 @@ export default async function lineWebhookRoutes(fastify: FastifyInstance) {
     if (!voter) return reply.code(404).send({ success: false, error: '選民不存在' })
 
     // Store LINE user ID in tags field as a special tag
-    const tags = JSON.parse(voter.tags || '[]')
+    let tags: string[] = []
+    try { tags = JSON.parse(voter.tags || '[]') } catch { tags = [] }
     const lineTag = `LINE:${line_user_id}`
     if (!tags.includes(lineTag)) {
       tags.push(lineTag)

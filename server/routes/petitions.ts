@@ -9,40 +9,41 @@ function escapeLike(s: string): string {
 }
 
 const CreatePetitionSchema = z.object({
-  content: z.string().min(1, '陳情內容為必填'),
+  content: z.string().min(1, '陳情內容為必填').max(5000, '陳情內容最長 5000 字'),
   petition_date: z.string().min(1, '陳情日期為必填'),
   voter_id: z.number().optional(),
-  contact_phone: z.string().optional(),
-  channel: z.string().optional(),
-  category: z.string().optional(),
-  subcategory: z.string().optional(),
-  area_city: z.string().optional(),
-  area_district: z.string().optional(),
-  area_village: z.string().optional(),
-  area_address: z.string().optional(),
+  contact_phone: z.string().max(30).optional(),
+  channel: z.string().max(50).optional(),
+  category: z.string().max(50).optional(),
+  subcategory: z.string().max(50).optional(),
+  area_city: z.string().max(50).optional(),
+  area_district: z.string().max(50).optional(),
+  area_village: z.string().max(50).optional(),
+  area_address: z.string().max(200).optional(),
   urgency: z.enum(['normal','urgent','critical']).optional(),
   assignee_id: z.number().optional(),
   due_date: z.string().optional(),
   source: z.string().optional(),
 })
 
-function generateCaseNumber(): string {
+// 產生陳情案件編號（不自帶 transaction，需由呼叫端包裹 transaction 保護）
+function generateCaseNumberInTxn(): string {
   const year = new Date().getFullYear()
   const seqName = `petition_${year}`
-  db.exec('BEGIN IMMEDIATE')
-  try {
-    // Seed from existing max to avoid collision with legacy data
-    const maxRow = db.prepare(
-      `SELECT COALESCE(MAX(CAST(SUBSTR(case_number,6) AS INTEGER)),0) AS m FROM petitions WHERE case_number LIKE ?`
-    ).get(`${year}-%`) as any
-    const currentMax = maxRow?.m ?? 0
-    db.prepare(
-      "INSERT INTO seq_numbers(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=MAX(value,excluded.value)+1"
-    ).run(seqName, currentMax + 1)
-    const row = db.prepare('SELECT value FROM seq_numbers WHERE name=?').get(seqName) as any
-    db.exec('COMMIT')
-    return `${year}-${String(row.value).padStart(5, '0')}`
-  } catch (e) { db.exec('ROLLBACK'); throw e }
+  const maxRow = db.prepare(
+    `SELECT COALESCE(MAX(CAST(SUBSTR(case_number,6) AS INTEGER)),0) AS m FROM petitions WHERE case_number LIKE ?`
+  ).get(`${year}-%`) as any
+  const currentMax = maxRow?.m ?? 0
+  db.prepare(
+    "INSERT INTO seq_numbers(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=MAX(value,excluded.value)+1"
+  ).run(seqName, currentMax + 1)
+  const row = db.prepare('SELECT value FROM seq_numbers WHERE name=?').get(seqName) as any
+  return `${year}-${String(row.value).padStart(5, '0')}`
+}
+
+// 公開版本：獨立使用時自帶 IMMEDIATE transaction
+function generateCaseNumber(): string {
+  return db.transaction(() => generateCaseNumberInTxn()).immediate() as string
 }
 
 export default async function petitionRoutes(fastify: FastifyInstance) {
@@ -58,6 +59,9 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
     if (urgency) { conds.push('p.urgency = ?'); params.push(urgency) }
     if (assignee_id) { conds.push('p.assignee_id = ?'); params.push(Number(assignee_id)) }
     if (voter_id) { conds.push('p.voter_id = ?'); params.push(Number(voter_id)) }
+    if (start_date && end_date && String(start_date) > String(end_date)) {
+      return reply.code(400).send({ success: false, error: '開始日期不可晚於結束日期' })
+    }
     if (start_date) { conds.push('p.petition_date >= ?'); params.push(start_date) }
     if (end_date) { conds.push('p.petition_date <= ?'); params.push(end_date) }
     if (search) { conds.push("p.content LIKE ? ESCAPE '\\'"); params.push(`%${escapeLike(search)}%`) }
@@ -130,36 +134,42 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
     }
     const body = request.body as any
 
-    // ── 自動串連選民：若未帶 voter_id 但有聯絡電話，嘗試比對或新增選民 ──
-    let resolvedVoterId = body.voter_id ?? null
-    if (!resolvedVoterId && body.contact_phone?.trim()) {
-      const phone = String(body.contact_phone).trim()
-      const found = db.prepare('SELECT id FROM voters WHERE mobile=? AND is_active=1 LIMIT 1').get(phone) as any
-      if (found) {
-        resolvedVoterId = found.id
-      } else if (body.contact_name?.trim()) {
-        // 有姓名 → 建立新選民
-        const vr = db.prepare("INSERT INTO voters (name,mobile,created_by,created_at,updated_at) VALUES (?,?,?,datetime('now','localtime'),datetime('now','localtime'))")
-          .run(String(body.contact_name).trim(), phone, cu.id)
-        resolvedVoterId = vr.lastInsertRowid as number
-        createAuditLog(request, cu.id, { action: 'create', module: '選民管理', target_type: 'voter', target_id: resolvedVoterId as number, target_name: body.contact_name })
+    // 以 IMMEDIATE transaction 保護：自動建立選民 → 生成案件編號 → INSERT 陳情 → INSERT 日誌
+    const createPetitionTxn = db.transaction(() => {
+      let resolvedVoterId: number | null = body.voter_id ?? null
+      let createdVoterName: string | null = null
+      if (!resolvedVoterId && body.contact_phone?.trim()) {
+        const phone = String(body.contact_phone).trim()
+        const found = db.prepare('SELECT id FROM voters WHERE mobile=? AND is_active=1 LIMIT 1').get(phone) as any
+        if (found) {
+          resolvedVoterId = found.id
+        } else if (body.contact_name?.trim()) {
+          const vr = db.prepare("INSERT INTO voters (name,mobile,created_by,created_at,updated_at) VALUES (?,?,?,datetime('now','localtime'),datetime('now','localtime'))")
+            .run(String(body.contact_name).trim(), phone, cu.id)
+          resolvedVoterId = vr.lastInsertRowid as number
+          createdVoterName = String(body.contact_name).trim()
+        }
       }
-    }
-
-    const case_number = generateCaseNumber()
-    const fields = ['case_number','petition_date','voter_id','contact_phone','channel','category','subcategory','content','area_city','area_district','area_village','area_address','urgency','status','assignee_id']
-    const values = fields.map(f => {
-      if (f === 'case_number') return case_number
-      if (f === 'voter_id') return resolvedVoterId
-      return body[f] ?? null
+      const caseNumber = generateCaseNumberInTxn()
+      const fields = ['case_number','petition_date','voter_id','contact_phone','channel','category','subcategory','content','area_city','area_district','area_village','area_address','urgency','status','assignee_id']
+      const values = fields.map(f => {
+        if (f === 'case_number') return caseNumber
+        if (f === 'voter_id') return resolvedVoterId
+        return body[f] ?? null
+      })
+      const r = db.prepare(`INSERT INTO petitions (${fields.join(',')},created_by) VALUES (${fields.map(() => '?').join(',')},?)`)
+        .run(...values, cu.id)
+      const newId = r.lastInsertRowid as number
+      db.prepare("INSERT INTO petition_logs (petition_id,action_type,content,created_by) VALUES (?,?,?,?)")
+        .run(newId, '受理', `案件受理，陳情方式：${body.channel || '未指定'}`, cu.id)
+      return { newId, caseNumber, resolvedVoterId, createdVoterName }
     })
-    const r = db.prepare(`INSERT INTO petitions (${fields.join(',')},created_by) VALUES (${fields.map(() => '?').join(',')},?)`)
-      .run(...values, cu.id)
-    const newId = r.lastInsertRowid as number
-    db.prepare("INSERT INTO petition_logs (petition_id,action_type,content,created_by) VALUES (?,?,?,?)")
-      .run(newId, '受理', `案件受理，陳情方式：${body.channel || '未指定'}`, cu.id)
-    createAuditLog(request, cu.id, { action: 'create', module: '陳情管理', target_type: 'petition', target_id: newId, target_name: case_number })
-    return reply.code(201).send({ success: true, data: { id: newId, case_number, voter_id: resolvedVoterId }, message: '陳情案件已建立' })
+    const { newId, caseNumber, resolvedVoterId, createdVoterName } = createPetitionTxn.immediate() as { newId: number; caseNumber: string; resolvedVoterId: number | null; createdVoterName: string | null }
+    if (createdVoterName && resolvedVoterId) {
+      createAuditLog(request, cu.id, { action: 'create', module: '選民管理', target_type: 'voter', target_id: resolvedVoterId, target_name: createdVoterName })
+    }
+    createAuditLog(request, cu.id, { action: 'create', module: '陳情管理', target_type: 'petition', target_id: newId, target_name: caseNumber })
+    return reply.code(201).send({ success: true, data: { id: newId, case_number: caseNumber, voter_id: resolvedVoterId }, message: '陳情案件已建立' })
   })
 
   fastify.put('/api/petitions/:id', { preHandler: [requirePermission('petitions', 'edit')] }, async (request, reply) => {
@@ -199,38 +209,39 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
       }
     }
 
-    if (body.status === 'closed' && petition.status !== 'closed')
-      updateData.closed_at = new Date().toISOString().replace('T', ' ').slice(0, 19)
+    if (body.status === 'closed' && petition.status !== 'closed') {
+      // 用 SQLite localtime，避免與其他欄位時區不一致
+      updateData.closed_at = (db.prepare("SELECT datetime('now','localtime') AS t").get() as any).t
+    }
     if (Object.keys(updateData).length === 0) {
       return reply.code(400).send({ success: false, error: '沒有可更新的欄位' })
     }
     const sets = Object.keys(updateData).map(k => `${k}=?`).join(',')
-    db.prepare(`UPDATE petitions SET ${sets},updated_at=datetime('now','localtime') WHERE id=?`).run(...Object.values(updateData), Number(id))
+    // 將陳情更新、任務轉派、日誌、通知包成單一 transaction 保證一致性
+    const updatePetitionTxn = db.transaction(() => {
+      db.prepare(`UPDATE petitions SET ${sets},updated_at=datetime('now','localtime') WHERE id=?`).run(...Object.values(updateData), Number(id))
 
-    // W-7: Auto-transfer tasks when assignee_id changed
-    if (updateData.assignee_id !== undefined && updateData.assignee_id !== petition.assignee_id) {
-      const newAssigneeId = updateData.assignee_id
-      // Check tasks table has assignee_id column
-      const taskCols = db.prepare("PRAGMA table_info(tasks)").all() as any[]
-      const hasAssigneeCol = taskCols.some((c: any) => c.name === 'assignee_id')
-      if (hasAssigneeCol) {
-        db.prepare(`
-          UPDATE tasks SET assignee_id=?, updated_at=datetime('now','localtime')
-          WHERE related_petition_id=? AND status NOT IN ('done','cancelled')
-        `).run(newAssigneeId, Number(id))
-      }
-      db.prepare("INSERT INTO petition_logs (petition_id,action_type,content,created_by) VALUES (?,?,?,?)")
-        .run(Number(id), '重新分派', `案件已重新分派，承辦人變更`, cu.id)
+      // W-7: Auto-transfer tasks when assignee_id changed
+      if (updateData.assignee_id !== undefined && updateData.assignee_id !== petition.assignee_id) {
+        const newAssigneeId = updateData.assignee_id
+        const taskCols = db.prepare("PRAGMA table_info(tasks)").all() as any[]
+        const hasAssigneeCol = taskCols.some((c: any) => c.name === 'assignee_id')
+        if (hasAssigneeCol) {
+          db.prepare(`
+            UPDATE tasks SET assignee_id=?, updated_at=datetime('now','localtime')
+            WHERE related_petition_id=? AND status NOT IN ('done','cancelled')
+          `).run(newAssigneeId, Number(id))
+        }
+        db.prepare("INSERT INTO petition_logs (petition_id,action_type,content,created_by) VALUES (?,?,?,?)")
+          .run(Number(id), '重新分派', `案件已重新分派，承辦人變更`, cu.id)
 
-      // B-2: In-app notification for new assignee
-      if (body.assignee_id && body.assignee_id !== petition.assignee_id) {
-        try {
-          // notification_recipients uses voter_id (not user_id), so only create the notification record
+        if (body.assignee_id && body.assignee_id !== petition.assignee_id) {
           db.prepare(`INSERT INTO notifications(channel,status,title,content,created_by,created_at) VALUES(?,?,?,?,?,datetime('now','localtime'))`)
             .run('app', 'sent', '新案件指派', `案件 ${petition.case_number} 已指派給您，請盡快處理。`, cu.id)
-        } catch {}
+        }
       }
-    }
+    })
+    updatePetitionTxn()
 
     createAuditLog(request, cu.id, { action: 'update', module: '陳情管理', target_type: 'petition', target_id: Number(id), target_name: petition.case_number, before: petition, after: updateData })
     return reply.send({ success: true, message: '陳情案件已更新' })
