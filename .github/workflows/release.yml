@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build-mac:
     runs-on: macos-latest
@@ -31,11 +34,12 @@ jobs:
           CSC_LINK: ""
           CSC_KEY_PASSWORD: ""
 
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
+      # 直接上傳到 Release（不用 artifact 中介，避免配額問題）
+      - name: Upload macOS to Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: mac-dmg
-          path: release/*.dmg
+          files: release/*.dmg
+          generate_release_notes: true
 
   build-win:
     runs-on: windows-latest
@@ -58,30 +62,9 @@ jobs:
       - name: Package Windows
         run: npx electron-builder --win --publish never
 
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: win-installer
-          path: release/*.exe
-
-  release:
-    needs: [build-mac, build-win]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: mac-dmg
-          path: release/
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: win-installer
-          path: release/
-
-      - name: Create GitHub Release
+      # 直接上傳到 Release（不用 artifact 中介，避免配額問題）
+      - name: Upload Windows to Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*
+          files: release/*.exe
           generate_release_notes: true
