@@ -84,15 +84,15 @@ export default function ExpensePage() {
     )},
     { title: '廠商', dataIndex: 'vendor_name', key: 'name' },
     { title: '類別', dataIndex: 'category', key: 'cat', width: 70, render: (v: string) => <Tag>{v}</Tag> },
-    { title: '採購次數', dataIndex: 'order_count', key: 'count', width: 80, render: (v: number) => `${v} 次` },
+    { title: '採購次數', dataIndex: 'order_count', key: 'count', width: 80, render: (v: number) => `${v ?? 0} 次` },
     {
       title: '總金額', dataIndex: 'amount', key: 'amount', width: 120,
-      render: (v: number) => <Text strong>NT$ {v.toLocaleString()}</Text>
+      render: (v: number) => <Text strong>NT$ {(v ?? 0).toLocaleString()}</Text>
     },
     {
       title: '占比', key: 'ratio', width: 100,
       render: (_: any, r: any) => (
-        <Progress percent={totalAmount ? Math.round(r.amount / totalAmount * 100) : 0} size="small" />
+        <Progress percent={totalAmount ? Math.round((r.amount ?? 0) / totalAmount * 100) : 0} size="small" />
       )
     },
   ]
@@ -100,7 +100,7 @@ export default function ExpensePage() {
   const budgetColumns = [
     { title: '類型', dataIndex: 'budget_type', width: 80, render: (v: string) => v === 'total' ? '年度總額' : v },
     { title: '月份', dataIndex: 'month', width: 60, render: (v: any) => v ? `${v}月` : '全年' },
-    { title: '預算', dataIndex: 'amount', render: (v: number) => `NT$ ${v.toLocaleString()}` },
+    { title: '預算', dataIndex: 'amount', render: (v: number) => `NT$ ${(v ?? 0).toLocaleString()}` },
     { title: '備註', dataIndex: 'note', render: (v: string) => v || '—' },
     {
       title: '操作', width: 60,
@@ -142,7 +142,7 @@ export default function ExpensePage() {
             {yearBudget && budgetUsed !== null && (
               <Progress percent={Math.min(budgetUsed, 100)} size="small"
                 status={budgetUsed > 90 ? 'exception' : budgetUsed > 70 ? 'active' : 'normal'}
-                format={() => `${budgetUsed}% / 預算 NT$${yearBudget.amount.toLocaleString()}`} />
+                format={() => `${budgetUsed}% / 預算 NT$${(yearBudget.amount ?? 0).toLocaleString()}`} />
             )}
           </Card>
         </Col>
@@ -203,7 +203,7 @@ export default function ExpensePage() {
                       columns={[
                         { title: '類型', dataIndex: 'name' },
                         { title: '筆數', dataIndex: 'count', width: 60 },
-                        { title: '金額', dataIndex: 'value', render: (v: number) => <Text strong>NT$ {v.toLocaleString()}</Text> },
+                        { title: '金額', dataIndex: 'value', render: (v: number) => <Text strong>NT$ {(v ?? 0).toLocaleString()}</Text> },
                       ]}
                       footer={() => <div style={{ textAlign: 'right' }}>合計：<Text strong>NT$ {totalAmount.toLocaleString()}</Text></div>}
                     />
@@ -235,10 +235,10 @@ export default function ExpensePage() {
               }
               {yearBudget && (
                 <div style={{ marginTop: 16, padding: 12, background: '#f5f5f5', borderRadius: 6 }}>
-                  <Text>年度預算：NT$ {yearBudget.amount.toLocaleString()}　</Text>
-                  <Text>已使用：NT$ {totalAmount.toLocaleString()}　</Text>
+                  <Text>年度預算：NT$ {(yearBudget.amount ?? 0).toLocaleString()}　</Text>
+                  <Text>已使用：NT$ {(totalAmount ?? 0).toLocaleString()}　</Text>
                   <Text type={totalAmount > yearBudget.amount ? 'danger' : 'success'}>
-                    剩餘：NT$ {(yearBudget.amount - totalAmount).toLocaleString()}
+                    剩餘：NT$ {((yearBudget.amount ?? 0) - (totalAmount ?? 0)).toLocaleString()}
                   </Text>
                   <Progress
                     percent={Math.min(Math.round(totalAmount / yearBudget.amount * 100), 100)}
@@ -255,7 +255,7 @@ export default function ExpensePage() {
       {/* 預算設定 Modal */}
       <Modal title="設定預算" open={budgetModalOpen}
         onCancel={() => { setBudgetModalOpen(false); budgetForm.resetFields() }}
-        onOk={() => budgetForm.submit()} okText="儲存">
+        onOk={() => budgetForm.submit()} okText="儲存" destroyOnClose>
         <Form form={budgetForm} layout="vertical" onFinish={async (values) => {
           try {
             await api.post('/expenses/budgets', { ...values, year })

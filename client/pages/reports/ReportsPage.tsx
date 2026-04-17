@@ -75,7 +75,7 @@ export default function ReportsPage() {
         </table>
         <h2>二、月份陳情趨勢</h2>
         <table>
-          <tr><th>月份</th><th>${year}年件數</th><th>${(parseInt(year)-1)}年件數</th></tr>
+          <tr><th>月份</th><th>${year}年件數</th><th>${(parseInt(year, 10) - 1)}年件數</th></tr>
           ${Array.from({length:12},(_,i)=>{
             const mm = String(i+1).padStart(2,'0')
             const thisY = tData.petitions_this?.find((d:any)=>d.month===mm)?.count||0
@@ -121,7 +121,7 @@ ${narrativeText ? `<h2>主任綜整說明</h2><div class="narrative">${narrative
 ${wData.map((r: any) => `<tr><td>${r.name}</td><td>${r.active_count}</td><td>${r.closed_count}</td><td>${r.overdue_count}</td><td>${r.avg_days || '—'}</td><td>${r.avg_satisfaction || '—'}</td></tr>`).join('')}
 </table>
 <h2>二、月份陳情趨勢</h2>
-<table><tr><th>月份</th><th>${year}年件數</th><th>${(parseInt(year)-1)}年件數</th></tr>
+<table><tr><th>月份</th><th>${year}年件數</th><th>${(parseInt(year, 10) - 1)}年件數</th></tr>
 ${Array.from({length:12},(_,i)=>{
   const mm = String(i+1).padStart(2,'0')
   const thisY = tData.petitions_this?.find((d:any)=>d.month===mm)?.count||0

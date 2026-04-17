@@ -33,15 +33,18 @@ export default function VoterDetailPage() {
   const [form] = Form.useForm()
   const [tags, setTags] = useState<string[]>([])
 
+  const mountedRef = React.useRef(true)
   useEffect(() => {
+    mountedRef.current = true
     if (id) loadVoter(id)
     fetchTags()
+    return () => { mountedRef.current = false }
   }, [id])
 
   const fetchTags = async () => {
     try {
       const res = await api.get('/admin/categories?type=voter_tag')
-      setTags(res.data.data?.map((t: any) => t.name) || [])
+      if (mountedRef.current) setTags(res.data.data?.map((t: any) => t.name) || [])
     } catch {}
   }
 
@@ -52,14 +55,15 @@ export default function VoterDetailPage() {
         api.get(`/voters/${voterId}`),
         api.get(`/voters/${voterId}/contacts`).catch(() => ({ data: { data: [] } })),
       ])
+      if (!mountedRef.current) return
       setVoter(voterRes.data.data)
       setContacts(contactsRes.data.data || [])
     } catch {
-      message.error('載入失敗')
+      if (mountedRef.current) message.error('載入選民資料失敗')
     } finally {
-      setLoading(false)
+      if (mountedRef.current) setLoading(false)
     }
-    api.get(`/voters/${voterId}/engagement`).then(r => setEngagement(r.data.data)).catch(() => {})
+    api.get(`/voters/${voterId}/engagement`).then(r => { if (mountedRef.current) setEngagement(r.data.data) }).catch(() => {})
   }
 
   const handleEdit = () => {

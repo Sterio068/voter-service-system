@@ -29,7 +29,11 @@ function showUnlockWindow(): Promise<boolean> {
   return new Promise(resolve => {
     const win = new BrowserWindow({
       width: 380, height: 230, resizable: false, title: '軟體授權',
-      webPreferences: { nodeIntegration: true, contextIsolation: false },
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload-unlock.js'),
+      },
     })
     win.setMenu(null)
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -47,9 +51,8 @@ border-radius:4px;padding:9px;font-size:14px;cursor:pointer;margin-top:12px}
 <div class="err" id="e">密碼錯誤，請重試</div>
 <button onclick="go()">確認</button></div>
 <script>
-const {ipcRenderer}=require('electron')
-function go(){document.getElementById('e').style.display='none';ipcRenderer.send('unlock-attempt',document.getElementById('p').value)}
-ipcRenderer.on('unlock-failed',()=>{document.getElementById('e').style.display='block';document.getElementById('p').value='';document.getElementById('p').focus()})
+function go(){document.getElementById('e').style.display='none';window.unlockAPI.submit(document.getElementById('p').value)}
+window.unlockAPI.onFailed(()=>{document.getElementById('e').style.display='block';document.getElementById('p').value='';document.getElementById('p').focus()})
 </script></body></html>`
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
 

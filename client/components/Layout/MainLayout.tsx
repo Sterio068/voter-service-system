@@ -141,7 +141,7 @@ export default function MainLayout() {
         if (s.office_name) setOfficeName(s.office_name)
         if (s.first_run === 'true') setShowWizard(true)
         if (s.idle_timeout) {
-          idleTimeoutMinutesRef.current = Math.max(5, parseInt(s.idle_timeout) || 30)
+          idleTimeoutMinutesRef.current = Math.max(5, parseInt(s.idle_timeout, 10) || 30)
           resetIdleTimer()
         }
       }

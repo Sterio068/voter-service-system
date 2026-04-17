@@ -10,4 +10,14 @@ await build({
   format: 'cjs',
 })
 
-console.log('✅ dist-electron/preload.js built')
+await build({
+  entryPoints: ['electron/preload-unlock.ts'],
+  bundle: true,
+  platform: 'node',
+  target: 'node22',
+  outfile: 'dist-electron/preload-unlock.js',
+  external: ['electron'],
+  format: 'cjs',
+})
+
+console.log('✅ dist-electron/preload.js & preload-unlock.js built')

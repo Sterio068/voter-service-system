@@ -125,7 +125,7 @@ export default function SchedulePage() {
     try {
       const res = await api.get(`/consultations/slots/manage?date=${d}`)
       setSlots(res.data.data || [])
-    } catch {}
+    } catch { message.error('載入時段失敗') }
   }
 
   const handleAddSlot = async (values: any) => {
@@ -227,7 +227,7 @@ export default function SchedulePage() {
   }
 
   const handleEventClick = (info: any) => {
-    const schedule = schedules.find(s => s.id === parseInt(info.event.id))
+    const schedule = schedules.find(s => s.id === parseInt(info.event.id, 10))
     setSelectedEvent(schedule)
     setDetailCeremonies([])
     setDetailOpen(true)

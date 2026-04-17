@@ -186,8 +186,8 @@ export default function CeremonyPage() {
     { title: '品項', dataIndex: 'item_name' },
     { title: '廠商', dataIndex: 'vendor_name', render: (v: string) => v || '—' },
     { title: '數量', dataIndex: 'quantity', width: 60 },
-    { title: '單價', dataIndex: 'unit_price', width: 90, render: (v: number) => `NT$ ${v.toLocaleString()}` },
-    { title: '金額', dataIndex: 'amount', width: 100, render: (v: number) => <Text strong>NT$ {v.toLocaleString()}</Text> },
+    { title: '單價', dataIndex: 'unit_price', width: 90, render: (v: number) => `NT$ ${(v ?? 0).toLocaleString()}` },
+    { title: '金額', dataIndex: 'amount', width: 100, render: (v: number) => <Text strong>NT$ {(v ?? 0).toLocaleString()}</Text> },
     { title: '付款', dataIndex: 'payment_status', width: 70, render: (v: string) => v === 'paid' ? <Tag color="success">已付</Tag> : <Tag color="warning">待付</Tag> },
     { title: '收據', dataIndex: 'receipt_no', width: 90, render: (v: string) => v || '—' },
   ]
@@ -265,7 +265,7 @@ export default function CeremonyPage() {
       <Modal title={<Space><GiftOutlined />{detailRecord?.recipient_name} — 禮儀詳情</Space>}
         open={detailOpen} onCancel={() => { setDetailOpen(false); setDetailRecord(null) }}
         footer={<Button onClick={() => { setDetailOpen(false); setDetailRecord(null) }}>關閉</Button>}
-        width={620}>
+        width={620} destroyOnClose>
         {detailRecord && (
           <>
             <Row gutter={16} style={{ marginBottom: 12 }}>

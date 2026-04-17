@@ -171,12 +171,17 @@ export default function PetitionListPage() {
     if (selectedRowKeys.length === 0) return
     setBatchLoading(true)
     try {
-      await Promise.all(selectedRowKeys.map(id => api.put(`/petitions/${id}`, { status })))
-      message.success(`已將 ${selectedRowKeys.length} 筆案件更新為「${STATUS_LABELS[status]}」`)
+      const results = await Promise.allSettled(
+        selectedRowKeys.map(id => api.put(`/petitions/${id}`, { status }))
+      )
+      const ok = results.filter(r => r.status === 'fulfilled').length
+      const failed = results.length - ok
+      if (failed === 0) message.success(`已將 ${ok} 筆案件更新為「${STATUS_LABELS[status]}」`)
+      else if (ok > 0) message.warning(`成功 ${ok} 筆、失敗 ${failed} 筆`)
+      else message.error('批量更新全部失敗')
       setSelectedRowKeys([])
       fetchPetitions()
-    } catch { message.error('批量更新失敗') }
-    finally { setBatchLoading(false) }
+    } finally { setBatchLoading(false) }
   }
 
   const handleDownloadTemplate = async () => {

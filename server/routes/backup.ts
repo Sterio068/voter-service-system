@@ -111,11 +111,14 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     // Step 2: Verify the temp copy with PRAGMA integrity_check
     try {
       const tempDb = new Database(tempPath, { readonly: true })
-      const integrityResult = tempDb.prepare('PRAGMA integrity_check').get() as any
+      // PRAGMA integrity_check 正確時只回傳一列 'ok'；若有毀損會回傳多列錯誤訊息
+      const integrityRows = tempDb.prepare('PRAGMA integrity_check').all() as any[]
       tempDb.close()
-      if (integrityResult?.integrity_check !== 'ok') {
+      const isOk = integrityRows.length === 1 && integrityRows[0].integrity_check === 'ok'
+      if (!isOk) {
         fs.unlinkSync(tempPath)
-        return reply.code(400).send({ success: false, error: `備份檔案完整性驗證失敗：${integrityResult?.integrity_check}` })
+        const errMsg = integrityRows.map(r => r.integrity_check).slice(0, 5).join('; ')
+        return reply.code(400).send({ success: false, error: `備份檔案完整性驗證失敗：${errMsg}` })
       }
     } catch (e) {
       try { fs.unlinkSync(tempPath) } catch {}

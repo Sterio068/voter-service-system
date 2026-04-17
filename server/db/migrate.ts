@@ -760,6 +760,13 @@ export function runMigrations() {
   // Performance: 複合索引優化
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_petitions_active_status ON petitions(is_active, status, created_at)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_contact_records_voter_date ON contact_records(voter_id, contact_date DESC)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_logs_created_desc ON audit_logs(created_at DESC)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_logs_user_created ON audit_logs(user_id, created_at DESC)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_schedules_active_start ON schedules(is_active, start_time)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_contact_records_created ON contact_records(created_at DESC)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_voter_tags_voter ON voter_tags(voter_id)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_voter_relations_voter ON voter_relations(voter_id)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_assignee_status ON tasks(assignee_id, status)') } catch {}
 
   // D-2: Insert schema version record
   try {

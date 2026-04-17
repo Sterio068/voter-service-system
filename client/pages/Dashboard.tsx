@@ -53,7 +53,14 @@ export default function Dashboard() {
   const [highRiskPetitions, setHighRiskPetitions] = useState<any[]>([])
   const [systemAlerts, setSystemAlerts] = useState<string[]>([])
 
-  useEffect(() => { loadDashboard() }, [])
+  const mountedRef = React.useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    loadDashboard()
+    return () => { mountedRef.current = false }
+  }, [])
+
+  const safeSet = (setter: (v: any) => void, v: any) => { if (mountedRef.current) setter(v) }
 
   const loadDashboard = async () => {
     setLoading(true)
@@ -73,20 +80,21 @@ export default function Dashboard() {
         api.get('/voters/birthdays?days=7').catch(() => ({ data: { data: [] } })),
       ])
 
-      api.get('/tasks/today').then(r => setTodayTasks(r.data.data || [])).catch(() => {})
-      api.get('/petitions/follow-ups').then(r => setFollowUps(r.data.data || [])).catch(() => {})
-      api.get('/petitions?status=pending&assignee_id=null&pageSize=10').then(r => setUnassignedPetitions(r.data.data || [])).catch(() => {})
-      api.get('/reports/high-risk-petitions').then(r => setHighRiskPetitions(r.data.data || [])).catch(() => {})
+      api.get('/tasks/today').then(r => safeSet(setTodayTasks, r.data.data || [])).catch(() => {})
+      api.get('/petitions/follow-ups').then(r => safeSet(setFollowUps, r.data.data || [])).catch(() => {})
+      api.get('/petitions?status=pending&assignee_id=null&pageSize=10').then(r => safeSet(setUnassignedPetitions, r.data.data || [])).catch(() => {})
+      api.get('/reports/high-risk-petitions').then(r => safeSet(setHighRiskPetitions, r.data.data || [])).catch(() => {})
       api.get('/admin/alerts').then(r => {
         if (r.data.success && r.data.data?.length > 0) {
           const latest = r.data.data[0]
           const detail = typeof latest.detail === 'string'
             ? (() => { try { return JSON.parse(latest.detail) } catch { return {} } })()
             : (latest.detail || {})
-          if (detail.alerts?.length > 0) setSystemAlerts(detail.alerts)
+          if (detail.alerts?.length > 0) safeSet(setSystemAlerts, detail.alerts)
         }
       }).catch(() => {})
 
+      if (!mountedRef.current) return
       setRecentPetitions(petitionsRes.data.data || [])
       setPetitionStats(statsRes.data.data || {})
       setTodaySchedules(schedulesRes.data.data || [])
@@ -99,16 +107,16 @@ export default function Dashboard() {
         overdue: overdueRes.data.data?.count ?? 0,
       })
     } catch (err: any) {
-      if (err?.response?.status === 500 || err?.code === 'ERR_NETWORK') {
-        setTimeout(() => loadDashboard(), 2000)
+      if (mountedRef.current && (err?.response?.status === 500 || err?.code === 'ERR_NETWORK')) {
+        setTimeout(() => { if (mountedRef.current) loadDashboard() }, 2000)
       }
     } finally {
-      setLoading(false)
+      if (mountedRef.current) setLoading(false)
     }
   }
 
   const monthlyData = (petitionStats.byMonth || []).map((item: any) => ({
-    name: MONTH_NAMES[parseInt(item.month) - 1] || item.month,
+    name: MONTH_NAMES[parseInt(item.month, 10) - 1] || item.month,
     數量: item.count || 0,
   }))
 

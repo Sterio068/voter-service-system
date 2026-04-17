@@ -54,7 +54,7 @@ export default function PetitionStatsPage() {
   const closedRate = totalCount > 0 ? Math.round(closedCount / totalCount * 100) : 0
 
   const monthlyData = (stats.byMonth || []).map((r: any) => ({
-    name: MONTH_NAMES[parseInt(r.month) - 1],
+    name: MONTH_NAMES[parseInt(r.month, 10) - 1],
     數量: r.count,
   }))
 

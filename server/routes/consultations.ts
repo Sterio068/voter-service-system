@@ -53,15 +53,24 @@ export default async function consultationRoutes(fastify: FastifyInstance) {
     if (!body.voter_name || !body.appointment_date || !body.time_slot) {
       return reply.code(400).send({ success: false, error: '姓名、日期、時段為必填' })
     }
-    // Check capacity
-    const count = (db.prepare("SELECT COUNT(*) as c FROM consultation_appointments WHERE appointment_date=? AND time_slot=? AND status!='cancelled'").get(body.appointment_date, body.time_slot) as any).c
-    const slot = db.prepare('SELECT max_capacity FROM consultation_time_slots WHERE slot_date=? AND slot_time=?').get(body.appointment_date, body.time_slot) as any
-    if (slot && count >= slot.max_capacity) {
-      return reply.code(409).send({ success: false, error: '此時段已額滿，請選擇其他時段' })
+    // 以 IMMEDIATE 交易保護容量檢查與寫入，避免 TOCTOU 超額預約
+    try {
+      const txn = db.transaction(() => {
+        const count = (db.prepare("SELECT COUNT(*) as c FROM consultation_appointments WHERE appointment_date=? AND time_slot=? AND status!='cancelled'").get(body.appointment_date, body.time_slot) as any).c
+        const slot = db.prepare('SELECT max_capacity FROM consultation_time_slots WHERE slot_date=? AND slot_time=?').get(body.appointment_date, body.time_slot) as any
+        if (slot && count >= slot.max_capacity) {
+          throw Object.assign(new Error('此時段已額滿，請選擇其他時段'), { statusCode: 409 })
+        }
+        const r = db.prepare('INSERT INTO consultation_appointments (voter_id,voter_name,voter_phone,appointment_date,time_slot,issue_summary,status,created_by) VALUES (?,?,?,?,?,?,?,?)').run(body.voter_id ?? null, body.voter_name, body.voter_phone ?? null, body.appointment_date, body.time_slot, body.issue_summary ?? null, 'pending', cu.id)
+        return r.lastInsertRowid as number
+      })
+      const newId = txn.immediate() as number
+      createAuditLog(req, cu.id, { action: 'create', module: '法律諮詢', target_type: 'consultation', target_id: newId, target_name: `${body.voter_name} ${body.appointment_date}` })
+      return reply.code(201).send({ success: true, data: { id: newId } })
+    } catch (e: any) {
+      if (e?.statusCode === 409) return reply.code(409).send({ success: false, error: e.message })
+      throw e
     }
-    const r = db.prepare('INSERT INTO consultation_appointments (voter_id,voter_name,voter_phone,appointment_date,time_slot,issue_summary,status,created_by) VALUES (?,?,?,?,?,?,?,?)').run(body.voter_id ?? null, body.voter_name, body.voter_phone ?? null, body.appointment_date, body.time_slot, body.issue_summary ?? null, 'pending', cu.id)
-    createAuditLog(req, cu.id, { action: 'create', module: '法律諮詢', target_type: 'consultation', target_id: r.lastInsertRowid as number, target_name: `${body.voter_name} ${body.appointment_date}` })
-    return reply.code(201).send({ success: true, data: { id: r.lastInsertRowid } })
   })
 
   // PUT /api/consultations/:id

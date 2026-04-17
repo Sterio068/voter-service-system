@@ -80,8 +80,8 @@ export default function BasicTab({ voterId, voterData: voter }: Props) {
           <Space wrap>{(voter.tags || []).map((t: string) => <Tag key={t} color={TAG_COLORS[t]}>{t}</Tag>)}</Space>
         </Descriptions.Item>
         <Descriptions.Item label="備註" span={2}>{voter.note || '-'}</Descriptions.Item>
-        <Descriptions.Item label="建立時間">{dayjs(voter.created_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
-        <Descriptions.Item label="更新時間">{dayjs(voter.updated_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+        <Descriptions.Item label="建立時間">{voter.created_at ? dayjs(voter.created_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
+        <Descriptions.Item label="更新時間">{voter.updated_at ? dayjs(voter.updated_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
       </Descriptions>
 
       {/* 關注議題 */}
