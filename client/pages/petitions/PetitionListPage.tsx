@@ -504,13 +504,13 @@ export default function PetitionListPage() {
         <Form form={form} layout="vertical" onFinish={handleSave}
           initialValues={{ urgency: 'normal', status: 'pending', petition_date: dayjs() }}>
           <Row gutter={12}>
-            <Col span={16}>
-              <Form.Item name="voter_id" label="陳情人（選填）">
+            <Col span={12}>
+              <Form.Item name="voter_id" label="搜尋選民（選填）" tooltip="從現有選民中挑選，若為新聯絡人請留空、改填下方姓名">
                 <Select
                   showSearch
                   allowClear
                   filterOption={false}
-                  placeholder="輸入姓名或手機搜尋選民"
+                  placeholder="輸入姓名或手機搜尋"
                   onSearch={searchVoters}
                   notFoundContent={null}
                 >
@@ -520,9 +520,14 @@ export default function PetitionListPage() {
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={6}>
+              <Form.Item name="contact_name" label="陳情人姓名">
+                <Input placeholder="例：王小明" maxLength={50} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
               <Form.Item name="contact_phone" label="聯絡電話">
-                <Input placeholder="0912345678" />
+                <Input placeholder="0912345678" maxLength={20} />
               </Form.Item>
             </Col>
           </Row>
@@ -542,7 +547,13 @@ export default function PetitionListPage() {
             </Col>
             <Col span={12}>
               <Form.Item name="category" label="陳情類別">
-                <Select allowClear>
+                <Select
+                  showSearch
+                  allowClear
+                  placeholder={categories.length === 0 ? '請先至「類別管理」新增陳情類別' : '選擇或輸入關鍵字搜尋'}
+                  optionFilterProp="children"
+                  notFoundContent={categories.length === 0 ? '尚未設定類別' : '查無類別'}
+                >
                   {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
                 </Select>
               </Form.Item>
@@ -597,13 +608,13 @@ export default function PetitionListPage() {
         <Form form={quickForm} layout="vertical" onFinish={handleQuickCreate}
           initialValues={{ channel: '電話' }}>
           <Row gutter={12}>
-            <Col span={16}>
-              <Form.Item name="voter_id" label="陳情人（選填）">
+            <Col span={12}>
+              <Form.Item name="voter_id" label="搜尋選民（選填）" tooltip="從現有選民中挑選，若為新聯絡人請改填下方姓名">
                 <Select
                   showSearch
                   allowClear
                   filterOption={false}
-                  placeholder="輸入姓名或手機搜尋選民"
+                  placeholder="輸入姓名或手機搜尋"
                   onSearch={searchVoters}
                   notFoundContent={null}
                 >
@@ -613,9 +624,14 @@ export default function PetitionListPage() {
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={6}>
+              <Form.Item name="contact_name" label="姓名">
+                <Input placeholder="例：王小明" maxLength={50} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
               <Form.Item name="contact_phone" label="聯絡電話">
-                <Input placeholder="0912345678" />
+                <Input placeholder="0912345678" maxLength={20} />
               </Form.Item>
             </Col>
           </Row>
@@ -626,10 +642,16 @@ export default function PetitionListPage() {
             </Button>
           </div>
           <Form.Item name="content" label="陳情內容" rules={[{ required: true, message: '請填寫陳情內容' }]}>
-            <TextArea rows={4} placeholder="詳細描述陳情事項..." />
+            <TextArea rows={4} placeholder="詳細描述陳情事項..." maxLength={5000} />
           </Form.Item>
           <Form.Item name="category" label="陳情類別">
-            <Select allowClear>
+            <Select
+              showSearch
+              allowClear
+              placeholder={categories.length === 0 ? '請先至「類別管理」新增陳情類別' : '選擇或輸入關鍵字搜尋'}
+              optionFilterProp="children"
+              notFoundContent={categories.length === 0 ? '尚未設定類別' : '查無類別'}
+            >
               {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
             </Select>
           </Form.Item>
