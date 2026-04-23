@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
   Table, Button, Space, Input, Select, Tag, Typography, Card,
-  Drawer, Form, DatePicker, message, Popconfirm, Row, Col, Divider, Empty, Modal, Upload, Alert
+  Drawer, Form, DatePicker, message, Popconfirm, Row, Col, Divider, Empty, Modal, Upload, Alert, AutoComplete
 } from 'antd'
 import { PlusOutlined, SearchOutlined, EyeOutlined, DownloadOutlined, FilterOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
@@ -44,6 +44,9 @@ const STATUS_LABELS: Record<string, string> = {
 }
 const URGENCY_COLORS: Record<string, string> = { normal: 'default', urgent: 'orange', critical: 'red' }
 const URGENCY_LABELS: Record<string, string> = { normal: '一般', urgent: '急件', critical: '特急' }
+
+// 提取為模組層級常數避免每次 render 重建，防止 Antd Form 意外 re-init
+const QUICK_FORM_INITIAL = { channel: '電話' }
 
 export default function PetitionListPage() {
   const navigate = useNavigate()
@@ -558,15 +561,12 @@ export default function PetitionListPage() {
             </Col>
             <Col span={12}>
               <Form.Item name="category" label="陳情類別">
-                <Select
-                  showSearch
+                <AutoComplete
                   allowClear
-                  placeholder={categories.length === 0 ? '請先至「類別管理」新增陳情類別' : '選擇或輸入關鍵字搜尋'}
-                  optionFilterProp="children"
-                  notFoundContent={categories.length === 0 ? '尚未設定類別' : '查無類別'}
-                >
-                  {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
-                </Select>
+                  placeholder={categories.length === 0 ? '尚未設定類別，可直接輸入' : '選擇或輸入關鍵字'}
+                  options={categories.map(c => ({ value: c }))}
+                  filterOption={(input, option) => String(option?.value || '').toLowerCase().includes(input.toLowerCase())}
+                />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -617,7 +617,7 @@ export default function PetitionListPage() {
         cancelText="取消"
       >
         <Form form={quickForm} layout="vertical" onFinish={handleQuickCreate}
-          initialValues={{ channel: '電話' }}>
+          initialValues={QUICK_FORM_INITIAL}>
           <Row gutter={12}>
             <Col span={12}>
               <Form.Item name="voter_id" label="搜尋選民（選填）" tooltip="從現有選民中挑選，若為新聯絡人請改填下方姓名">
@@ -656,15 +656,12 @@ export default function PetitionListPage() {
             <TextArea rows={4} placeholder="詳細描述陳情事項..." maxLength={5000} />
           </Form.Item>
           <Form.Item name="category" label="陳情類別">
-            <Select
-              showSearch
+            <AutoComplete
               allowClear
-              placeholder={categories.length === 0 ? '請先至「類別管理」新增陳情類別' : '選擇或輸入關鍵字搜尋'}
-              optionFilterProp="children"
-              notFoundContent={categories.length === 0 ? '尚未設定類別' : '查無類別'}
-            >
-              {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
-            </Select>
+              placeholder={categories.length === 0 ? '尚未設定類別，可直接輸入' : '選擇或輸入關鍵字'}
+              options={categories.map(c => ({ value: c }))}
+              filterOption={(input, option) => String(option?.value || '').toLowerCase().includes(input.toLowerCase())}
+            />
           </Form.Item>
           <Form.Item name="channel" label="陳情方式">
             <Select>

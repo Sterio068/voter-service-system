@@ -424,8 +424,15 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
             <Col span={12}><Form.Item name="doc_date" label={docType === 'incoming' ? '收文日期' : '發文日期'} rules={[{ required: true }]}><DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" /></Form.Item></Col>
             <Col span={12}><Form.Item name="category" label="分類"><Select allowClear>{categories.map(c => <Option key={c} value={c}>{c}</Option>)}</Select></Form.Item></Col>
             <Col span={12}><Form.Item name="org_name" label={docType === 'incoming' ? '來文機關' : '受文機關'}><Input /></Form.Item></Col>
-            {docType === 'incoming' && <><Col span={12}><Form.Item name="org_doc_number" label="來文字號"><Input /></Form.Item></Col>
-              <Col span={12}><Form.Item name="org_doc_date" label="來文日期"><DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" /></Form.Item></Col></>}
+            {/* 使用 hidden 避免 unmount 造成資料丟失 */}
+            <Col span={12} style={{ display: docType === 'incoming' ? undefined : 'none' }}>
+              <Form.Item name="org_doc_number" label="來文字號" hidden={docType !== 'incoming'}><Input /></Form.Item>
+            </Col>
+            <Col span={12} style={{ display: docType === 'incoming' ? undefined : 'none' }}>
+              <Form.Item name="org_doc_date" label="來文日期" hidden={docType !== 'incoming'}>
+                <DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" />
+              </Form.Item>
+            </Col>
             <Col span={12}><Form.Item name="deadline" label="處理期限"><DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" /></Form.Item></Col>
             <Col span={12}><Form.Item name="assignee_id" label="承辦人"><Select allowClear>{users.map(u => <Option key={u.id} value={u.id}>{u.name}</Option>)}</Select></Form.Item></Col>
           </Row>

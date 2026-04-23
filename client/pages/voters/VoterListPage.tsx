@@ -270,8 +270,13 @@ export default function VoterListPage() {
 
   const handleSave = async (values: any) => {
     try {
+      // 過濾 null / 空字串（Antd Form 清空欄位會送 null，但後端 schema 不接受）
+      const cleaned: Record<string, any> = {}
+      for (const [k, v] of Object.entries(values)) {
+        if (v !== null && v !== undefined && v !== '') cleaned[k] = v
+      }
       const payload = {
-        ...values,
+        ...cleaned,
         birth_date: values.birth_date ? dayjs(values.birth_date).format('YYYY-MM-DD') : undefined,
         tags: values.tags || [],
       }

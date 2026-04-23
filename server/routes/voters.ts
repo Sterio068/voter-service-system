@@ -29,26 +29,26 @@ function normalizeBirthDate(raw: string | undefined): string | undefined {
 
 const CreateVoterSchema = z.object({
   name: z.string().min(1, '姓名為必填'),
-  gender: z.enum(['男','女','其他']).optional(),
-  birth_date: z.string().optional(),
-  id_number: z.string().optional(),
-  mobile: z.string().regex(/^09\d{8}$/, '手機格式不正確（09開頭10碼）').optional().or(z.literal('')).optional(),
-  phone: z.string().optional(),
-  line_id: z.string().optional(),
-  email: z.string().email('Email格式不正確').optional().or(z.literal('')).optional(),
-  household_city: z.string().optional(),
-  household_district: z.string().optional(),
-  household_village: z.string().optional(),
-  household_address: z.string().optional(),
-  mailing_address: z.string().optional(),
-  occupation: z.string().optional(),
-  company: z.string().optional(),
-  job_title: z.string().optional(),
-  election_area: z.string().optional(),
-  note: z.string().optional(),
-  addr_city: z.string().optional(),
-  addr_district: z.string().optional(),
-  addr_village: z.string().optional(),
+  gender: z.enum(['男','女','其他']).nullable().optional(),
+  birth_date: z.string().nullable().optional(),
+  id_number: z.string().nullable().optional(),
+  mobile: z.string().regex(/^09\d{8}$/, '手機格式不正確（09開頭10碼）').or(z.literal('')).nullable().optional(),
+  phone: z.string().nullable().optional(),
+  line_id: z.string().nullable().optional(),
+  email: z.string().email('Email格式不正確').or(z.literal('')).nullable().optional(),
+  household_city: z.string().nullable().optional(),
+  household_district: z.string().nullable().optional(),
+  household_village: z.string().nullable().optional(),
+  household_address: z.string().nullable().optional(),
+  mailing_address: z.string().nullable().optional(),
+  occupation: z.string().nullable().optional(),
+  company: z.string().nullable().optional(),
+  job_title: z.string().nullable().optional(),
+  election_area: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
+  addr_city: z.string().nullable().optional(),
+  addr_district: z.string().nullable().optional(),
+  addr_village: z.string().nullable().optional(),
 })
 
 interface CreateVoterBody {
@@ -347,20 +347,22 @@ export default async function voterRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ success: false, error: '沒有可更新的欄位' })
     }
     const sets = Object.keys(safeData).map(k => `${k}=?`).join(',')
-    if (sets) {
-      db.prepare(`UPDATE voters SET ${sets},updated_at=datetime('now','localtime') WHERE id=?`).run(...Object.values(safeData), Number(id))
-    } else if (tags !== undefined) {
-      // Only tags changed; still update updated_at
-      db.prepare("UPDATE voters SET updated_at=datetime('now','localtime') WHERE id=?").run(Number(id))
-    }
-    if (tags !== undefined) {
-      db.prepare('DELETE FROM voter_tags WHERE voter_id = ?').run(Number(id))
-      if (tags.length) {
-        const ins = db.prepare('INSERT INTO voter_tags (voter_id,tag) VALUES (?,?)')
-        db.exec('BEGIN'); try { tags.forEach((t: string) => ins.run(Number(id), t)); db.exec('COMMIT') }
-        catch (e) { db.exec('ROLLBACK'); throw e }
+    // 將欄位更新與標籤更新合併為單一 transaction，避免部分成功
+    const updateVoterTxn = db.transaction(() => {
+      if (sets) {
+        db.prepare(`UPDATE voters SET ${sets},updated_at=datetime('now','localtime') WHERE id=?`).run(...Object.values(safeData), Number(id))
+      } else if (tags !== undefined) {
+        db.prepare("UPDATE voters SET updated_at=datetime('now','localtime') WHERE id=?").run(Number(id))
       }
-    }
+      if (tags !== undefined) {
+        db.prepare('DELETE FROM voter_tags WHERE voter_id = ?').run(Number(id))
+        if (tags.length) {
+          const ins = db.prepare('INSERT INTO voter_tags (voter_id,tag) VALUES (?,?)')
+          tags.forEach((t: string) => ins.run(Number(id), t))
+        }
+      }
+    })
+    updateVoterTxn()
     // D-9: Log support_level change with reason
     if (data.support_level !== undefined) {
       const currentEngagement = db.prepare('SELECT support_level FROM voter_engagement WHERE voter_id=?').get(Number(id)) as any
@@ -473,17 +475,26 @@ export default async function voterRoutes(fastify: FastifyInstance) {
       db.prepare('UPDATE contact_records SET voter_id=? WHERE voter_id=?').run(targetId, sourceId)
       db.prepare('UPDATE tasks SET related_voter_id=? WHERE related_voter_id=?').run(targetId, sourceId)
       db.prepare('UPDATE voter_engagement SET voter_id=? WHERE voter_id=? AND NOT EXISTS (SELECT 1 FROM voter_engagement WHERE voter_id=?)').run(targetId, sourceId, targetId)
-      // A-1: Additional FK redirects
-      try { db.prepare('UPDATE event_participants SET voter_id=? WHERE voter_id=?').run(targetId, sourceId) } catch {}
-      try { db.prepare('UPDATE survey_responses SET voter_id=? WHERE voter_id=?').run(targetId, sourceId) } catch {}
-      try { db.prepare('UPDATE notification_recipients SET voter_id=? WHERE voter_id=?').run(targetId, sourceId) } catch {}
-      try { db.prepare('UPDATE voter_relations SET voter_id=? WHERE voter_id=?').run(targetId, sourceId) } catch {}
-      try { db.prepare('UPDATE voter_relations SET voter_id_a=? WHERE voter_id_a=?').run(targetId, sourceId) } catch {}
-      try { db.prepare('UPDATE voter_relations SET voter_id_b=? WHERE voter_id_b=?').run(targetId, sourceId) } catch {}
-      try { db.prepare('UPDATE voter_relations SET related_voter_id=? WHERE related_voter_id=?').run(targetId, sourceId) } catch {}
-      try { db.prepare('UPDATE group_members SET voter_id=? WHERE voter_id=?').run(targetId, sourceId) } catch {}
-      try { db.prepare('UPDATE documents SET voter_id=? WHERE voter_id=?').run(targetId, sourceId) } catch {}
-      try { db.prepare('UPDATE voters SET referrer_id=? WHERE referrer_id=?').run(targetId, sourceId) } catch {}
+      // A-1: Additional FK redirects（只 catch "no such column/table" 這類 schema 差異錯誤，其他錯誤讓 transaction rollback）
+      const safeRedirect = (sql: string, ...params: any[]) => {
+        try { db.prepare(sql).run(...params) }
+        catch (e: any) {
+          const msg = String(e?.message || '')
+          if (/no such (table|column)/i.test(msg)) return // schema 不存在的舊 DB 容忍
+          console.error('[voter merge] redirect failed:', sql, msg)
+          throw e
+        }
+      }
+      safeRedirect('UPDATE event_participants SET voter_id=? WHERE voter_id=?', targetId, sourceId)
+      safeRedirect('UPDATE survey_responses SET voter_id=? WHERE voter_id=?', targetId, sourceId)
+      safeRedirect('UPDATE notification_recipients SET voter_id=? WHERE voter_id=?', targetId, sourceId)
+      safeRedirect('UPDATE voter_relations SET voter_id=? WHERE voter_id=?', targetId, sourceId)
+      safeRedirect('UPDATE voter_relations SET voter_id_a=? WHERE voter_id_a=?', targetId, sourceId)
+      safeRedirect('UPDATE voter_relations SET voter_id_b=? WHERE voter_id_b=?', targetId, sourceId)
+      safeRedirect('UPDATE voter_relations SET related_voter_id=? WHERE related_voter_id=?', targetId, sourceId)
+      safeRedirect('UPDATE group_members SET voter_id=? WHERE voter_id=?', targetId, sourceId)
+      safeRedirect('UPDATE documents SET voter_id=? WHERE voter_id=?', targetId, sourceId)
+      safeRedirect('UPDATE voters SET referrer_id=? WHERE referrer_id=?', targetId, sourceId)
       // Soft delete source
       db.prepare("UPDATE voters SET is_active=0, note=COALESCE(note,'') || ' [已合併至選民ID:' || ? || ']' WHERE id=?").run(targetId, sourceId)
       // A-1: Insert into voter_merge_history
