@@ -245,8 +245,13 @@ export default function PetitionListPage() {
     if (submitting) return
     setSubmitting(true)
     try {
+      // 過濾 null/空字串，避免 Zod 驗證失敗
+      const cleaned: Record<string, any> = {}
+      for (const [k, v] of Object.entries(values)) {
+        if (v !== null && v !== undefined && v !== '') cleaned[k] = v
+      }
       const payload = {
-        ...values,
+        ...cleaned,
         petition_date: values.petition_date ? dayjs(values.petition_date).format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
       }
       await api.post('/petitions', payload)
@@ -289,16 +294,22 @@ export default function PetitionListPage() {
     if (submitting) return
     setSubmitting(true)
     try {
+      // 過濾掉 null 值，避免 Zod 驗證失敗（後端預期 undefined，不接受 null）
+      const cleaned: Record<string, any> = {}
+      for (const [k, v] of Object.entries(values)) {
+        if (v !== null && v !== undefined && v !== '') cleaned[k] = v
+      }
       await api.post('/petitions', {
-        ...values,
+        ...cleaned,
         petition_date: dayjs().format('YYYY-MM-DD'),
         status: 'pending',
         urgency: 'normal',
       })
       message.success('案件已快速立案')
       setQuickOpen(false); quickForm.resetFields(); fetchPetitions()
-    } catch { message.error('立案失敗') }
-    finally { setSubmitting(false) }
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '立案失敗')
+    } finally { setSubmitting(false) }
   }
 
   const columns: ColumnsType<any> = [
