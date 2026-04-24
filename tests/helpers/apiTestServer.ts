@@ -85,6 +85,11 @@ function removeDirectoryWithRetries(targetPath: string, maxRetries = 8) {
       const code = error?.code
       const isTransientWindowsLock = code === 'EBUSY' || code === 'EPERM' || code === 'ENOTEMPTY'
       if (!isTransientWindowsLock || attempt === maxRetries) {
+        if (isTransientWindowsLock) {
+          // Best-effort cleanup is enough for temp test data; CI should not fail
+          // just because Windows is slow to release SQLite/WAL file handles.
+          return
+        }
         throw error
       }
       sleep(100 * (attempt + 1))
