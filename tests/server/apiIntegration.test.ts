@@ -52,7 +52,9 @@ test.before(async () => {
 })
 
 test.after(async () => {
-  await ctx.close()
+  if (ctx) {
+    await ctx.close()
+  }
 })
 
 test('auth endpoints require a token and return the current user without password', async () => {
