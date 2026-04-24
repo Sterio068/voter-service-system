@@ -4,6 +4,16 @@ import { db } from '../db/index'
 import { getSetting, setSetting } from '../utils/settings'
 import { requirePermission, authenticate } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+import { decryptSecretValue, encryptSecretValue } from '../utils/secrets'
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
 
 // ── 取得 OAuth2 client（經由 getSetting 快取，避免每次直接讀 DB）──
 export function getOAuth2Client() {
@@ -22,15 +32,15 @@ export async function getAuthedClient(accountId: number) {
   const oauth2 = getOAuth2Client()
   if (!oauth2) return null
   oauth2.setCredentials({
-    access_token:  account.access_token,
-    refresh_token: account.refresh_token,
+    access_token:  decryptSecretValue(account.access_token),
+    refresh_token: decryptSecretValue(account.refresh_token),
     expiry_date:   account.expiry_date,
   })
   // 自動刷新 token
   oauth2.on('tokens', (tokens) => {
     if (tokens.access_token) {
       db.prepare("UPDATE google_calendar_accounts SET access_token=?, expiry_date=? WHERE id=?")
-        .run(tokens.access_token, tokens.expiry_date ?? null, accountId)
+        .run(encryptSecretValue(tokens.access_token), tokens.expiry_date ?? null, accountId)
     }
   })
   return oauth2
@@ -111,9 +121,17 @@ export default async function googleCalendarRoutes(fastify: FastifyInstance) {
   fastify.post('/api/integrations/gcal/credentials', { preHandler: [requirePermission('settings', 'edit')] }, async (request, reply) => {
     const cu = (request as any).currentUser
     const { client_id, client_secret } = request.body as any
-    if (!client_id || !client_secret) return reply.code(400).send({ success: false, error: '請填寫用戶端 ID 和密鑰' })
-    setSetting('gcal_client_id', client_id)
-    setSetting('gcal_client_secret', client_secret)
+    const trimmedClientId = String(client_id || '').trim()
+    const trimmedClientSecret = String(client_secret || '').trim()
+    const existingSecret = getSetting('gcal_client_secret') || ''
+    if (!trimmedClientId || (!trimmedClientSecret && !existingSecret)) {
+      return reply.code(400).send({ success: false, error: '請填寫用戶端 ID 和密鑰' })
+    }
+    if (trimmedClientId.length > 256 || trimmedClientSecret.length > 256) {
+      return reply.code(400).send({ success: false, error: 'OAuth 憑證長度過長' })
+    }
+    setSetting('gcal_client_id', trimmedClientId)
+    if (trimmedClientSecret) setSetting('gcal_client_secret', trimmedClientSecret)
     createAuditLog(request, cu.id, { action: 'update', module: '系統設定', target_type: 'gcal_credentials', target_id: 0, target_name: '更新 Google Calendar OAuth 憑證' })
     return reply.send({ success: true })
   })
@@ -137,12 +155,12 @@ export default async function googleCalendarRoutes(fastify: FastifyInstance) {
     const { code, state, error } = request.query as any
     if (error) {
       return reply.type('text/html').send(`<html><body style="font-family:sans-serif;padding:40px">
-        <h2>❌ 授權失敗</h2><p>${error}</p><p>可以關閉此視窗。</p></body></html>`)
+        <h2>授權失敗</h2><p>${escapeHtml(error)}</p><p>可以關閉此視窗。</p></body></html>`)
     }
     const oauth2 = getOAuth2Client()
     if (!oauth2 || !code) {
       return reply.type('text/html').send(`<html><body style="font-family:sans-serif;padding:40px">
-        <h2>❌ 設定錯誤</h2><p>找不到 OAuth 設定，請重新設定。</p></body></html>`)
+        <h2>設定錯誤</h2><p>找不到 OAuth 設定，請重新設定。</p></body></html>`)
     }
     try {
       const { tokens } = await oauth2.getToken(code)
@@ -156,20 +174,27 @@ export default async function googleCalendarRoutes(fastify: FastifyInstance) {
       } catch {}
 
       const label = decodeURIComponent(state || '我的日曆')
+      const safeLabel = escapeHtml(label)
+      const safeEmail = escapeHtml(email)
       db.prepare(`INSERT INTO google_calendar_accounts (label,email,access_token,refresh_token,expiry_date)
         VALUES (?,?,?,?,?)`)
-        .run(label, email, tokens.access_token ?? null, tokens.refresh_token!, tokens.expiry_date ?? null)
+        .run(
+          label,
+          email,
+          tokens.access_token ? encryptSecretValue(tokens.access_token) : null,
+          encryptSecretValue(tokens.refresh_token || ''),
+          tokens.expiry_date ?? null,
+        )
 
       return reply.type('text/html').send(`<html><body style="font-family:sans-serif;padding:40px;color:#1a1a1a">
-        <h2 style="color:#28a745">✅ Google 日曆已連結成功</h2>
-        <p>帳號：<strong>${email || label}</strong></p>
-        <p>已連結到「<strong>${label}</strong>」</p>
+        <h2 style="color:#28a745">Google 日曆已連結成功</h2>
+        <p>帳號：<strong>${safeEmail || safeLabel}</strong></p>
+        <p>已連結到「<strong>${safeLabel}</strong>」</p>
         <p style="color:#666">可以關閉此視窗，回到系統繼續操作。</p>
-        <script>setTimeout(()=>window.close(),3000)</script>
       </body></html>`)
     } catch (e: any) {
       return reply.type('text/html').send(`<html><body style="font-family:sans-serif;padding:40px">
-        <h2>❌ 授權失敗</h2><p>${e.message}</p><p>可以關閉此視窗。</p></body></html>`)
+        <h2>授權失敗</h2><p>無法完成授權，請回到系統重新操作。</p><p>可以關閉此視窗。</p></body></html>`)
     }
   })
 

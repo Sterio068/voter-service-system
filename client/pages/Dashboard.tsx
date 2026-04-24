@@ -1,45 +1,86 @@
-import React, { useEffect, useState } from 'react'
-import { Row, Col, Card, Statistic, List, Tag, Typography, Button, Space, Alert, Spin, message } from 'antd'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Card, Col, List, Progress, Row, Space, Spin, Tag, Typography } from 'antd'
 import {
-  FileTextOutlined, TeamOutlined, CalendarOutlined, MailOutlined,
-  PlusOutlined, WarningOutlined, ClockCircleOutlined, ExclamationCircleOutlined,
-  CheckCircleOutlined, ArrowRightOutlined
+  AlertOutlined,
+  ArrowRightOutlined,
+  CalendarOutlined,
+  CheckCircleOutlined,
+  DatabaseOutlined,
+  ExclamationCircleOutlined,
+  FileTextOutlined,
+  MailOutlined,
+  PhoneOutlined,
+  PlusOutlined,
+  SafetyCertificateOutlined,
+  TeamOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from 'recharts'
 import api from '../utils/api'
 import { useAuthStore } from '../stores/authStore'
+import PageScaffold from '../components/ui/PageScaffold'
+import MetricCard from '../components/ui/MetricCard'
+import ActionQueue, { type ActionQueueItem } from '../components/ui/ActionQueue'
+import EmptyState from '../components/ui/EmptyState'
+import { canAccessFeature, canPerformAction } from '../utils/permissions'
 import dayjs from 'dayjs'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 const STATUS_COLORS: Record<string, string> = {
   pending: '#faad14',
   processing: '#007AFF',
+  waiting_external: '#722ed1',
+  waiting_applicant: '#13c2c2',
   referred: '#722ed1',
   replied: '#13c2c2',
   closed: '#52c41a',
   archived: '#8c8c8c',
+  cancelled: '#ff4d4f',
 }
 
 const STATUS_LABELS: Record<string, string> = {
   pending: '待處理',
   processing: '處理中',
+  waiting_external: '待外部回覆',
+  waiting_applicant: '待民眾補件',
   referred: '已轉介',
   replied: '已回覆',
   closed: '已結案',
   archived: '已歸檔',
+  cancelled: '已取消',
 }
 
 const MONTH_NAMES = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月']
 
+function resultData(result: PromiseSettledResult<any>) {
+  return result.status === 'fulfilled' ? result.value.data : null
+}
+
+function formatDateTime(value?: string) {
+  return value ? dayjs(value).format('M/D HH:mm') : '未設定時間'
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const isAdmin = user?.role === 'admin'
-  const isAdminOrSupervisor = user?.role === 'admin' || user?.role === 'supervisor'
+  const canAccessReports = canAccessFeature(user?.role, 'reports')
+  const canAccessSettings = canAccessFeature(user?.role, 'settings')
+  const canAccessCallBank = canAccessFeature(user?.role, 'callBank')
+  const canCreatePetition = canPerformAction(user?.role, 'createPetition')
+  const canCreateVoter = canPerformAction(user?.role, 'createVoter')
 
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<any>({})
@@ -52,23 +93,17 @@ export default function Dashboard() {
   const [unassignedPetitions, setUnassignedPetitions] = useState<any[]>([])
   const [highRiskPetitions, setHighRiskPetitions] = useState<any[]>([])
   const [systemAlerts, setSystemAlerts] = useState<string[]>([])
+  const [backupStatus, setBackupStatus] = useState<any>(null)
 
-  const mountedRef = React.useRef(true)
   useEffect(() => {
-    mountedRef.current = true
-    loadDashboard()
-    return () => { mountedRef.current = false }
-  }, [])
+    let mounted = true
 
-  const safeSet = (setter: (v: any) => void, v: any) => { if (mountedRef.current) setter(v) }
-
-  const loadDashboard = async () => {
-    setLoading(true)
-    try {
+    async function loadDashboard() {
+      setLoading(true)
       const today = dayjs().format('YYYY-MM-DD')
       const year = dayjs().year().toString()
 
-      const [petitionsRes, statsRes, schedulesRes, pendingRes, processingRes, votersRes, docsRes, overdueRes, birthdaysRes] = await Promise.all([
+      const requests = await Promise.allSettled([
         api.get('/petitions?pageSize=8&page=1'),
         api.get(`/petitions/stats?year=${year}`),
         api.get(`/schedules?start=${today} 00:00:00&end=${today} 23:59:59`),
@@ -77,413 +112,415 @@ export default function Dashboard() {
         api.get('/voters?pageSize=1'),
         api.get('/documents?status=pending&pageSize=1'),
         api.get('/petitions/overdue-count'),
-        api.get('/voters/birthdays?days=7').catch(() => ({ data: { data: [] } })),
+        api.get('/voters/birthdays?days=7'),
+        api.get('/tasks/today'),
+        api.get('/petitions/follow-ups'),
+        api.get('/petitions?status=pending&assignee_id=null&pageSize=10'),
+        api.get('/reports/high-risk-petitions'),
+        api.get('/admin/alerts'),
+        canAccessSettings ? api.get('/admin/backup/status') : Promise.resolve({ data: null }),
       ])
 
-      api.get('/tasks/today').then(r => safeSet(setTodayTasks, r.data.data || [])).catch(() => {})
-      api.get('/petitions/follow-ups').then(r => safeSet(setFollowUps, r.data.data || [])).catch(() => {})
-      api.get('/petitions?status=pending&assignee_id=null&pageSize=10').then(r => safeSet(setUnassignedPetitions, r.data.data || [])).catch(() => {})
-      api.get('/reports/high-risk-petitions').then(r => safeSet(setHighRiskPetitions, r.data.data || [])).catch(() => {})
-      api.get('/admin/alerts').then(r => {
-        if (r.data.success && r.data.data?.length > 0) {
-          const latest = r.data.data[0]
-          const detail = typeof latest.detail === 'string'
-            ? (() => { try { return JSON.parse(latest.detail) } catch { return {} } })()
-            : (latest.detail || {})
-          if (detail.alerts?.length > 0) safeSet(setSystemAlerts, detail.alerts)
-        }
-      }).catch(() => {})
+      if (!mounted) return
 
-      if (!mountedRef.current) return
-      setRecentPetitions(petitionsRes.data.data || [])
-      setPetitionStats(statsRes.data.data || {})
-      setTodaySchedules(schedulesRes.data.data || [])
-      setBirthdayVoters(birthdaysRes.data.data || [])
+      const [
+        petitionsRes,
+        statsRes,
+        schedulesRes,
+        pendingRes,
+        processingRes,
+        votersRes,
+        docsRes,
+        overdueRes,
+        birthdaysRes,
+        tasksRes,
+        followUpsRes,
+        unassignedRes,
+        highRiskRes,
+        alertsRes,
+        backupRes,
+      ] = requests.map(resultData)
+
+      setRecentPetitions(petitionsRes?.data || [])
+      setPetitionStats(statsRes?.data || {})
+      setTodaySchedules(schedulesRes?.data || [])
+      setBirthdayVoters(birthdaysRes?.data || [])
+      setTodayTasks(tasksRes?.data || [])
+      setFollowUps(followUpsRes?.data || [])
+      setUnassignedPetitions(unassignedRes?.data || [])
+      setHighRiskPetitions(highRiskRes?.data || [])
+      setBackupStatus(backupRes?.data || null)
       setStats({
-        pending: pendingRes.data.total ?? 0,
-        processing: processingRes.data.total ?? 0,
-        totalVoters: votersRes.data.total ?? 0,
-        pendingDocs: docsRes.data.total ?? 0,
-        overdue: overdueRes.data.data?.count ?? 0,
+        pending: pendingRes?.total ?? 0,
+        processing: processingRes?.total ?? 0,
+        totalVoters: votersRes?.total ?? 0,
+        pendingDocs: docsRes?.total ?? 0,
+        overdue: overdueRes?.data?.count ?? 0,
       })
-    } catch (err: any) {
-      if (mountedRef.current && (err?.response?.status === 500 || err?.code === 'ERR_NETWORK')) {
-        setTimeout(() => { if (mountedRef.current) loadDashboard() }, 2000)
-      }
-    } finally {
-      if (mountedRef.current) setLoading(false)
-    }
-  }
 
-  const monthlyData = (petitionStats.byMonth || []).map((item: any) => ({
+      const latestAlert = alertsRes?.data?.[0]
+      const detail = typeof latestAlert?.detail === 'string'
+        ? (() => { try { return JSON.parse(latestAlert.detail) } catch { return {} } })()
+        : (latestAlert?.detail || {})
+      setSystemAlerts(detail.alerts || [])
+      setLoading(false)
+    }
+
+    loadDashboard()
+    return () => { mounted = false }
+  }, [canAccessSettings])
+
+  const monthlyData = useMemo(() => (petitionStats.byMonth || []).map((item: any) => ({
     name: MONTH_NAMES[parseInt(item.month, 10) - 1] || item.month,
     數量: item.count || 0,
-  }))
+  })), [petitionStats.byMonth])
 
-  const statusData = (petitionStats.byStatus || []).map((item: any) => ({
+  const statusData = useMemo(() => (petitionStats.byStatus || []).map((item: any) => ({
     name: STATUS_LABELS[item.status] || item.status,
     value: item.count,
     color: STATUS_COLORS[item.status] || '#8c8c8c',
+  })), [petitionStats.byStatus])
+
+  const urgentTasks = todayTasks.filter((task: any) => task.priority === 'urgent' || task.priority === 'high')
+  const totalActionCount = urgentTasks.length + followUps.length + unassignedPetitions.length + highRiskPetitions.length + (stats.overdue || 0)
+  const completedToday = todayTasks.filter((task: any) => task.status === 'done' || task.status === 'completed').length
+  const taskProgress = todayTasks.length > 0 ? Math.round((completedToday / todayTasks.length) * 100) : 0
+
+  const focusItems: ActionQueueItem[] = [
+    ...highRiskPetitions.slice(0, 3).map((petition: any) => ({
+      key: `risk-${petition.id}`,
+      title: petition.case_number || petition.voter_name || `案件 #${petition.id}`,
+      description: petition.content || petition.voter_name || '高風險陳情需主管確認',
+      meta: petition.risk_type === 'overdue' ? '逾期案件' : '停滯案件',
+      tag: '高風險',
+      tone: 'red' as const,
+      onClick: () => navigate(petition.id ? `/petitions/${petition.id}` : (canAccessReports ? '/reports' : '/petitions')),
+    })),
+    ...unassignedPetitions.slice(0, 3).map((petition: any) => ({
+      key: `unassigned-${petition.id}`,
+      title: petition.case_number || `案件 #${petition.id}`,
+      description: petition.voter_name ? `${petition.voter_name}：${petition.content || ''}` : petition.content || '尚未分派承辦人',
+      meta: formatDateTime(petition.created_at),
+      tag: '待分派',
+      tone: 'amber' as const,
+      onClick: () => navigate(`/petitions/${petition.id}`),
+    })),
+    ...urgentTasks.slice(0, 3).map((task: any) => ({
+      key: `task-${task.id}`,
+      title: task.title,
+      description: task.description || task.voter_name || '今日待辦需要處理',
+      meta: task.due_date ? `截止：${task.due_date}` : '未設定截止日',
+      tag: task.priority === 'urgent' ? '緊急待辦' : '高優先',
+      tone: task.priority === 'urgent' ? 'red' as const : 'amber' as const,
+      onClick: () => navigate('/tasks?focus=today'),
+    })),
+    ...followUps.slice(0, 3).map((petition: any) => ({
+      key: `follow-${petition.id}`,
+      title: petition.voter_name || petition.case_number || `案件 #${petition.id}`,
+      description: petition.content || '需要回訪或補充追蹤',
+      meta: petition.case_number,
+      tag: '待回訪',
+      tone: 'blue' as const,
+      onClick: () => navigate(petition.id ? `/petitions/${petition.id}` : '/petitions'),
+    })),
+  ]
+
+  const scheduleItems: ActionQueueItem[] = todaySchedules.map((schedule: any) => ({
+    key: schedule.id,
+    title: schedule.title,
+    description: schedule.location || schedule.note || '今日行程',
+    meta: `${dayjs(schedule.start_time).format('HH:mm')}${schedule.end_time ? ` - ${dayjs(schedule.end_time).format('HH:mm')}` : ''}`,
+    tag: schedule.schedule_type || '行程',
+    tone: 'green' as const,
+    onClick: () => navigate('/schedules'),
   }))
 
-  const urgentTasks = todayTasks.filter((t: any) => t.priority === 'urgent' || t.priority === 'high')
-  const totalAlerts = urgentTasks.length + followUps.length + unassignedPetitions.length + highRiskPetitions.length
+  const petitionItems: ActionQueueItem[] = recentPetitions.map((petition: any) => ({
+    key: petition.id,
+    title: petition.case_number || `案件 #${petition.id}`,
+    description: petition.content,
+    meta: `${petition.voter_name || '匿名'} · ${formatDateTime(petition.created_at)}`,
+    tag: STATUS_LABELS[petition.status] || petition.status,
+    tone: petition.urgency === 'critical' ? 'red' as const : petition.urgency === 'urgent' ? 'amber' as const : 'slate' as const,
+    onClick: () => navigate(`/petitions/${petition.id}`),
+  }))
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>
+  const healthItems: ActionQueueItem[] = [
+    ...systemAlerts.map((alert, index) => ({
+      key: `alert-${index}`,
+      title: alert,
+      description: '系統偵測到需要管理員確認的警示',
+      tag: '系統警示',
+      tone: 'amber' as const,
+      onClick: () => navigate(canAccessReports ? '/reports' : '/petitions'),
+    })),
+    ...(backupStatus?.last_error ? [{
+      key: 'backup-error',
+      title: '最近一次自動備份失敗',
+      description: backupStatus.last_error,
+      meta: backupStatus.last_error_at ? dayjs(backupStatus.last_error_at).format('YYYY-MM-DD HH:mm') : undefined,
+      tag: '備份',
+      tone: 'red' as const,
+      onClick: () => navigate('/admin/settings'),
+    }] : []),
+  ]
+
+  const quickActions = [
+    ...(canCreatePetition ? [
+      <Button key="create-petition" type="primary" icon={<PlusOutlined />} onClick={() => navigate('/petitions?action=new')}>
+        新增陳情
+      </Button>,
+    ] : []),
+    ...(canCreateVoter ? [
+      <Button key="create-voter" icon={<PlusOutlined />} onClick={() => navigate('/voters?action=new')}>
+        新增選民
+      </Button>,
+    ] : []),
+    ...(canAccessCallBank ? [
+      <Button key="call-bank" icon={<PhoneOutlined />} onClick={() => navigate('/voters/call-bank')}>
+        電話拜訪
+      </Button>,
+    ] : []),
+  ]
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: 100 }}>
+        <Spin size="large" />
+      </div>
+    )
+  }
 
   return (
-    <div style={{ maxWidth: 1400 }}>
-      {/* 頁面標題列 */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <Title level={4} style={{ margin: 0 }}>
-            {dayjs().format('YYYY年M月D日')}
-            <Text type="secondary" style={{ fontSize: 14, fontWeight: 400, marginLeft: 12 }}>
-              {dayjs().format('dddd')}
-            </Text>
-          </Title>
-        </div>
-        <Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/petitions?action=new')}>
-            新增陳情
-          </Button>
-          <Button icon={<PlusOutlined />} onClick={() => navigate('/voters?action=new')}>
-            新增選民
-          </Button>
-        </Space>
-      </div>
-
-      {/* 系統預警 */}
+    <PageScaffold
+      eyebrow="Today Command Center"
+      title={`${dayjs().format('M月D日')} ${dayjs().format('dddd')}工作台`}
+      description="把待分派、逾期、回訪、行程與系統健康集中在同一個入口，讓服務處一開工就能判斷今天先處理什麼。"
+      actions={quickActions.length > 0 ? quickActions : undefined}
+    >
       {systemAlerts.length > 0 && (
         <Alert
           type="warning"
+          showIcon
+          closable
+          style={{ marginBottom: 14 }}
           message={`系統預警（${systemAlerts.length} 項）`}
           description={systemAlerts.join('、')}
-          showIcon closable
-          style={{ marginBottom: 12 }}
         />
       )}
 
-      {/* 統計卡片 */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-        <Col xs={12} sm={8} lg={4}>
-          <Card
-            hoverable
+      <Row gutter={[12, 12]} style={{ marginBottom: 14 }}>
+        <Col xs={12} md={8} xl={4}>
+          <MetricCard
+            label="待處理陳情"
+            value={stats.pending ?? 0}
+            helper="需要受理或分派"
+            icon={<WarningOutlined />}
+            tone={(stats.pending ?? 0) > 0 ? 'amber' : 'green'}
             onClick={() => navigate('/petitions?status=pending')}
-            style={{ cursor: 'pointer', borderTop: stats.pending > 0 ? '3px solid #faad14' : undefined }}
-          >
-            <Statistic
-              title="待處理陳情"
-              value={stats.pending ?? 0}
-              prefix={<WarningOutlined />}
-              valueStyle={{ color: stats.pending > 0 ? '#faad14' : '#52c41a', fontSize: 28 }}
-            />
-          </Card>
+          />
         </Col>
-        <Col xs={12} sm={8} lg={4}>
-          <Card
-            hoverable
-            onClick={() => navigate('/petitions?status=processing')}
-            style={{ cursor: 'pointer' }}
-          >
-            <Statistic
-              title="處理中案件"
-              value={stats.processing ?? 0}
-              prefix={<ClockCircleOutlined />}
-              valueStyle={{ color: '#007AFF', fontSize: 28 }}
-            />
-          </Card>
+        <Col xs={12} md={8} xl={4}>
+          <MetricCard
+            label="逾期陳情"
+            value={stats.overdue ?? 0}
+            helper="優先追蹤與回報"
+            icon={<ExclamationCircleOutlined />}
+            tone={(stats.overdue ?? 0) > 0 ? 'red' : 'green'}
+            onClick={() => navigate(canAccessReports ? '/reports' : '/petitions')}
+          />
         </Col>
-        <Col xs={12} sm={8} lg={4}>
-          <Card
-            hoverable
-            style={{ cursor: 'pointer', borderTop: stats.overdue > 0 ? '3px solid #ff4d4f' : undefined }}
-            onClick={() => navigate('/reports')}
-          >
-            <Statistic
-              title="逾期陳情"
-              value={stats.overdue ?? 0}
-              prefix={<ExclamationCircleOutlined />}
-              valueStyle={{ color: stats.overdue > 0 ? '#ff4d4f' : '#52c41a', fontSize: 28 }}
-            />
-          </Card>
+        <Col xs={12} md={8} xl={4}>
+          <MetricCard
+            label="今日待辦"
+            value={todayTasks.length}
+            helper={urgentTasks.length > 0 ? `${urgentTasks.length} 項高優先` : '目前節奏正常'}
+            icon={<CheckCircleOutlined />}
+            tone={urgentTasks.length > 0 ? 'amber' : 'blue'}
+            onClick={() => navigate('/tasks?focus=today')}
+          />
         </Col>
-        <Col xs={12} sm={8} lg={4}>
-          <Card hoverable onClick={() => navigate('/voters')} style={{ cursor: 'pointer' }}>
-            <Statistic
-              title="選民總數"
-              value={stats.totalVoters ?? 0}
-              prefix={<TeamOutlined />}
-              valueStyle={{ color: '#52c41a', fontSize: 28 }}
-            />
-          </Card>
+        <Col xs={12} md={8} xl={4}>
+          <MetricCard
+            label="今日行程"
+            value={todaySchedules.length}
+            helper="含跨日行程"
+            icon={<CalendarOutlined />}
+            tone="purple"
+            onClick={() => navigate('/schedules')}
+          />
         </Col>
-        <Col xs={12} sm={8} lg={4}>
-          <Card
-            hoverable
+        <Col xs={12} md={8} xl={4}>
+          <MetricCard
+            label="選民總數"
+            value={stats.totalVoters ?? 0}
+            helper="選民資料庫"
+            icon={<TeamOutlined />}
+            tone="green"
+            onClick={() => navigate('/voters')}
+          />
+        </Col>
+        <Col xs={12} md={8} xl={4}>
+          <MetricCard
+            label="待處理公文"
+            value={stats.pendingDocs ?? 0}
+            helper="需簽辦或歸檔"
+            icon={<MailOutlined />}
+            tone={(stats.pendingDocs ?? 0) > 0 ? 'purple' : 'slate'}
             onClick={() => navigate('/documents?status=pending')}
-            style={{ cursor: 'pointer', borderTop: stats.pendingDocs > 0 ? '3px solid #722ed1' : undefined }}
-          >
-            <Statistic
-              title="待處理公文"
-              value={stats.pendingDocs ?? 0}
-              prefix={<MailOutlined />}
-              valueStyle={{ color: stats.pendingDocs > 0 ? '#722ed1' : '#52c41a', fontSize: 28 }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} lg={4}>
-          <Card hoverable onClick={() => navigate('/tasks')} style={{ cursor: 'pointer' }}>
-            <Statistic
-              title="今日待辦"
-              value={todayTasks.length}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: urgentTasks.length > 0 ? '#fa8c16' : '#52c41a', fontSize: 28 }}
-              suffix={urgentTasks.length > 0 ? <Text type="danger" style={{ fontSize: 12 }}>{urgentTasks.length}項緊急</Text> : undefined}
-            />
-          </Card>
+          />
         </Col>
       </Row>
 
-      {/* 主要內容區 */}
       <Row gutter={[12, 12]}>
-        {/* 左側：今日狀況 + 最近陳情 */}
-        <Col xs={24} lg={14}>
-          {/* 今日注意事項 */}
-          {totalAlerts > 0 && (
-            <Card
-              title="⚠️ 需要關注"
-              size="small"
-              style={{ marginBottom: 12 }}
-              extra={<Text type="secondary" style={{ fontSize: 12 }}>{totalAlerts} 項</Text>}
-            >
-              <Row gutter={[8, 8]}>
-                {urgentTasks.length > 0 && (
-                  <Col xs={24} sm={12}>
-                    <div style={{ padding: '8px 12px', background: '#fff2f0', borderRadius: 6, borderLeft: '3px solid #ff4d4f' }}>
-                      <Text strong style={{ fontSize: 12, color: '#ff4d4f' }}>緊急待辦 {urgentTasks.length} 項</Text>
-                      {urgentTasks.slice(0, 2).map((t: any) => (
-                        <div key={t.id} style={{ fontSize: 12, color: '#666', marginTop: 2 }}>· {t.title}</div>
-                      ))}
-                      <Button type="link" size="small" style={{ padding: 0, fontSize: 11 }} onClick={() => navigate('/tasks')}>
-                        查看全部 <ArrowRightOutlined />
-                      </Button>
-                    </div>
-                  </Col>
-                )}
-                {followUps.length > 0 && (
-                  <Col xs={24} sm={12}>
-                    <div style={{ padding: '8px 12px', background: '#fff7e6', borderRadius: 6, borderLeft: '3px solid #fa8c16' }}>
-                      <Text strong style={{ fontSize: 12, color: '#fa8c16' }}>待回訪 {followUps.length} 件</Text>
-                      {followUps.slice(0, 2).map((p: any) => (
-                        <div key={p.id} style={{ fontSize: 12, color: '#666', marginTop: 2 }}>· {p.voter_name || '匿名'}</div>
-                      ))}
-                      <Button type="link" size="small" style={{ padding: 0, fontSize: 11 }} onClick={() => navigate('/petitions')}>
-                        查看全部 <ArrowRightOutlined />
-                      </Button>
-                    </div>
-                  </Col>
-                )}
-                {unassignedPetitions.length > 0 && (
-                  <Col xs={24} sm={12}>
-                    <div style={{ padding: '8px 12px', background: '#f6ffed', borderRadius: 6, borderLeft: '3px solid #52c41a' }}>
-                      <Text strong style={{ fontSize: 12, color: '#389e0d' }}>未分派陳情 {unassignedPetitions.length} 件</Text>
-                      {unassignedPetitions.slice(0, 2).map((p: any) => (
-                        <div key={p.id} style={{ fontSize: 12, color: '#666', marginTop: 2 }}>· {p.case_number} {p.voter_name || ''}</div>
-                      ))}
-                      <Button type="link" size="small" style={{ padding: 0, fontSize: 11 }} onClick={() => navigate('/petitions?status=pending')}>
-                        立即分派 <ArrowRightOutlined />
-                      </Button>
-                    </div>
-                  </Col>
-                )}
-                {highRiskPetitions.length > 0 && (
-                  <Col xs={24} sm={12}>
-                    <div style={{ padding: '8px 12px', background: '#f9f0ff', borderRadius: 6, borderLeft: '3px solid #722ed1' }}>
-                      <Text strong style={{ fontSize: 12, color: '#722ed1' }}>高風險案件 {highRiskPetitions.length} 件</Text>
-                      {highRiskPetitions.slice(0, 2).map((p: any) => (
-                        <div key={p.id} style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                          · {p.voter_name || '匿名'} <Tag color="red" style={{ fontSize: 10 }}>{p.risk_type === 'overdue' ? '逾期' : '停滯'}</Tag>
-                        </div>
-                      ))}
-                      <Button type="link" size="small" style={{ padding: 0, fontSize: 11 }} onClick={() => navigate('/reports')}>
-                        查看報表 <ArrowRightOutlined />
-                      </Button>
-                    </div>
-                  </Col>
-                )}
-              </Row>
-            </Card>
-          )}
-
-          {/* 最近陳情 */}
-          <Card
-            title={<><FileTextOutlined /> 最近陳情</>}
-            size="small"
-            extra={<Button type="link" size="small" onClick={() => navigate('/petitions')}>查看全部</Button>}
-          >
-            {recentPetitions.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '32px 0' }}>
-                <FileTextOutlined style={{ fontSize: 32, color: '#d9d9d9' }} />
-                <div style={{ color: '#999', marginTop: 8 }}>尚無陳情案件</div>
-                <Button type="primary" size="small" style={{ marginTop: 12 }} onClick={() => navigate('/petitions?action=new')}>
-                  建立第一筆陳情
-                </Button>
+        <Col xs={24} xl={14}>
+          <ActionQueue
+            title="今日焦點"
+            subtitle={`${totalActionCount} 個訊號需要判斷優先序`}
+            items={focusItems}
+            emptyText="今天沒有高風險、待分派或緊急項目。可以從回訪或資料整理開始。"
+            extra={<Button type="link" onClick={() => navigate('/petitions')}>案件列表</Button>}
+            limit={8}
+          />
+        </Col>
+        <Col xs={24} xl={10}>
+          <Card title="今日完成節奏" className="vss-action-queue">
+            <Space direction="vertical" style={{ width: '100%' }} size={14}>
+              <div>
+                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                  <Text strong>待辦完成度</Text>
+                  <Text type="secondary">{completedToday}/{todayTasks.length}</Text>
+                </Space>
+                <Progress percent={taskProgress} status={taskProgress === 100 && todayTasks.length > 0 ? 'success' : 'active'} />
               </div>
-            ) : (
+              <Row gutter={10}>
+                <Col span={12}>
+                  <Card size="small">
+                    <Text type="secondary">待回訪</Text>
+                    <div style={{ fontSize: 24, fontWeight: 800 }}>{followUps.length}</div>
+                  </Card>
+                </Col>
+                <Col span={12}>
+                  <Card size="small">
+                    <Text type="secondary">未分派</Text>
+                    <div style={{ fontSize: 24, fontWeight: 800 }}>{unassignedPetitions.length}</div>
+                  </Card>
+                </Col>
+              </Row>
+              <Button block icon={<ArrowRightOutlined />} onClick={() => navigate('/tasks?focus=today')}>
+                前往今日待辦
+              </Button>
+            </Space>
+          </Card>
+        </Col>
+
+        <Col xs={24} lg={12} xl={8}>
+          <ActionQueue
+            title={<><CalendarOutlined /> 今日行程</>}
+            subtitle="行程、諮詢與服務安排"
+            items={scheduleItems}
+            emptyText="今日尚無行程安排"
+            extra={<Button type="link" onClick={() => navigate('/schedules')}>管理</Button>}
+          />
+        </Col>
+        <Col xs={24} lg={12} xl={8}>
+          <ActionQueue
+            title={<><FileTextOutlined /> 最近陳情</>}
+            subtitle="最新進件與狀態"
+            items={petitionItems}
+            emptyText="尚無陳情案件"
+            extra={<Button type="link" onClick={() => navigate('/petitions')}>查看全部</Button>}
+          />
+        </Col>
+        <Col xs={24} lg={12} xl={8}>
+          <Card title={<><SafetyCertificateOutlined /> 服務健康</>} className="vss-action-queue">
+            {healthItems.length > 0 ? (
               <List
-                dataSource={recentPetitions}
-                size="small"
-                renderItem={(item: any) => (
-                  <List.Item
-                    style={{ cursor: 'pointer', padding: '8px 0' }}
-                    onClick={() => navigate(`/petitions/${item.id}`)}
-                  >
-                    <List.Item.Meta
-                      title={
-                        <Space size={4} wrap>
-                          <Text style={{ fontSize: 12 }}>{item.case_number}</Text>
-                          <Tag
-                            color={STATUS_COLORS[item.status]}
-                            style={{ fontSize: 11, lineHeight: '18px', padding: '0 5px', margin: 0 }}
-                          >
-                            {STATUS_LABELS[item.status]}
-                          </Tag>
-                          {item.urgency === 'critical' && <Tag color="red" style={{ fontSize: 11, margin: 0 }}>特急</Tag>}
-                          {item.urgency === 'urgent' && <Tag color="orange" style={{ fontSize: 11, margin: 0 }}>急件</Tag>}
-                          {item.voter_name && <Text type="secondary" style={{ fontSize: 11 }}>{item.voter_name}</Text>}
-                        </Space>
-                      }
-                      description={
-                        <Text ellipsis style={{ fontSize: 12, color: '#666' }}>{item.content}</Text>
-                      }
-                    />
-                    <Text type="secondary" style={{ fontSize: 11, whiteSpace: 'nowrap', marginLeft: 8 }}>
-                      {dayjs(item.created_at).format('M/D')}
-                    </Text>
+                dataSource={healthItems}
+                renderItem={(item) => (
+                  <List.Item className="vss-action-item vss-clickable" onClick={item.onClick}>
+                    <Space direction="vertical" size={2}>
+                      <Tag color={item.tone === 'red' ? 'red' : 'orange'}>{item.tag}</Tag>
+                      <Text strong>{item.title}</Text>
+                      {item.description && <Text type="secondary" style={{ fontSize: 12 }}>{item.description}</Text>}
+                    </Space>
                   </List.Item>
                 )}
               />
+            ) : (
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <EmptyState variant="compact" title="目前沒有系統警示" description="系統健康狀態正常，仍可進入後台查看備份與資料品質。" />
+                {canAccessSettings && (
+                  <Button block icon={<DatabaseOutlined />} onClick={() => navigate('/admin/settings')}>
+                    查看備份與資料品質
+                  </Button>
+                )}
+              </Space>
             )}
           </Card>
         </Col>
 
-        {/* 右側：行程 + 生日 + 圖表 */}
-        <Col xs={24} lg={10}>
-          {/* 今日行程 */}
-          <Card
-            title={<><CalendarOutlined /> 今日行程</>}
-            size="small"
-            style={{ marginBottom: 12 }}
-            extra={<Button type="link" size="small" onClick={() => navigate('/schedules')}>管理行程</Button>}
-          >
-            {todaySchedules.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '16px 0', color: '#bbb' }}>
-                <CalendarOutlined style={{ fontSize: 24 }} />
-                <div style={{ fontSize: 12, marginTop: 6 }}>今日無行程安排</div>
-              </div>
-            ) : (
+        {birthdayVoters.length > 0 && (
+          <Col xs={24} lg={12}>
+            <Card title="近期生日關懷">
               <List
-                dataSource={todaySchedules}
-                size="small"
-                renderItem={(item: any) => (
-                  <List.Item style={{ padding: '6px 0' }}>
-                    <Space>
-                      <Tag color="blue" style={{ fontSize: 11, minWidth: 44, textAlign: 'center' }}>
-                        {dayjs(item.start_time).format('HH:mm')}
-                      </Tag>
-                      <div>
-                        <Text style={{ fontSize: 13 }}>{item.title}</Text>
-                        {item.location && <Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>📍 {item.location}</Text>}
-                      </div>
+                dataSource={birthdayVoters.slice(0, 6)}
+                renderItem={(voter: any) => (
+                  <List.Item className="vss-action-item vss-clickable" onClick={() => navigate(`/voters/${voter.id}`)}>
+                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                      <Space>
+                        <Tag color="orange">{voter.days_until === 0 ? '今天' : `${voter.days_until} 天後`}</Tag>
+                        <Text strong>{voter.name}</Text>
+                      </Space>
+                      <Button type="text" size="small" icon={<ArrowRightOutlined />} />
                     </Space>
                   </List.Item>
                 )}
               />
-            )}
-          </Card>
-
-          {/* 近期生日 */}
-          {birthdayVoters.length > 0 && (
-            <Card
-              title="🎂 近期生日（7天內）"
-              size="small"
-              style={{ marginBottom: 12 }}
-            >
-              <Space direction="vertical" style={{ width: '100%' }} size={4}>
-                {birthdayVoters.slice(0, 5).map((b: any) => (
-                  <div key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Space size={6}>
-                      <Tag color="orange" style={{ margin: 0 }}>
-                        {b.days_until === 0 ? '今天' : `${b.days_until}天後`}
-                      </Tag>
-                      <Text
-                        style={{ fontSize: 13, cursor: 'pointer' }}
-                        onClick={() => navigate(`/voters/${b.id}`)}
-                      >
-                        {b.name}
-                      </Text>
-                    </Space>
-                    <Button
-                      size="small"
-                      type="text"
-                      style={{ fontSize: 11, color: '#007AFF' }}
-                      onClick={() => navigate(`/voters/${b.id}`)}
-                    >
-                      查看
-                    </Button>
-                  </div>
-                ))}
-                {birthdayVoters.length > 5 && (
-                  <Text type="secondary" style={{ fontSize: 11 }}>…共 {birthdayVoters.length} 人</Text>
-                )}
-              </Space>
             </Card>
-          )}
+          </Col>
+        )}
 
-          {/* 陳情狀態分佈 */}
-          <Card title="陳情狀態分佈" size="small">
+        <Col xs={24} lg={birthdayVoters.length > 0 ? 12 : 24}>
+          <Card title="陳情狀態分佈">
             {statusData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={180}>
+              <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={statusData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value">
+                  <Pie data={statusData} cx="50%" cy="50%" innerRadius={58} outerRadius={86} dataKey="value">
                     {statusData.map((entry: any, index: number) => (
                       <Cell key={index} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip />
-                  <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div style={{ textAlign: 'center', padding: '32px 0', color: '#bbb' }}>
-                <div style={{ fontSize: 12 }}>尚無陳情資料</div>
-              </div>
+              <EmptyState variant="compact" title="尚無陳情資料" description="建立案件後會顯示狀態分佈。" />
             )}
           </Card>
         </Col>
 
-        {/* 全寬：年度趨勢 */}
         <Col xs={24}>
-          <Card title="本年度陳情趨勢" size="small">
-            {monthlyData.some((d: any) => d.數量 > 0) ? (
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={monthlyData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+          <Card
+            title={<><AlertOutlined /> 本年度陳情趨勢</>}
+            extra={<Button type="link" onClick={() => navigate('/reports')}>進階報表</Button>}
+          >
+            {monthlyData.some((item: any) => item.數量 > 0) ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={monthlyData} margin={{ top: 8, right: 16, left: -12, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                   <Tooltip />
-                  <Bar dataKey="數量" fill="#007AFF" radius={[3, 3, 0, 0]} maxBarSize={36} />
+                  <Bar dataKey="數量" fill="#007AFF" radius={[6, 6, 0, 0]} maxBarSize={42} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: '#bbb' }}>
-                <div style={{ fontSize: 12 }}>本年度尚無陳情紀錄</div>
-              </div>
+              <EmptyState variant="compact" title="本年度尚無陳情紀錄" description="案件建立後會自動累積月份趨勢。" />
             )}
           </Card>
         </Col>
       </Row>
-    </div>
+    </PageScaffold>
   )
 }

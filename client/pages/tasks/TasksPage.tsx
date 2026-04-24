@@ -4,13 +4,16 @@ import {
   Select, DatePicker, message, Badge, Tooltip, Progress, Popconfirm
 } from 'antd'
 import { PlusOutlined, CheckOutlined, CalendarOutlined, DeleteOutlined } from '@ant-design/icons'
+import { useSearchParams } from 'react-router-dom'
 import api from '../../utils/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useDataSync } from '../../hooks/useDataSync'
+import PageScaffold from '../../components/ui/PageScaffold'
 import { TASK_PRIORITY_COLORS as PRIORITY_COLORS, TASK_PRIORITY_LABELS as PRIORITY_LABELS, TASK_STATUS_COLORS as STATUS_COLORS, TASK_STATUS_LABELS as STATUS_LABELS } from '../../utils/constants'
 import dayjs from 'dayjs'
+import { hasModulePermission } from '../../utils/permissions'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 const { TextArea } = Input
 
@@ -18,6 +21,10 @@ const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, normal: 2, 
 
 export default function TasksPage() {
   const { user } = useAuthStore()
+  const canCreateTask = hasModulePermission(user?.role, 'tasks', 'create')
+  const canEditTask = hasModulePermission(user?.role, 'tasks', 'edit')
+  const canDeleteTask = hasModulePermission(user?.role, 'tasks', 'delete')
+  const [searchParams, setSearchParams] = useSearchParams()
   const [tasks, setTasks] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -29,7 +36,18 @@ export default function TasksPage() {
   const [voters, setVoters] = useState<any[]>([])
 
   // U-9: Today focus
-  const [todayFocus, setTodayFocus] = useState(false)
+  const [todayFocus, setTodayFocus] = useState(searchParams.get('focus') === 'today')
+
+  useEffect(() => {
+    setTodayFocus(searchParams.get('focus') === 'today')
+  }, [searchParams])
+
+  useEffect(() => {
+    if (searchParams.get('action') === 'new' && canCreateTask) {
+      form.resetFields()
+      setModalOpen(true)
+    }
+  }, [searchParams, canCreateTask, form])
 
   useEffect(() => {
     fetchTasks()
@@ -45,7 +63,8 @@ export default function TasksPage() {
   const fetchTasks = async () => {
     setLoading(true)
     try {
-      const res = await api.get(`/tasks?page=${page}&pageSize=20${statusFilter ? '&status=' + statusFilter : ''}`)
+      const effectiveStatus = todayFocus ? '' : statusFilter
+      const res = await api.get(`/tasks?page=${page}&pageSize=${todayFocus ? 200 : 20}${effectiveStatus ? '&status=' + effectiveStatus : ''}`)
       setTasks(res.data.data || [])
       setTotal(res.data.total || 0)
     } catch { message.error('載入失敗') }
@@ -68,6 +87,14 @@ export default function TasksPage() {
 
   const displayTasks = todayFocus ? todayTasksSorted : tasks
   const displayTotal = todayFocus ? todayTasks.length : total
+
+  const toggleTodayFocus = () => {
+    const next = !todayFocus
+    const nextParams = new URLSearchParams(searchParams)
+    if (next) nextParams.set('focus', 'today')
+    else nextParams.delete('focus')
+    setSearchParams(nextParams, { replace: true })
+  }
 
   const handleSave = async (values: any) => {
     try {
@@ -117,54 +144,63 @@ export default function TasksPage() {
     },
     { title: '操作', width: 120, render: (_: any, r: any) => (
       <Space>
-        {r.status !== 'done' && (
+        {canEditTask && r.status !== 'done' && (
           <Tooltip title="標記完成">
-            <Button size="small" icon={<CheckOutlined />} type="primary" ghost
+            <Button size="small" icon={<CheckOutlined />} aria-label="完成待辦" type="primary" ghost
               onClick={() => handleStatus(r.id, 'done')} />
           </Tooltip>
         )}
-        {r.status === 'done' && (
-          <Button size="small" onClick={() => handleStatus(r.id, 'pending')}>重啟</Button>
+        {canEditTask && r.status === 'done' && (
+          <Button size="small" aria-label="重啟待辦" onClick={() => handleStatus(r.id, 'pending')}>重啟</Button>
         )}
-        <Popconfirm
-          title="確定刪除此任務？"
-          okText="確定刪除"
-          cancelText="取消"
-          okButtonProps={{ danger: true }}
-          onConfirm={() => handleDelete(r.id)}
-        >
-          <Button size="small" danger icon={<DeleteOutlined />} />
-        </Popconfirm>
+        {canDeleteTask && (
+          <Popconfirm
+            title="確定刪除此任務？"
+            okText="確定刪除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleDelete(r.id)}
+          >
+            <Button size="small" danger icon={<DeleteOutlined />} aria-label="刪除待辦" />
+          </Popconfirm>
+        )}
       </Space>
     )}
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>✅ 待辦事項</Title>
-        <Space>
+    <PageScaffold
+      eyebrow="Task Queue"
+      title="待辦事項"
+      titleLevel={4}
+      variant="compact"
+      description={todayFocus ? '今日焦點模式只顯示今天到期與指派給你的進行中任務。' : '統一追蹤服務處待辦、承辦人與截止日期。'}
+      actions={
+        <>
           <Badge count={todayTasks.length} size="small" offset={[-4, 4]}>
             <Button
               icon={<CalendarOutlined />}
               type={todayFocus ? 'primary' : 'default'}
-              onClick={() => setTodayFocus(f => !f)}
+              onClick={toggleTodayFocus}
             >
               今日焦點
             </Button>
           </Badge>
           {!todayFocus && (
             <Select value={statusFilter} onChange={setStatusFilter} style={{ width: 160 }}>
-              <Option value="pending,in_progress">進行中</Option>
+              <Option value="pending,in_progress">未完成</Option>
               <Option value="done">已完成</Option>
               <Option value="">全部</Option>
             </Select>
           )}
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setModalOpen(true) }}>
-            新增待辦
-          </Button>
-        </Space>
-      </div>
+          {canCreateTask && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setModalOpen(true) }}>
+              新增待辦
+            </Button>
+          )}
+        </>
+      }
+    >
 
       {todayFocus && todayTotalCount > 0 && (
         <Card size="small" style={{ marginBottom: 12, background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.2)' }}>
@@ -213,6 +249,6 @@ export default function TasksPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </PageScaffold>
   )
 }

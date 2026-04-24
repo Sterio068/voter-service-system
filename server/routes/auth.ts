@@ -15,7 +15,14 @@ interface ChangePasswordBody { old_password: string; new_password: string }
 const loginAttempts = new Map<string, { count: number; lockUntil?: number }>()
 
 export default async function authRoutes(fastify: FastifyInstance) {
-  fastify.post('/api/auth/login', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.post('/api/auth/login', {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '15 minutes',
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const parsed = LoginSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })

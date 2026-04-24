@@ -9,9 +9,10 @@ import api from '../../utils/api'
 import { useDataSync } from '../../hooks/useDataSync'
 import AttachmentUpload from '../../components/AttachmentUpload'
 import AIButton from '../../components/ai/AIButton'
+import PageScaffold from '../../components/ui/PageScaffold'
 import dayjs from 'dayjs'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 const { TextArea } = Input
 
@@ -190,19 +191,17 @@ export default function PetitionDetailPage() {
   }))
 
   return (
-    <div>
-      <Breadcrumb
-        items={[{ title: '陳情管理', href: '/petitions' }, { title: petition.case_number }]}
-        style={{ marginBottom: 16 }}
-      />
-      <div className="page-header">
-        <Space>
+    <PageScaffold
+      eyebrow="Case Detail"
+      title={petition.case_number}
+      titleLevel={4}
+      variant="compact"
+      description={petition.content}
+      actions={
+        <>
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>返回</Button>
-          <Title level={4} style={{ margin: 0 }}>{petition.case_number}</Title>
           <Tag color={STATUS_COLORS[petition.status]}>{STATUS_LABELS[petition.status]}</Tag>
           <Tag color={URGENCY_COLORS[petition.urgency]}>{URGENCY_LABELS[petition.urgency]}</Tag>
-        </Space>
-        <Space>
           <Button icon={<EditOutlined />} onClick={() => {
             editForm.setFieldsValue({
               content: petition.content,
@@ -255,8 +254,13 @@ export default function PetitionDetailPage() {
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setLogModalOpen(true)}>
             新增處理紀錄
           </Button>
-        </Space>
-      </div>
+        </>
+      }
+    >
+      <Breadcrumb
+        items={[{ title: '陳情管理', href: '/petitions' }, { title: petition.case_number }]}
+        style={{ marginBottom: 16 }}
+      />
 
       <Card>
         <Tabs defaultActiveKey="info" items={[
@@ -547,6 +551,6 @@ export default function PetitionDetailPage() {
           <Form.Item name="subcategory" label="子分類"><Input /></Form.Item>
         </Form>
       </Modal>
-    </div>
+    </PageScaffold>
   )
 }

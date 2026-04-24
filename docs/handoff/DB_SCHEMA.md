@@ -34,7 +34,8 @@ CREATE TABLE settings (
 )
 ```
 - 系統 KV 設定表
-- 關鍵 keys：`office_name`, `idle_timeout`, `first_run`, `jwt_secret`, `backup_path`, `gcal_client_id`, `gcal_client_secret`, `line_channel_access_token`, `line_channel_secret`, `ai_provider`, `ai_api_key`, `machine_fingerprint`
+- 關鍵 keys：`office_name`, `idle_timeout`, `first_run`, `jwt_secret`, `backup_path`, `gcal_client_id`, `gcal_client_secret`, `line_channel_access_token`, `line_channel_secret`, `ai_provider`, `ai_api_key`, `machine_fingerprint`, `data_retention_enabled`, `retention_audit_archive_days`, `retention_client_error_days`, `retention_soft_deleted_voter_days`
+- 敏感 keys 以 `enc:v1:` 格式加密儲存：`ai_api_key`, `gcal_client_secret`, `jwt_secret`, `line_channel_access_token`, `line_channel_secret`
 
 ---
 
@@ -196,6 +197,8 @@ CREATE TABLE petitions (
 **索引**：
 - `idx_petitions_status_created`
 - `idx_petitions_active_status` (is_active, status, created_at)
+- `idx_petitions_active_date` (is_active, petition_date, created_at)
+- `idx_petitions_content` (content)
 
 **SLA 顏色**（前端）：
 - < 3 天：綠
@@ -308,6 +311,10 @@ CREATE TABLE schedules (
 )
 ```
 
+**索引**：
+- `idx_schedules_active_start` (is_active, start_time)
+- `idx_schedules_overlap` (is_active, status, start_time, end_time)
+
 ### `consultation_time_slots`
 ```sql
 CREATE TABLE consultation_time_slots (
@@ -339,6 +346,7 @@ CREATE TABLE consultation_appointments (
 )
 ```
 - **額滿檢查**：`COUNT(*) < max_capacity`（用 IMMEDIATE transaction 保護）
+- **索引**：`idx_consultation_slot_capacity` (appointment_date, time_slot, status)
 
 ### `ceremony_records`
 ```sql
@@ -661,7 +669,7 @@ CREATE TABLE audit_logs (
 **索引**：`idx_audit_logs_created_desc`, `idx_audit_logs_user_created`
 
 ### `archive_audit_logs`
-- 當 audit_logs 超過閾值（預設 100,000 筆）時由 autoBackup 搬移過來
+- 啟用資料保留政策後，`audit_logs` 超過 `retention_audit_archive_days` 會封存至此表
 
 ### `categories`（動態類別共用表）
 ```sql
@@ -708,6 +716,7 @@ CREATE TABLE google_calendar_accounts (
   created_at      TEXT
 )
 ```
+- `access_token` / `refresh_token` 以 `enc:v1:` 格式加密儲存，runtime 讀取時解密。
 
 ### `client_errors`
 ```sql
@@ -722,6 +731,7 @@ CREATE TABLE client_errors (
   created_at TEXT
 )
 ```
+- 啟用資料保留政策後，超過 `retention_client_error_days` 會刪除
 
 ### `schema_migrations`
 ```sql
@@ -809,7 +819,11 @@ try { db.exec("ALTER TABLE voters ADD COLUMN new_field TEXT") } catch {}
 
 **手動備份**：`POST /api/admin/backup`
 
-**還原驗證**：透過 `PRAGMA integrity_check`（v1.0.5 後修正為 `.all()` 檢查多行）
+**備份 metadata**：本機備份會建立同名 `.db.meta.json` sidecar，內含 SHA-256、schema version、Node version 與 HMAC-SHA256 簽章。
+
+**還原驗證**：透過 `PRAGMA integrity_check`（v1.0.5 後修正為 `.all()` 檢查多行），並檢查必要資料表與 `schema_migrations`。
+
+**備份目錄白名單**：可用 `VOTER_SERVICE_BACKUP_ALLOWED_ROOTS` / `BACKUP_ALLOWED_ROOTS` 限制 `POST /api/admin/backup/path` 可設定的根目錄。
 
 ---
 

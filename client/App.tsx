@@ -1,34 +1,44 @@
-import React from 'react'
+import React, { Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { ConfigProvider, theme as antTheme, Button, Result } from 'antd'
+import { ConfigProvider, theme as antTheme, Button, Result, Spin } from 'antd'
 import zhTW from 'antd/locale/zh_TW'
 import { useAuthStore } from './stores/authStore'
 import { useThemeStore } from './stores/themeStore'
 import MainLayout from './components/Layout/MainLayout'
-import LoginPage from './pages/LoginPage'
-import Dashboard from './pages/Dashboard'
-import VoterListPage from './pages/voters/VoterListPage'
-import VoterDetailPage from './pages/voters/VoterDetailPage'
-import GroupListPage from './pages/groups/GroupListPage'
-import GroupDetailPage from './pages/groups/GroupDetailPage'
-import PetitionListPage from './pages/petitions/PetitionListPage'
-import PetitionDetailPage from './pages/petitions/PetitionDetailPage'
-import PetitionStatsPage from './pages/print/PetitionStatsPage'
-import DocumentListPage from './pages/documents/DocumentListPage'
-import SchedulePage from './pages/schedules/SchedulePage'
-import TasksPage from './pages/tasks/TasksPage'
-import ReportsPage from './pages/reports/ReportsPage'
-import UserManagePage from './pages/admin/UserManagePage'
-import AuditLogPage from './pages/admin/AuditLogPage'
-import CategoryPage from './pages/admin/CategoryPage'
-import SettingsPage from './pages/admin/SettingsPage'
-import HandoverPage from './pages/admin/HandoverPage'
-import DailyLogPage from './pages/admin/DailyLogPage'
-import HelpPage from './pages/HelpPage'
-import CeremonyPage from './pages/ceremonies/CeremonyPage'
-import VendorPage from './pages/ceremonies/VendorPage'
-import ExpensePage from './pages/ceremonies/ExpensePage'
-import ProposalsPage from './pages/proposals/ProposalsPage'
+import type { UserRole } from '../shared/types'
+import { canAccessFeature, type AppFeature } from './utils/permissions'
+
+const LoginPage = React.lazy(() => import('./pages/LoginPage'))
+const Dashboard = React.lazy(() => import('./pages/Dashboard'))
+const VoterListPage = React.lazy(() => import('./pages/voters/VoterListPage'))
+const VoterDetailPage = React.lazy(() => import('./pages/voters/VoterDetailPage'))
+const VoterMergePage = React.lazy(() => import('./pages/voters/VoterMergePage'))
+const CallBankPage = React.lazy(() => import('./pages/voters/CallBankPage'))
+const GroupListPage = React.lazy(() => import('./pages/groups/GroupListPage'))
+const GroupDetailPage = React.lazy(() => import('./pages/groups/GroupDetailPage'))
+const PetitionListPage = React.lazy(() => import('./pages/petitions/PetitionListPage'))
+const PetitionDetailPage = React.lazy(() => import('./pages/petitions/PetitionDetailPage'))
+const PetitionStatsPage = React.lazy(() => import('./pages/print/PetitionStatsPage'))
+const PrintVoterListPage = React.lazy(() => import('./pages/print/PrintVoterListPage'))
+const PrintLabelPage = React.lazy(() => import('./pages/print/PrintLabelPage'))
+const DocumentListPage = React.lazy(() => import('./pages/documents/DocumentListPage'))
+const SchedulePage = React.lazy(() => import('./pages/schedules/SchedulePage'))
+const TasksPage = React.lazy(() => import('./pages/tasks/TasksPage'))
+const EventsPage = React.lazy(() => import('./pages/events/EventsPage'))
+const SurveysPage = React.lazy(() => import('./pages/surveys/SurveysPage'))
+const NotificationsPage = React.lazy(() => import('./pages/notifications/NotificationsPage'))
+const ReportsPage = React.lazy(() => import('./pages/reports/ReportsPage'))
+const UserManagePage = React.lazy(() => import('./pages/admin/UserManagePage'))
+const AuditLogPage = React.lazy(() => import('./pages/admin/AuditLogPage'))
+const CategoryPage = React.lazy(() => import('./pages/admin/CategoryPage'))
+const SettingsPage = React.lazy(() => import('./pages/admin/SettingsPage'))
+const HandoverPage = React.lazy(() => import('./pages/admin/HandoverPage'))
+const DailyLogPage = React.lazy(() => import('./pages/admin/DailyLogPage'))
+const HelpPage = React.lazy(() => import('./pages/HelpPage'))
+const CeremonyPage = React.lazy(() => import('./pages/ceremonies/CeremonyPage'))
+const VendorPage = React.lazy(() => import('./pages/ceremonies/VendorPage'))
+const ExpensePage = React.lazy(() => import('./pages/ceremonies/ExpensePage'))
+const ProposalsPage = React.lazy(() => import('./pages/proposals/ProposalsPage'))
 
 // Global error reporting
 window.onerror = (message, source, lineno, colno, error) => {
@@ -91,9 +101,43 @@ function NotFoundPage() {
   )
 }
 
+function RouteFallback() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
+      <Spin size="large" />
+    </div>
+  )
+}
+
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+function ForbiddenPage() {
+  const navigate = useNavigate()
+  return (
+    <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+      <Result
+        status="403"
+        title="權限不足"
+        subTitle="您目前沒有存取這個頁面的權限。"
+        extra={<Button type="primary" onClick={() => navigate('/')}>回到首頁</Button>}
+      />
+    </div>
+  )
+}
+
+function RequireFeatureAccess({
+  feature,
+  children,
+}: {
+  feature: AppFeature
+  children: React.ReactNode
+}) {
+  const role = useAuthStore((s) => s.user?.role as UserRole | undefined)
+  if (!canAccessFeature(role, feature)) return <ForbiddenPage />
   return <>{children}</>
 }
 
@@ -151,45 +195,60 @@ export default function App() {
         }}
       >
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route
-            path="/"
-            element={
-              <RequireAuth>
-                <MainLayout />
-              </RequireAuth>
-            }
-          >
-            <Route index element={<Dashboard />} />
-            <Route path="voters" element={<VoterListPage />} />
-            <Route path="voters/:id" element={<VoterDetailPage />} />
-            <Route path="groups" element={<GroupListPage />} />
-            <Route path="groups/:id" element={<GroupDetailPage />} />
-            <Route path="petitions" element={<PetitionListPage />} />
-            <Route path="petitions/stats" element={<PetitionStatsPage />} />
-            <Route path="petitions/:id" element={<PetitionDetailPage />} />
-            <Route path="documents" element={<DocumentListPage />} />
-            <Route path="schedules" element={<SchedulePage />} />
-            <Route path="ceremonies" element={<CeremonyPage />} />
-            <Route path="vendors" element={<VendorPage />} />
-            <Route path="expenses" element={<ExpensePage />} />
-            <Route path="proposals" element={<ProposalsPage />} />
-            <Route path="tasks" element={<TasksPage />} />
-            <Route path="reports" element={<ReportsPage />} />
-            <Route path="admin/users" element={<UserManagePage />} />
-            <Route path="admin/audit-logs" element={<AuditLogPage />} />
-            <Route path="admin/categories" element={<CategoryPage />} />
-            <Route path="admin/settings" element={<SettingsPage />} />
-            <Route path="admin/handover" element={<HandoverPage />} />
-            <Route path="admin/daily-log" element={<DailyLogPage />} />
-            <Route path="help" element={<HelpPage />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/"
+              element={
+                <RequireAuth>
+                  <MainLayout />
+                </RequireAuth>
+              }
+            >
+              <Route index element={<Dashboard />} />
+              <Route path="voters" element={<VoterListPage />} />
+              <Route path="call-bank" element={<Navigate to="/voters/call-bank" replace />} />
+              <Route path="merge" element={<Navigate to="/voters/merge" replace />} />
+              <Route path="voters/merge" element={withFeatureAccess('voterMerge', <VoterMergePage />)} />
+              <Route path="voters/call-bank" element={withFeatureAccess('callBank', <CallBankPage />)} />
+              <Route path="voters/:id" element={<VoterDetailPage />} />
+              <Route path="groups" element={<GroupListPage />} />
+              <Route path="groups/:id" element={<GroupDetailPage />} />
+              <Route path="petitions" element={<PetitionListPage />} />
+              <Route path="petitions/stats" element={withFeatureAccess('petitionStats', <PetitionStatsPage />)} />
+              <Route path="petitions/:id" element={<PetitionDetailPage />} />
+              <Route path="documents" element={<DocumentListPage />} />
+              <Route path="schedules" element={<SchedulePage />} />
+              <Route path="ceremonies" element={<CeremonyPage />} />
+              <Route path="vendors" element={<VendorPage />} />
+              <Route path="expenses" element={withFeatureAccess('expenses', <ExpensePage />)} />
+              <Route path="proposals" element={<ProposalsPage />} />
+              <Route path="tasks" element={<TasksPage />} />
+              <Route path="events" element={<EventsPage />} />
+              <Route path="surveys" element={withFeatureAccess('surveys', <SurveysPage />)} />
+              <Route path="notifications" element={withFeatureAccess('notifications', <NotificationsPage />)} />
+              <Route path="reports" element={withFeatureAccess('reports', <ReportsPage />)} />
+              <Route path="print/voters" element={withFeatureAccess('printVoters', <PrintVoterListPage />)} />
+              <Route path="print/labels" element={withFeatureAccess('printLabels', <PrintLabelPage />)} />
+              <Route path="admin/users" element={withFeatureAccess('adminUsers', <UserManagePage />)} />
+              <Route path="admin/audit-logs" element={withFeatureAccess('auditLogs', <AuditLogPage />)} />
+              <Route path="admin/categories" element={withFeatureAccess('categories', <CategoryPage />)} />
+              <Route path="admin/settings" element={withFeatureAccess('settings', <SettingsPage />)} />
+              <Route path="admin/handover" element={withFeatureAccess('handover', <HandoverPage />)} />
+              <Route path="admin/daily-log" element={withFeatureAccess('dailyLogs', <DailyLogPage />)} />
+              <Route path="help" element={<HelpPage />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
       </ConfigProvider>
     </AppErrorBoundary>
   )
+}
+
+function withFeatureAccess(feature: AppFeature, element: React.ReactNode) {
+  return <RequireFeatureAccess feature={feature}>{element}</RequireFeatureAccess>
 }

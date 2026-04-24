@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
+import { applyPendingRestore } from './restoreOnStartup'
 
 let dbPath: string
 
@@ -21,6 +22,9 @@ if (process.env.DATA_PATH) {
   }
   dbPath = path.join(userDataDir, 'voter-service.db')
 }
+
+export const startupRestoreResult = applyPendingRestore(dbPath)
+export const startupRestoreApplied = startupRestoreResult.applied
 
 export const db = new Database(dbPath)
 

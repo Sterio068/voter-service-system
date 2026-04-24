@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react'
 import {
-  Card, Tabs, Descriptions, Button, Space, Typography, Table, Empty, Spin,
+  Card, Tabs, Descriptions, Button, Space, Typography, Table, Spin,
   Breadcrumb, message, Modal, Select, Input, Row, Col, Tag, Statistic, Popconfirm, Form
 } from 'antd'
 import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, EditOutlined, CalendarOutlined, DollarOutlined, TeamOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../../utils/api'
 import { useDataSync } from '../../hooks/useDataSync'
+import PageScaffold from '../../components/ui/PageScaffold'
+import EmptyState from '../../components/ui/EmptyState'
 import dayjs from 'dayjs'
 import { SCHEDULE_TYPE_LABELS, SCHEDULE_TYPE_COLORS } from '../../utils/constants'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 
 export default function GroupDetailPage() {
@@ -129,7 +131,7 @@ export default function GroupDetailPage() {
   }
 
   if (loading) return <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>
-  if (!group) return <Empty description="團體不存在" />
+  if (!group) return <EmptyState title="團體不存在" description="這筆資料可能已停用、刪除或目前沒有讀取權限。" />
 
   const members = group.members || []
 
@@ -199,15 +201,16 @@ export default function GroupDetailPage() {
   ]
 
   return (
-    <div>
-      <Breadcrumb items={[{ title: '團體資料', href: '/groups' }, { title: group.name }]} style={{ marginBottom: 16 }} />
-      <div className="page-header">
-        <Space>
+    <PageScaffold
+      eyebrow="Group Profile"
+      title={group.name}
+      titleLevel={4}
+      variant="compact"
+      description={group.address || group.phone || '團體成員、行程與禮儀往來紀錄'}
+      actions={
+        <>
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>返回</Button>
-          <Title level={4} style={{ margin: 0 }}>{group.name}</Title>
           {group.category && <Tag color="blue">{group.category}</Tag>}
-        </Space>
-        <Space>
           <Button icon={<EditOutlined />} onClick={() => {
             editGroupForm.setFieldsValue({
               name: group.name, category: group.category, phone: group.phone,
@@ -219,8 +222,10 @@ export default function GroupDetailPage() {
             <Button danger icon={<DeleteOutlined />}>停用</Button>
           </Popconfirm>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddMemberOpen(true)}>新增成員</Button>
-        </Space>
-      </div>
+        </>
+      }
+    >
+      <Breadcrumb items={[{ title: '團體資料', href: '/groups' }, { title: group.name }]} style={{ marginBottom: 16 }} />
 
       {/* 統計卡 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -244,7 +249,7 @@ export default function GroupDetailPage() {
             key: 'members', label: `成員名單 (${members.length})`,
             children: (
               <Table columns={memberColumns} dataSource={members} rowKey="id" size="small"
-                pagination={{ pageSize: 15 }} locale={{ emptyText: <Empty description="尚無成員" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
+                pagination={{ pageSize: 15 }} locale={{ emptyText: <EmptyState title="尚無成員" description="加入成員後，角色、職稱與關係網絡會在此顯示。" /> }} />
             ),
           },
           {
@@ -263,7 +268,7 @@ export default function GroupDetailPage() {
           {
             key: 'schedules', label: `行程紀錄 (${schedules.length})`,
             children: schedules.length === 0
-              ? <Empty description="尚無相關行程" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              ? <EmptyState title="尚無相關行程" description="建立團體相關行程後會顯示日期、類型與狀態。" />
               : <Table columns={scheduleColumns} dataSource={schedules} rowKey="id" size="small" pagination={{ pageSize: 10 }} />,
           },
           {
@@ -277,7 +282,7 @@ export default function GroupDetailPage() {
                   </div>
                 )}
                 {expenses.length === 0
-                  ? <Empty description="尚無禮儀支出" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  ? <EmptyState title="尚無禮儀支出" description="禮儀或活動支出建立後會彙整在此。" />
                   : <Table columns={expenseColumns} dataSource={expenses} rowKey="id" size="small" pagination={{ pageSize: 10 }} />
                 }
               </>
@@ -356,6 +361,6 @@ export default function GroupDetailPage() {
           <Form.Item name="note" label="備註"><Input.TextArea rows={3} /></Form.Item>
         </Form>
       </Modal>
-    </div>
+    </PageScaffold>
   )
 }

@@ -1,11 +1,20 @@
 import { FastifyInstance } from 'fastify'
 import Database from 'better-sqlite3'
 import { db, dbPath } from '../db/index'
-import { requirePermission, authenticate } from '../middleware/auth'
+import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
 import { getSetting, setSetting } from '../utils/settings'
+import {
+  buildBackupMetadata,
+  getBackupMetadataPath,
+  isPathInsideAllowedRoots,
+  readBackupMetadata,
+  verifyBackupMetadata,
+  writeBackupMetadata,
+} from '../utils/backupMetadata'
 import fs from 'fs'
 import path from 'path'
+import crypto from 'crypto'
 
 const defaultBackupsDir = process.env.BACKUPS_PATH || path.join(process.cwd(), 'backups')
 if (!fs.existsSync(defaultBackupsDir)) fs.mkdirSync(defaultBackupsDir, { recursive: true })
@@ -18,6 +27,7 @@ function getBackupsDir(): string {
   try {
     const saved = getSetting('backup_path')
     const dir = (saved && typeof saved === 'string' && saved.trim()) ? saved.trim() : defaultBackupsDir
+    if (!isBackupPathAllowed(dir)) return defaultBackupsDir
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
     _cachedBackupsDir = dir
     return dir
@@ -33,12 +43,89 @@ function escapeSqlPath(p: string): string {
 
 function getBackupFileName(): string {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  return `voter-service-${ts}.db`
+  return `voter-service-${ts}-${crypto.randomBytes(3).toString('hex')}.db`
+}
+
+function getBackupAllowedRoots(): string[] {
+  const configured = process.env.VOTER_SERVICE_BACKUP_ALLOWED_ROOTS || process.env.BACKUP_ALLOWED_ROOTS || ''
+  if (!configured.trim()) return []
+  const separator = path.delimiter === ';' ? /[;\n]/ : /[:;\n]/
+  return configured
+    .split(separator)
+    .map(item => item.trim())
+    .filter(Boolean)
+    .map(item => path.resolve(item))
+}
+
+function isBackupPathAllowed(candidatePath: string): boolean {
+  const allowedRoots = getBackupAllowedRoots()
+  return allowedRoots.length === 0 || isPathInsideAllowedRoots(candidatePath, allowedRoots)
+}
+
+function getCurrentSchemaVersion(): string | null {
+  try {
+    const row = db.prepare('SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1').get() as any
+    return row?.version ? String(row.version) : null
+  } catch {
+    return null
+  }
+}
+
+function resolveBackupPath(name: string): string | null {
+  const safeName = path.basename(name)
+  if (!safeName.endsWith('.db') || safeName.includes('..')) return null
+  const backupsDir = path.resolve(getBackupsDir())
+  const resolved = path.resolve(backupsDir, safeName)
+  return resolved.startsWith(backupsDir + path.sep) ? resolved : null
+}
+
+function runIntegrityCheck(filePath: string): { ok: boolean; messages: string[] } {
+  let backupDb: Database.Database | null = null
+  try {
+    backupDb = new Database(filePath, { readonly: true })
+    const rows = backupDb.prepare('PRAGMA integrity_check').all() as Array<{ integrity_check: string }>
+    const messages = rows.map(row => String(row.integrity_check || 'unknown'))
+    return { ok: messages.length === 1 && messages[0] === 'ok', messages }
+  } finally {
+    try { backupDb?.close() } catch {}
+  }
+}
+
+function validateApplicationBackup(filePath: string): { ok: boolean; missingTables: string[]; hasSchemaVersion: boolean } {
+  const requiredTables = [
+    'users',
+    'settings',
+    'voters',
+    'petitions',
+    'documents',
+    'schedules',
+    'audit_logs',
+    'categories',
+    'schema_migrations',
+  ]
+  let backupDb: Database.Database | null = null
+  try {
+    backupDb = new Database(filePath, { readonly: true })
+    const tables = new Set(
+      (backupDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>)
+        .map(row => row.name)
+    )
+    const missingTables = requiredTables.filter(table => !tables.has(table))
+    const hasSchemaVersion = missingTables.includes('schema_migrations')
+      ? false
+      : !!backupDb.prepare('SELECT version FROM schema_migrations ORDER BY rowid DESC LIMIT 1').get()
+    return { ok: missingTables.length === 0 && hasSchemaVersion, missingTables, hasSchemaVersion }
+  } finally {
+    try { backupDb?.close() } catch {}
+  }
 }
 
 export default async function backupRoutes(fastify: FastifyInstance) {
   // ===== 手動備份 — 下載資料庫檔案 =====
-  fastify.get('/api/admin/backup/download', { preHandler: [requirePermission('system', 'edit')] }, async (request, reply) => {
+  fastify.get('/api/admin/backup/download', {
+    preHandler: [requirePermission('system', 'edit')],
+    config: { rateLimit: { max: 5, timeWindow: '1 hour' } },
+  }, async (request, reply) => {
     const cu = (request as any).currentUser
     // Force WAL checkpoint to ensure all data is in main DB
     try {
@@ -49,6 +136,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     // 先用 VACUUM INTO 產生乾淨的備份
     const tmpPath = path.join(getBackupsDir(), getBackupFileName())
     db.exec(`VACUUM INTO '${escapeSqlPath(tmpPath)}'`)
+    const metadata = await buildBackupMetadata(tmpPath, { schemaVersion: getCurrentSchemaVersion() })
     let buf: Buffer
     try {
       buf = fs.readFileSync(tmpPath)
@@ -59,26 +147,51 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     createAuditLog(request, cu.id, { action: 'export', module: '系統備份', target_name: fname })
     reply.header('Content-Type', 'application/octet-stream')
     reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fname)}`)
+    reply.header('X-Backup-SHA256', metadata.sha256)
+    reply.header('X-Backup-Signature-Algorithm', metadata.signature_algorithm)
+    reply.header('X-Backup-Signature', metadata.signature)
     return reply.send(buf)
   })
 
   // ===== 列出本機備份清單 =====
   fastify.get('/api/admin/backup/list', { preHandler: [requirePermission('system', 'view')] }, async (request, reply) => {
-    const files = fs.readdirSync(getBackupsDir())
+    const files = (await Promise.all(fs.readdirSync(getBackupsDir())
       .filter(f => f.endsWith('.db'))
-      .map(f => {
-        const stat = fs.statSync(path.join(getBackupsDir(), f))
-        return { name: f, size: stat.size, created_at: stat.birthtime.toISOString() }
-      })
+      .map(async f => {
+        const filePath = resolveBackupPath(f)
+        if (!filePath) return null
+        const stat = fs.statSync(filePath)
+        const metadata = readBackupMetadata(filePath)
+        return {
+          name: f,
+          size: stat.size,
+          created_at: stat.birthtime.toISOString(),
+          signed: !!metadata,
+          sha256: metadata?.sha256 ?? null,
+          schema_version: metadata?.schema_version ?? null,
+        }
+      })))
+      .filter((item): item is {
+        name: string
+        size: number
+        created_at: string
+        signed: boolean
+        sha256: string | null
+        schema_version: string | null
+      } => !!item)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
     return reply.send({ success: true, data: files })
   })
 
   // ===== 備份到本機（不下載，儲存在 backups/ 目錄） =====
-  fastify.post('/api/admin/backup', { preHandler: [requirePermission('system', 'edit')] }, async (request, reply) => {
+  fastify.post('/api/admin/backup', {
+    preHandler: [requirePermission('system', 'edit')],
+    config: { rateLimit: { max: 10, timeWindow: '1 hour' } },
+  }, async (request, reply) => {
     const cu = (request as any).currentUser
     const fname = getBackupFileName()
-    const destPath = path.join(getBackupsDir(), fname)
+    const destPath = resolveBackupPath(fname)
+    if (!destPath) return reply.code(500).send({ success: false, error: '無法建立備份檔案' })
     // Force WAL checkpoint to ensure all data is in main DB
     try {
       db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
@@ -86,52 +199,93 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       console.warn('[Backup] WAL checkpoint failed:', e)
     }
     db.exec(`VACUUM INTO '${escapeSqlPath(destPath)}'`)
+    const metadata = await buildBackupMetadata(destPath, { schemaVersion: getCurrentSchemaVersion() })
+    writeBackupMetadata(destPath, metadata)
     const stat = fs.statSync(destPath)
+    const now = new Date().toISOString()
+    db.prepare(`
+      INSERT INTO settings(key,value,updated_at)
+      VALUES('last_backup', ?, datetime('now','localtime'))
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+    `).run(now)
     createAuditLog(request, cu.id, { action: 'export', module: '系統備份', target_name: fname })
-    return reply.send({ success: true, message: `備份完成：${fname}`, data: { name: fname, size: stat.size } })
+    return reply.send({
+      success: true,
+      message: `備份完成：${fname}`,
+      data: {
+        name: fname,
+        size: stat.size,
+        sha256: metadata.sha256,
+        signed: true,
+        metadata_file: path.basename(getBackupMetadataPath(destPath)),
+      },
+    })
   })
 
   // ===== 還原備份 — 上傳 .db 檔案 =====
-  fastify.post('/api/admin/restore', { preHandler: [requirePermission('system', 'edit')] }, async (request, reply) => {
+  fastify.post('/api/admin/restore', {
+    preHandler: [requirePermission('system', 'edit')],
+    config: { rateLimit: { max: 3, timeWindow: '1 hour' } },
+  }, async (request, reply) => {
     const cu = (request as any).currentUser
     const data = await request.file()
     if (!data) return reply.code(400).send({ success: false, error: '請選擇備份檔案' })
-    if (!data.filename.endsWith('.db')) return reply.code(400).send({ success: false, error: '只接受 .db 格式的備份檔案' })
+    if (!path.basename(data.filename).toLowerCase().endsWith('.db')) {
+      return reply.code(400).send({ success: false, error: '只接受 .db 格式的備份檔案' })
+    }
 
-    const buf = await data.toBuffer()
+    let buf: Buffer
+    try {
+      buf = await data.toBuffer()
+    } catch (e) {
+      console.warn('[Restore] Upload read failed:', e)
+      return reply.code(413).send({ success: false, error: '備份檔案過大或讀取失敗' })
+    }
+    if (buf.length === 0) {
+      return reply.code(400).send({ success: false, error: '備份檔案不可為空' })
+    }
 
     // Step 1: Write to temp path first
-    const tempPath = dbPath + '.tmp.db'
+    const tempPath = `${dbPath}.${Date.now()}-${crypto.randomBytes(6).toString('hex')}.tmp.db`
     try {
       fs.writeFileSync(tempPath, buf)
     } catch (e) {
-      return reply.code(500).send({ success: false, error: '無法寫入暫存檔案：' + String(e) })
+      console.warn('[Restore] Temp write failed:', e)
+      return reply.code(500).send({ success: false, error: '無法寫入暫存檔案' })
     }
 
     // Step 2: Verify the temp copy with PRAGMA integrity_check
     try {
-      const tempDb = new Database(tempPath, { readonly: true })
-      // PRAGMA integrity_check 正確時只回傳一列 'ok'；若有毀損會回傳多列錯誤訊息
-      const integrityRows = tempDb.prepare('PRAGMA integrity_check').all() as any[]
-      tempDb.close()
-      const isOk = integrityRows.length === 1 && integrityRows[0].integrity_check === 'ok'
-      if (!isOk) {
+      const integrity = runIntegrityCheck(tempPath)
+      if (!integrity.ok) {
         fs.unlinkSync(tempPath)
-        const errMsg = integrityRows.map(r => r.integrity_check).slice(0, 5).join('; ')
+        const errMsg = integrity.messages.slice(0, 5).join('; ')
         return reply.code(400).send({ success: false, error: `備份檔案完整性驗證失敗：${errMsg}` })
+      }
+      const schema = validateApplicationBackup(tempPath)
+      if (!schema.ok) {
+        fs.unlinkSync(tempPath)
+        console.warn('[Restore] Backup schema validation failed:', schema)
+        return reply.code(400).send({ success: false, error: '備份檔案不是本系統可還原格式' })
       }
     } catch (e) {
       try { fs.unlinkSync(tempPath) } catch {}
-      return reply.code(400).send({ success: false, error: '無法驗證備份檔案完整性：' + String(e) })
+      if (process.env.NODE_ENV !== 'test') {
+        console.warn('[Restore] Integrity check failed:', e instanceof Error ? e.message : e)
+      }
+      return reply.code(400).send({ success: false, error: '無法驗證備份檔案完整性' })
     }
 
     // Step 3: Backup current database before replacing
     const currentBackup = path.join(getBackupsDir(), `pre-restore-${getBackupFileName()}`)
     try {
       db.exec(`VACUUM INTO '${escapeSqlPath(currentBackup)}'`)
+      const metadata = await buildBackupMetadata(currentBackup, { schemaVersion: getCurrentSchemaVersion() })
+      writeBackupMetadata(currentBackup, metadata)
     } catch (e) {
       try { fs.unlinkSync(tempPath) } catch {}
-      return reply.code(500).send({ success: false, error: '無法備份目前資料庫：' + String(e) })
+      console.warn('[Restore] Current DB backup failed:', e)
+      return reply.code(500).send({ success: false, error: '無法備份目前資料庫' })
     }
 
     // Step 4: Move temp file to restore path (verified before replacing)
@@ -146,7 +300,8 @@ export default async function backupRoutes(fastify: FastifyInstance) {
         fs.unlinkSync(tempPath)
       } catch (e2) {
         try { fs.unlinkSync(tempPath) } catch {}
-        return reply.code(500).send({ success: false, error: '無法移動還原檔案：' + String(e2) })
+        console.warn('[Restore] Moving restore file failed:', e2)
+        return reply.code(500).send({ success: false, error: '無法移動還原檔案' })
       }
     }
 
@@ -163,10 +318,12 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     const lastBackup = (db.prepare("SELECT value FROM settings WHERE key='last_backup'").get() as any)?.value ?? null
     const lastAutoBackup = (db.prepare("SELECT value FROM settings WHERE key='last_auto_backup'").get() as any)?.value ?? null
     const autoBackupEnabled = (db.prepare("SELECT value FROM settings WHERE key='auto_backup_enabled'").get() as any)?.value ?? '0'
+    const lastAutoBackupError = (db.prepare("SELECT value FROM settings WHERE key='last_auto_backup_error'").get() as any)?.value ?? null
+    const lastAutoBackupErrorAt = (db.prepare("SELECT value FROM settings WHERE key='last_auto_backup_error_at'").get() as any)?.value ?? null
     const lastErrorRow = db.prepare(
       `SELECT target_name FROM audit_logs WHERE action='error' AND module='自動備份' ORDER BY created_at DESC LIMIT 1`
     ).get() as any
-    const lastError = lastErrorRow?.target_name ?? null
+    const lastError = lastAutoBackupError || lastErrorRow?.target_name || null
     return reply.send({
       success: true,
       data: {
@@ -174,6 +331,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
         last_auto_backup: lastAutoBackup,
         auto_backup_enabled: autoBackupEnabled,
         last_error: lastError,
+        last_error_at: lastAutoBackupErrorAt,
       },
     })
   })
@@ -182,18 +340,34 @@ export default async function backupRoutes(fastify: FastifyInstance) {
   fastify.get('/api/backup/verify/:filename', { preHandler: [requirePermission('admin', 'view')] }, async (request, reply) => {
     const { filename } = request.params as any
     const safeName = path.basename(filename)
-    if (!safeName.endsWith('.db') || safeName.includes('..')) {
+    const filePath = resolveBackupPath(safeName)
+    if (!filePath) {
       return reply.code(400).send({ success: false, error: '無效的檔案名稱' })
     }
-    const filePath = path.join(getBackupsDir(), safeName)
     if (!fs.existsSync(filePath)) return reply.code(404).send({ success: false, error: '備份檔案不存在' })
     try {
-      const backupDb = new Database(filePath, { readonly: true })
-      const result = (backupDb.prepare('PRAGMA integrity_check').get() as any)?.integrity_check ?? 'unknown'
-      backupDb.close()
-      return reply.send({ success: true, data: { filename: safeName, integrity_check: result, ok: result === 'ok' } })
+      const integrity = runIntegrityCheck(filePath)
+      const schema = validateApplicationBackup(filePath)
+      const signature = await verifyBackupMetadata(filePath)
+      const signatureStatus = signature.ok ? 'ok' : signature.reason
+      return reply.send({
+        success: true,
+        data: {
+          filename: safeName,
+          integrity_check: integrity.messages[0] || 'unknown',
+          messages: integrity.ok ? [] : integrity.messages.slice(0, 10),
+          application_schema_ok: schema.ok,
+          signed: signature.ok,
+          signature_ok: signature.ok,
+          signature_status: signatureStatus,
+          trust_level: signature.ok ? 'signed' : signatureStatus === 'missing_metadata' ? 'unsigned_legacy' : 'failed',
+          backup_file_ok: integrity.ok && schema.ok,
+          ok: integrity.ok && schema.ok && (signature.ok || signatureStatus === 'missing_metadata'),
+        },
+      })
     } catch (e) {
-      return reply.code(500).send({ success: false, error: '無法開啟備份檔案：' + String(e) })
+      console.warn('[Backup] Verification failed:', e)
+      return reply.code(500).send({ success: false, error: '無法開啟備份檔案' })
     }
   })
 
@@ -203,19 +377,33 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     const { name } = request.params as any
     // 防路徑穿越
     const safeName = path.basename(name)
-    if (!safeName.endsWith('.db') || safeName.includes('..')) {
+    const filePath = resolveBackupPath(safeName)
+    if (!filePath) {
       return reply.code(400).send({ success: false, error: '無效的檔案名稱' })
     }
-    const filePath = path.join(getBackupsDir(), safeName)
     if (!fs.existsSync(filePath)) return reply.code(404).send({ success: false, error: '備份不存在' })
     fs.unlinkSync(filePath)
+    try {
+      const metadataPath = getBackupMetadataPath(filePath)
+      if (fs.existsSync(metadataPath)) fs.unlinkSync(metadataPath)
+    } catch (e) {
+      console.warn('[Backup] Metadata delete failed:', e)
+    }
     createAuditLog(request, cu.id, { action: 'delete', module: '系統備份', target_name: safeName })
     return reply.send({ success: true, message: '備份已刪除' })
   })
 
   // ===== 取得備份目錄 =====
   fastify.get('/api/admin/backup/path', { preHandler: [requirePermission('system', 'view')] }, async (_request, reply) => {
-    return reply.send({ success: true, data: { path: getBackupsDir() } })
+    const allowedRoots = getBackupAllowedRoots()
+    return reply.send({
+      success: true,
+      data: {
+        path: getBackupsDir(),
+        whitelist_enforced: allowedRoots.length > 0,
+        allowed_roots: allowedRoots,
+      },
+    })
   })
 
   // ===== 設定備份目錄 =====
@@ -230,6 +418,9 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     if (resolvedPath !== path.normalize(resolvedPath) || newPath.includes('..')) {
       return reply.code(400).send({ success: false, error: '路徑不合法（含 .. 穿越片段）' })
     }
+    if (!isBackupPathAllowed(resolvedPath)) {
+      return reply.code(400).send({ success: false, error: '備份目錄不在系統允許範圍內' })
+    }
     // 驗證可寫入
     try {
       fs.mkdirSync(resolvedPath, { recursive: true })
@@ -237,7 +428,8 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       fs.writeFileSync(testFile, '')
       fs.unlinkSync(testFile)
     } catch (e) {
-      return reply.code(400).send({ success: false, error: `無法寫入目錄：${String(e)}` })
+      console.warn('[Backup] Backup path write check failed:', e)
+      return reply.code(400).send({ success: false, error: '無法寫入目錄，請確認權限與磁碟可用空間' })
     }
     setSetting('backup_path', resolvedPath)
     // 清除快取，下次請求重新讀取新路徑

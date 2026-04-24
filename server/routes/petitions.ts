@@ -37,7 +37,7 @@ function generateCaseNumberInTxn(): string {
   ).get(`${year}-%`) as any
   const currentMax = maxRow?.m ?? 0
   db.prepare(
-    "INSERT INTO seq_numbers(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=MAX(value,excluded.value)+1"
+    "INSERT INTO seq_numbers(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=MAX(value + 1, excluded.value)"
   ).run(seqName, currentMax + 1)
   const row = db.prepare('SELECT value FROM seq_numbers WHERE name=?').get(seqName) as any
   return `${year}-${String(row.value).padStart(5, '0')}`
@@ -140,8 +140,11 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
     const createPetitionTxn = db.transaction(() => {
       let resolvedVoterId: number | null = body.voter_id ?? null
       let createdVoterName: string | null = null
-      if (!resolvedVoterId && body.contact_phone?.trim()) {
-        const phone = String(body.contact_phone).trim()
+      let resolvedContactPhone = body.contact_phone?.trim()
+        ? String(body.contact_phone).trim()
+        : null
+      if (!resolvedVoterId && resolvedContactPhone) {
+        const phone = resolvedContactPhone
         const found = db.prepare('SELECT id FROM voters WHERE mobile=? AND is_active=1 LIMIT 1').get(phone) as any
         if (found) {
           resolvedVoterId = found.id
@@ -152,11 +155,18 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
           createdVoterName = String(body.contact_name).trim()
         }
       }
+      if (resolvedVoterId && !resolvedContactPhone) {
+        const voter = db.prepare('SELECT mobile, phone FROM voters WHERE id=? AND is_active=1 LIMIT 1').get(resolvedVoterId) as any
+        resolvedContactPhone = voter?.mobile || voter?.phone || null
+      }
       const caseNumber = generateCaseNumberInTxn()
       const fields = ['case_number','petition_date','voter_id','contact_phone','channel','category','subcategory','content','area_city','area_district','area_village','area_address','urgency','status','assignee_id']
       const values = fields.map(f => {
         if (f === 'case_number') return caseNumber
         if (f === 'voter_id') return resolvedVoterId
+        if (f === 'contact_phone') return resolvedContactPhone
+        if (f === 'urgency') return body.urgency ?? 'normal'
+        if (f === 'status') return body.status ?? 'pending'
         return body[f] ?? null
       })
       const r = db.prepare(`INSERT INTO petitions (${fields.join(',')},created_by) VALUES (${fields.map(() => '?').join(',')},?)`)

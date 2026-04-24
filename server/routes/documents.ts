@@ -15,7 +15,7 @@ function generateDocNumber(type: string): string {
     ).get(String(prefix + '-' + year + '-').length + 1, type, `${prefix}-${year}-%`) as any
     const currentMax = maxRow?.m ?? 0
     db.prepare(
-      "INSERT INTO seq_numbers(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=MAX(value,excluded.value)+1"
+      "INSERT INTO seq_numbers(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=MAX(value + 1, excluded.value)"
     ).run(seqName, currentMax + 1)
     const row = db.prepare('SELECT value FROM seq_numbers WHERE name=?').get(seqName) as any
     db.exec('COMMIT')
@@ -68,7 +68,11 @@ export default async function documentRoutes(fastify: FastifyInstance) {
     }
     const doc_number = generateDocNumber(body.doc_type)
     const fields = ['doc_number','doc_type','doc_date','org_name','org_doc_number','org_doc_date','subject','content_summary','category','assignee_id','status','deadline','related_doc_id','related_petition_id']
-    const values = fields.map(f => f === 'doc_number' ? doc_number : (body[f] ?? null))
+    const values = fields.map((f) => {
+      if (f === 'doc_number') return doc_number
+      if (f === 'status') return body.status ?? 'pending'
+      return body[f] ?? null
+    })
     const r = db.prepare(`INSERT INTO documents (${fields.join(',')},created_by) VALUES (${fields.map(()=>'?').join(',')},?)`)
       .run(...values, cu.id)
     const newId = r.lastInsertRowid as number

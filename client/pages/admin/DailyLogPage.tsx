@@ -5,9 +5,10 @@ import {
 } from 'antd'
 import { SaveOutlined, DeleteOutlined, CalendarOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
 import dayjs from 'dayjs'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { TextArea } = Input
 
 export default function DailyLogPage() {
@@ -67,10 +68,13 @@ export default function DailyLogPage() {
   const nextDay = () => handleDateChange(dayjs(date).add(1, 'day').format('YYYY-MM-DD'))
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>📋 每日工作日誌</Title>
-      </div>
+    <PageScaffold
+      eyebrow="Daily Brief"
+      title="每日工作日誌"
+      titleLevel={4}
+      variant="compact"
+      description="沉澱每日服務摘要、完成事項、困難與明日提醒，建立交接脈絡。"
+    >
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
         {/* 左側：日誌編輯 */}
@@ -154,6 +158,6 @@ export default function DailyLogPage() {
           }
         </Card>
       </div>
-    </div>
+    </PageScaffold>
   )
 }

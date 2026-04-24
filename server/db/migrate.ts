@@ -1,7 +1,8 @@
 import { db } from './index'
 import bcrypt from 'bcrypt'
+import { migrateSecretsAtRest } from '../utils/secrets'
 
-export function runMigrations() {
+export async function runMigrations() {
   // D-2: Schema migrations version table (must be first)
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -763,6 +764,10 @@ export function runMigrations() {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_logs_created_desc ON audit_logs(created_at DESC)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_logs_user_created ON audit_logs(user_id, created_at DESC)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_schedules_active_start ON schedules(is_active, start_time)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_schedules_overlap ON schedules(is_active, status, start_time, end_time)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_consultation_slot_capacity ON consultation_appointments(appointment_date, time_slot, status)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_petitions_active_date ON petitions(is_active, petition_date, created_at)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_petitions_content ON petitions(content)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_contact_records_created ON contact_records(created_at DESC)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_voter_tags_voter ON voter_tags(voter_id)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_voter_relations_voter ON voter_relations(voter_id)') } catch {}
@@ -818,15 +823,26 @@ export function runMigrations() {
     db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('5.3.0', 'AI-1: AI 設定')
   } catch(e: any) { if (!e.message?.includes('already exists') && !e.message?.includes('UNIQUE')) console.error('AI migration:', e.message) }
 
-  seedDefaultData()
+  try {
+    migrateSecretsAtRest(db)
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('5.4.0', 'Encrypt secrets at rest')
+  } catch (e: any) {
+    console.error('secret encryption migration:', e.message)
+  }
+
+  await seedDefaultData()
 }
 
 async function seedDefaultData() {
+  const defaultBackupPath = process.env.BACKUPS_PATH || './backups'
+
   const adminExists = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get() as any
   if (!adminExists.count) {
     const hashed = await bcrypt.hash('admin123', 12)
     db.prepare("INSERT INTO users (username, password, name, role) VALUES (?, ?, ?, 'admin')").run('admin', hashed, '系統管理員')
-    console.log('✅ 預設管理員帳號：admin / admin123（請盡速修改密碼）')
+    if (process.env.NODE_ENV !== 'test') {
+      console.log('✅ 預設管理員帳號：admin / admin123（請盡速修改密碼）')
+    }
   }
 
   const catExists = db.prepare("SELECT COUNT(*) as count FROM categories").get() as any
@@ -846,25 +862,32 @@ async function seedDefaultData() {
     } catch (e) { db.exec('ROLLBACK'); throw e }
   }
 
-  const settingsExist = db.prepare("SELECT COUNT(*) as count FROM settings").get() as any
-  if (!settingsExist.count) {
-    const ins = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)")
-    db.exec('BEGIN')
-    try {
-      for (const [k, v] of [
-        ['office_name', '服務處'], ['network_mode', 'local'], ['port', '8080'],
-        ['idle_timeout', '30'], ['login_lock_attempts', '5'], ['login_lock_minutes', '15'],
-        ['backup_path', './backups'], ['first_run', 'true'],
-        ['auto_backup_enabled', '0'], ['auto_backup_interval', 'daily'],
-        ['last_auto_backup', ''],
-      ]) ins.run(k, v)
-      db.exec('COMMIT')
-    } catch (e) { db.exec('ROLLBACK'); throw e }
-  }
+  const ins = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)")
+  db.exec('BEGIN')
+  try {
+    for (const [k, v] of [
+      ['office_name', '服務處'], ['network_mode', 'local'], ['port', '8080'],
+      ['idle_timeout', '30'], ['login_lock_attempts', '5'], ['login_lock_minutes', '15'],
+      ['backup_path', defaultBackupPath], ['first_run', 'true'],
+      ['auto_backup_enabled', '0'], ['auto_backup_interval', 'daily'],
+      ['data_retention_enabled', '0'],
+      ['retention_audit_archive_days', '90'],
+      ['retention_client_error_days', '90'],
+      ['retention_soft_deleted_voter_days', '365'],
+      ['last_auto_backup', ''],
+    ]) ins.run(k, v)
+    db.exec('COMMIT')
+  } catch (e) { db.exec('ROLLBACK'); throw e }
 }
 
 if (require.main === module && !process.versions.electron) {
   runMigrations()
-  console.log('✅ 資料庫初始化完成')
-  process.exit(0)
+    .then(() => {
+      console.log('✅ 資料庫初始化完成')
+      process.exit(0)
+    })
+    .catch(error => {
+      console.error('資料庫初始化失敗：', error)
+      process.exit(1)
+    })
 }

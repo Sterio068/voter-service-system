@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
-import * as XLSX from 'xlsx'
+import * as XLSX from '@e965/xlsx'
 
 function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')

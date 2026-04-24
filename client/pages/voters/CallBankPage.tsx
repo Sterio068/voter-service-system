@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { Button, Card, Typography, Space, Divider, Result, Spin, Tag, message } from 'antd'
-import { PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, QuestionCircleOutlined, StopOutlined } from '@ant-design/icons'
+import { CheckCircleOutlined, CloseCircleOutlined, InboxOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
+import { getCallBankResultState } from './callBankState'
 
 const { Title, Text } = Typography
 
@@ -14,6 +16,11 @@ export default function CallBankPage() {
   const [loading, setLoading] = useState(true)
   const [sessionCount, setSessionCount] = useState(0)
   const [sessionResults, setSessionResults] = useState({ answered: 0, no_answer: 0, support: 0, oppose: 0 })
+  const resultState = getCallBankResultState({
+    inactivityDays: 30,
+    sessionAnswered: sessionResults.answered,
+    sessionCount,
+  })
 
   useEffect(() => { loadQueue() }, [])
 
@@ -71,10 +78,29 @@ export default function CallBankPage() {
     if (remaining.length < 3) loadQueue() // preload more
   }
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>
+  if (loading) {
+    return (
+      <PageScaffold
+        eyebrow="Call Desk"
+        title="電話拜訪"
+        titleLevel={4}
+        variant="compact"
+        description="以最少資訊逐通完成拜訪，降低志工誤觸敏感資料的風險。"
+      >
+        <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>
+      </PageScaffold>
+    )
+  }
 
   return (
-    <div style={{ maxWidth: 480, margin: '0 auto', padding: '24px 16px' }}>
+    <PageScaffold
+      eyebrow="Call Desk"
+      title="電話拜訪"
+      titleLevel={4}
+      variant="compact"
+      description="以最少資訊逐通完成拜訪，降低志工誤觸敏感資料的風險。"
+    >
+    <div style={{ maxWidth: 480, margin: '0 auto', padding: '12px 0 32px' }}>
       {/* Session stats header */}
       <Card size="small" style={{ marginBottom: 16, background: '#f0f5ff' }}>
         <Space split={<Divider type="vertical" />}>
@@ -123,10 +149,16 @@ export default function CallBankPage() {
           <Text type="secondary" style={{ fontSize: 12 }}>剩餘 {voterQueue.length} 位待撥 · 此模式無法查詢完整選民資料</Text>
         </Card>
       ) : (
-        <Result icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-          title="本批次完成！" subTitle={`共撥打 ${sessionCount} 通，接通 ${sessionResults.answered} 通`}
-          extra={<Button type="primary" onClick={loadQueue}>載入下一批</Button>} />
+        <Result
+          icon={resultState.kind === 'empty-pool'
+            ? <InboxOutlined style={{ color: '#1677ff' }} />
+            : <CheckCircleOutlined style={{ color: '#52c41a' }} />}
+          title={resultState.title}
+          subTitle={resultState.subTitle}
+          extra={<Button type="primary" onClick={loadQueue}>{resultState.actionLabel}</Button>}
+        />
       )}
     </div>
+    </PageScaffold>
   )
 }

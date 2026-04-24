@@ -1,18 +1,24 @@
 import React, { useState, useEffect } from 'react'
 import AttachmentUpload from '../../components/AttachmentUpload'
-import { Table, Button, Space, Input, Select, Tag, Typography, Card, Drawer, Form, DatePicker, message, Tabs, Row, Col, Divider, Descriptions, Empty, Popconfirm } from 'antd'
+import { Table, Button, Space, Input, Select, Tag, Typography, Card, Drawer, Form, DatePicker, message, Tabs, Row, Col, Divider, Descriptions, Popconfirm } from 'antd'
 import { PlusOutlined, SearchOutlined, PrinterOutlined, FileWordOutlined, EyeOutlined, FilterOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
 import AIButton from '../../components/ai/AIButton'
+import PageScaffold from '../../components/ui/PageScaffold'
+import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
+import EmptyState from '../../components/ui/EmptyState'
+import FormFooter from '../../components/ui/FormFooter'
+import FormSection from '../../components/ui/FormSection'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 const { TextArea } = Input
 
 const STATUS_COLORS: Record<string, string> = { pending: 'orange', processing: 'blue', replied: 'cyan', archived: 'default' }
 const STATUS_LABELS: Record<string, string> = { pending: '待處理', processing: '處理中', replied: '已回覆', archived: '已歸檔' }
+const FALLBACK_STATUS_LABEL = '未設定'
 
 /** 西元日期字串 → 民國日期（顯示用） */
 function toROC(dateStr: string | null | undefined): string {
@@ -345,7 +351,7 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
     { title: '承辦人', dataIndex: 'assignee_name', width: 90 },
     {
       title: '狀態', dataIndex: 'status', width: 90,
-      render: (s) => <Tag color={STATUS_COLORS[s]}>{STATUS_LABELS[s]}</Tag>,
+      render: (s) => <Tag color={STATUS_COLORS[s] || 'default'}>{STATUS_LABELS[s] || FALLBACK_STATUS_LABEL}</Tag>,
     },
     {
       title: '期限', dataIndex: 'deadline', width: 120,
@@ -368,7 +374,16 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+      <WorkspaceToolbar
+        title={docType === 'incoming' ? '收文篩選' : '發文篩選'}
+        description="搜尋主旨或依處理狀態縮小公文工作清單。"
+        meta={<Text type="secondary">共 {total} 筆</Text>}
+        actions={(
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setDrawerOpen(true) }}>
+            新增{docType === 'incoming' ? '收文' : '發文'}
+          </Button>
+        )}
+      >
         <Space wrap>
           <Input.Search
             placeholder="搜尋主旨"
@@ -390,12 +405,8 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
               清除篩選
             </Button>
           )}
-          <Text type="secondary">共 {total} 筆</Text>
         </Space>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setDrawerOpen(true) }}>
-          新增{docType === 'incoming' ? '收文' : '發文'}
-        </Button>
-      </div>
+      </WorkspaceToolbar>
 
       <Table
         columns={columns}
@@ -405,8 +416,8 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
         size="small"
         locale={{
           emptyText: (search || filterStatus)
-            ? <Empty description="查無符合條件的資料" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            : <Empty description="尚無資料" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+            ? <EmptyState variant="search" title="查無符合條件的公文" description="可調整主旨關鍵字或狀態篩選。" />
+            : <EmptyState title="尚無公文資料" description="新增收文或發文後，期限與承辦進度會在這裡彙整。" />,
         }}
         onRow={(r) => ({ onClick: () => handleRowClick(r), style: { cursor: 'pointer' } })}
         pagination={{ current: page, pageSize: 20, total, showTotal: t => `共 ${t} 筆`, onChange: setPage }}
@@ -417,58 +428,62 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
       <Drawer title={`新增${docType === 'incoming' ? '收文' : '發文'}`} open={drawerOpen}
         onClose={() => setDrawerOpen(false)} width={560}
         destroyOnClose
-        footer={<Space><Button onClick={() => setDrawerOpen(false)}>取消</Button><Button type="primary" onClick={() => form.submit()}>儲存</Button></Space>}>
+        footer={<FormFooter onCancel={() => setDrawerOpen(false)} onSubmit={() => form.submit()} />}>
         <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ doc_date: dayjs() }}>
-          <Form.Item name="subject" label="主旨" rules={[{ required: true }]}><Input /></Form.Item>
-          <Row gutter={12}>
-            <Col span={12}><Form.Item name="doc_date" label={docType === 'incoming' ? '收文日期' : '發文日期'} rules={[{ required: true }]}><DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" /></Form.Item></Col>
-            <Col span={12}><Form.Item name="category" label="分類"><Select allowClear>{categories.map(c => <Option key={c} value={c}>{c}</Option>)}</Select></Form.Item></Col>
-            <Col span={12}><Form.Item name="org_name" label={docType === 'incoming' ? '來文機關' : '受文機關'}><Input /></Form.Item></Col>
-            {/* 使用 hidden 避免 unmount 造成資料丟失 */}
-            <Col span={12} style={{ display: docType === 'incoming' ? undefined : 'none' }}>
-              <Form.Item name="org_doc_number" label="來文字號" hidden={docType !== 'incoming'}><Input /></Form.Item>
-            </Col>
-            <Col span={12} style={{ display: docType === 'incoming' ? undefined : 'none' }}>
-              <Form.Item name="org_doc_date" label="來文日期" hidden={docType !== 'incoming'}>
-                <DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" />
-              </Form.Item>
-            </Col>
-            <Col span={12}><Form.Item name="deadline" label="處理期限"><DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" /></Form.Item></Col>
-            <Col span={12}><Form.Item name="assignee_id" label="承辦人"><Select allowClear>{users.map(u => <Option key={u.id} value={u.id}>{u.name}</Option>)}</Select></Form.Item></Col>
-          </Row>
-          <Form.Item
-            name="content_summary"
-            label={
-              <Space>
-                <span>內容摘要</span>
-                <AIButton
-                  label="AI 摘要"
-                  size="small"
-                  type="link"
-                  tooltip="根據主旨用 AI 生成摘要草稿"
-                  endpoint="/ai/summarize"
-                  payload={{ text: form.getFieldValue('content_summary') || form.getFieldValue('subject') || '', type: 'general' }}
-                  onResult={(d) => form.setFieldsValue({ content_summary: d.summary })}
-                />
-              </Space>
-            }
-          >
-            <TextArea rows={3} />
-          </Form.Item>
-          <Form.Item name="related_petition_id" label="關聯陳情">
-            <Select
-              showSearch allowClear placeholder="輸入案號或選民姓名搜尋"
-              filterOption={false}
-              onSearch={searchPetitions}
-              notFoundContent={null}
+          <FormSection title="公文基本資料" description="先填主旨、日期、分類與機關資訊，系統會自動配置公文流程。">
+            <Form.Item name="subject" label="主旨" rules={[{ required: true }]}><Input /></Form.Item>
+            <Row gutter={12}>
+              <Col span={12}><Form.Item name="doc_date" label={docType === 'incoming' ? '收文日期' : '發文日期'} rules={[{ required: true }]}><DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" /></Form.Item></Col>
+              <Col span={12}><Form.Item name="category" label="分類"><Select allowClear>{categories.map(c => <Option key={c} value={c}>{c}</Option>)}</Select></Form.Item></Col>
+              <Col span={12}><Form.Item name="org_name" label={docType === 'incoming' ? '來文機關' : '受文機關'}><Input /></Form.Item></Col>
+              {/* 使用 hidden 避免 unmount 造成資料丟失 */}
+              <Col span={12} style={{ display: docType === 'incoming' ? undefined : 'none' }}>
+                <Form.Item name="org_doc_number" label="來文字號" hidden={docType !== 'incoming'}><Input /></Form.Item>
+              </Col>
+              <Col span={12} style={{ display: docType === 'incoming' ? undefined : 'none' }}>
+                <Form.Item name="org_doc_date" label="來文日期" hidden={docType !== 'incoming'}>
+                  <DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" />
+                </Form.Item>
+              </Col>
+              <Col span={12}><Form.Item name="deadline" label="處理期限"><DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" /></Form.Item></Col>
+              <Col span={12}><Form.Item name="assignee_id" label="承辦人"><Select allowClear>{users.map(u => <Option key={u.id} value={u.id}>{u.name}</Option>)}</Select></Form.Item></Col>
+            </Row>
+          </FormSection>
+          <FormSection title="內容與關聯" description="補上摘要與相關陳情，讓後續追蹤更完整。">
+            <Form.Item
+              name="content_summary"
+              label={
+                <Space>
+                  <span>內容摘要</span>
+                  <AIButton
+                    label="AI 摘要"
+                    size="small"
+                    type="link"
+                    tooltip="根據主旨用 AI 生成摘要草稿"
+                    endpoint="/ai/summarize"
+                    payload={{ text: form.getFieldValue('content_summary') || form.getFieldValue('subject') || '', type: 'general' }}
+                    onResult={(d) => form.setFieldsValue({ content_summary: d.summary })}
+                  />
+                </Space>
+              }
             >
-              {petitionOptions.map(p => (
-                <Option key={p.id} value={p.id}>
-                  [{p.case_number}] {p.voter_name || '匿名'} — {p.content?.slice(0, 20)}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
+              <TextArea rows={3} />
+            </Form.Item>
+            <Form.Item name="related_petition_id" label="關聯陳情">
+              <Select
+                showSearch allowClear placeholder="輸入案號或選民姓名搜尋"
+                filterOption={false}
+                onSearch={searchPetitions}
+                notFoundContent={null}
+              >
+                {petitionOptions.map(p => (
+                  <Option key={p.id} value={p.id}>
+                    [{p.case_number}] {p.voter_name || '匿名'} — {p.content?.slice(0, 20)}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </FormSection>
         </Form>
       </Drawer>
 
@@ -526,7 +541,9 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
               ) : '—'}
             </Descriptions.Item>
             <Descriptions.Item label="狀態">
-              <Tag color={STATUS_COLORS[selectedDoc.status]}>{STATUS_LABELS[selectedDoc.status]}</Tag>
+              <Tag color={STATUS_COLORS[selectedDoc.status] || 'default'}>
+                {STATUS_LABELS[selectedDoc.status] || FALLBACK_STATUS_LABEL}
+              </Tag>
             </Descriptions.Item>
             <Descriptions.Item label="主旨" span={2}>
               <Space wrap>
@@ -591,16 +608,19 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
 
 export default function DocumentListPage() {
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>📮 公文管理</Title>
-      </div>
+    <PageScaffold
+      eyebrow="Document Desk"
+      title="公文管理"
+      titleLevel={4}
+      variant="compact"
+      description="以收文/發文工作台管理文號、期限、承辦與附件流程。"
+    >
       <Card>
         <Tabs defaultActiveKey="incoming" items={[
           { key: 'incoming', label: '收文管理', children: <DocTable docType="incoming" /> },
           { key: 'outgoing', label: '發文管理', children: <DocTable docType="outgoing" /> },
         ]} />
       </Card>
-    </div>
+    </PageScaffold>
   )
 }

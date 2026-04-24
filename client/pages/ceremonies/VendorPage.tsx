@@ -9,9 +9,11 @@ import {
   DollarOutlined, FileTextOutlined, StarOutlined
 } from '@ant-design/icons'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
+import { SCROLLABLE_FORM_MODAL_STYLE, SCROLLABLE_FORM_MODAL_STYLES } from '../../components/ui/modalStyles'
 import dayjs from 'dayjs'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 const CATEGORY_LABELS: Record<string, string> = {
   flower: '花店', gift: '禮盒', print: '印刷', food: '餐飲', other: '其他'
@@ -155,16 +157,21 @@ export default function VendorPage() {
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>🏪 廠商管理</Title>
-        <Space>
+    <PageScaffold
+      eyebrow="Vendor Network"
+      title="廠商管理"
+      titleLevel={4}
+      variant="compact"
+      description="維護供應商資訊、合作紀錄、評分與年度採購分析。"
+      actions={
+        <>
           <Select placeholder="篩選類別" allowClear style={{ width: 120 }} onChange={v => setFilterCategory(v || '')} value={filterCategory || undefined}>
             {Object.entries(CATEGORY_LABELS).map(([k, v]) => <Select.Option key={k} value={k}>{v}</Select.Option>)}
           </Select>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingItem(null); form.resetFields(); setModalOpen(true) }}>新增廠商</Button>
-        </Space>
-      </div>
+        </>
+      }
+    >
 
       <Card>
         <Table
@@ -186,6 +193,8 @@ export default function VendorPage() {
         onOk={() => form.submit()}
         okText="儲存"
         width={560}
+        style={SCROLLABLE_FORM_MODAL_STYLE}
+        styles={SCROLLABLE_FORM_MODAL_STYLES}
       >
         <Form form={form} layout="vertical" onFinish={handleSave} style={{ marginTop: 16 }}>
           <Row gutter={16}>
@@ -298,6 +307,6 @@ export default function VendorPage() {
           </>
         )}
       </Drawer>
-    </div>
+    </PageScaffold>
   )
 }

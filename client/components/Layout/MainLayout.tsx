@@ -7,7 +7,8 @@ import {
   BellOutlined, AuditOutlined, TagsOutlined, AppstoreOutlined,
   BarChartOutlined, SunOutlined, MoonOutlined, CheckSquareOutlined,
   QuestionOutlined, SwapOutlined, GroupOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
-  MenuOutlined, CloseOutlined, BookOutlined, GiftOutlined, ShopOutlined, DollarOutlined, ProfileOutlined, FormOutlined
+  MenuOutlined, CloseOutlined, BookOutlined, GiftOutlined, ShopOutlined, DollarOutlined,
+  ProfileOutlined, FormOutlined, PhoneOutlined, MergeCellsOutlined
 } from '@ant-design/icons'
 
 function useIsMobile() {
@@ -26,17 +27,12 @@ import ScheduleReminder from '../ScheduleReminder'
 import GlobalSearch from '../GlobalSearch'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import api from '../../utils/api'
+import { ROLE_LABELS } from '../../utils/constants'
+import { canAccessFeature, canPerformAction, hasAnyFeatureAccess } from '../../utils/permissions'
 import type { MenuProps } from 'antd'
 
 const { Header, Sider, Content, Footer } = Layout
 const { Text } = Typography
-
-const ROLE_LABELS: Record<string, string> = {
-  admin: '管理員',
-  supervisor: '主管',
-  assistant: '助理',
-  volunteer: '志工',
-}
 
 // ─── macOS-style nav item ───────────────────────────────────
 interface NavItemProps {
@@ -96,9 +92,9 @@ export default function MainLayout() {
   const idleTimeoutMinutesRef = React.useRef<number>(30)
 
   const shortcutList = [
-    { key: 'Ctrl + N', description: '新增陳情' },
-    { key: 'Ctrl + V', description: '新增選民' },
-    { key: 'Ctrl + T', description: '新增待辦' },
+    ...(canPerformAction(user?.role, 'createPetition') ? [{ key: 'Ctrl + N', description: '新增陳情' }] : []),
+    ...(canPerformAction(user?.role, 'createVoter') ? [{ key: 'Ctrl + V', description: '新增選民' }] : []),
+    ...(canPerformAction(user?.role, 'createTask') ? [{ key: 'Ctrl + T', description: '新增待辦' }] : []),
     { key: 'Ctrl + Shift + D', description: '今日待辦' },
     { key: 'Ctrl + B', description: '今日行程' },
     { key: 'Ctrl + K', description: '全站搜尋' },
@@ -106,9 +102,15 @@ export default function MainLayout() {
   ]
 
   useKeyboardShortcuts([
-    { key: 'n', ctrl: true, description: '新增陳情', action: () => navigate('/petitions?action=new') },
-    { key: 'v', ctrl: true, description: '新增選民', action: () => navigate('/voters?action=new') },
-    { key: 't', ctrl: true, description: '新增待辦', action: () => navigate('/tasks?action=new') },
+    ...(canPerformAction(user?.role, 'createPetition')
+      ? [{ key: 'n', ctrl: true, description: '新增陳情', action: () => navigate('/petitions?action=new') }]
+      : []),
+    ...(canPerformAction(user?.role, 'createVoter')
+      ? [{ key: 'v', ctrl: true, description: '新增選民', action: () => navigate('/voters?action=new') }]
+      : []),
+    ...(canPerformAction(user?.role, 'createTask')
+      ? [{ key: 't', ctrl: true, description: '新增待辦', action: () => navigate('/tasks?action=new') }]
+      : []),
     { key: 'd', ctrl: true, shift: true, description: '今日待辦', action: () => navigate('/tasks?focus=today') },
     { key: 'b', ctrl: true, description: '今日行程', action: () => navigate('/schedules') },
     { key: '?', ctrl: false, description: '快捷鍵說明', action: () => setShortcutHelpOpen(true) },
@@ -157,7 +159,15 @@ export default function MainLayout() {
     navigate('/login')
   }
 
-  const isAdminOrSupervisor = user?.role === 'admin' || user?.role === 'supervisor'
+  const hasManagementAccess = hasAnyFeatureAccess(user?.role, [
+    'reports',
+    'adminUsers',
+    'auditLogs',
+    'categories',
+    'settings',
+    'handover',
+    'dailyLogs',
+  ])
 
   const sidebarBg = isDark
     ? 'rgba(28,28,30,0.92)'
@@ -183,28 +193,36 @@ export default function MainLayout() {
       <NavItem icon={<DashboardOutlined />} label="儀表板" path="/" collapsed={collapsed} />
       <SectionLabel label="陳情" collapsed={collapsed} />
       <NavItem icon={<FileTextOutlined />} label="案件列表" path="/petitions" collapsed={collapsed} badge={pendingCount} />
-      <NavItem icon={<BarChartOutlined />} label="統計報表" path="/petitions/stats" collapsed={collapsed} />
+      {canAccessFeature(user?.role, 'petitionStats') && (
+        <NavItem icon={<BarChartOutlined />} label="統計報表" path="/petitions/stats" collapsed={collapsed} />
+      )}
       <SectionLabel label="選民" collapsed={collapsed} />
       <NavItem icon={<TeamOutlined />} label="選民資料" path="/voters" collapsed={collapsed} />
+      {canAccessFeature(user?.role, 'callBank') && <NavItem icon={<PhoneOutlined />} label="電話拜訪" path="/voters/call-bank" collapsed={collapsed} />}
+      {canAccessFeature(user?.role, 'voterMerge') && <NavItem icon={<MergeCellsOutlined />} label="重複合併" path="/voters/merge" collapsed={collapsed} />}
       <NavItem icon={<GroupOutlined />} label="團體管理" path="/groups" collapsed={collapsed} />
       <SectionLabel label="日常" collapsed={collapsed} />
       <NavItem icon={<MailOutlined />} label="公文管理" path="/documents" collapsed={collapsed} />
       <NavItem icon={<CalendarOutlined />} label="行程管理" path="/schedules" collapsed={collapsed} />
       <NavItem icon={<GiftOutlined />} label="禮儀記錄" path="/ceremonies" collapsed={collapsed} />
       <NavItem icon={<ShopOutlined />} label="廠商管理" path="/vendors" collapsed={collapsed} />
-      <NavItem icon={<DollarOutlined />} label="收支統計" path="/expenses" collapsed={collapsed} />
+      {canAccessFeature(user?.role, 'expenses') && <NavItem icon={<DollarOutlined />} label="收支統計" path="/expenses" collapsed={collapsed} />}
       <NavItem icon={<ProfileOutlined />} label="提案追蹤" path="/proposals" collapsed={collapsed} />
       <NavItem icon={<CheckSquareOutlined />} label="待辦事項" path="/tasks" collapsed={collapsed} />
-      {isAdminOrSupervisor && (
+      <SectionLabel label="互動" collapsed={collapsed} />
+      <NavItem icon={<CalendarOutlined />} label="活動管理" path="/events" collapsed={collapsed} />
+      {canAccessFeature(user?.role, 'surveys') && <NavItem icon={<QuestionOutlined />} label="問卷管理" path="/surveys" collapsed={collapsed} />}
+      {canAccessFeature(user?.role, 'notifications') && <NavItem icon={<BellOutlined />} label="通知管理" path="/notifications" collapsed={collapsed} />}
+      {hasManagementAccess && (
         <>
           <SectionLabel label="管理" collapsed={collapsed} />
-          <NavItem icon={<BarChartOutlined />} label="進階報表" path="/reports" collapsed={collapsed} />
-          {user?.role === 'admin' && <NavItem icon={<UserOutlined />} label="帳號維護" path="/admin/users" collapsed={collapsed} />}
-          {user?.role === 'admin' && <NavItem icon={<AuditOutlined />} label="操作紀錄" path="/admin/audit-logs" collapsed={collapsed} />}
-          <NavItem icon={<TagsOutlined />} label="類別管理" path="/admin/categories" collapsed={collapsed} />
-          <NavItem icon={<AppstoreOutlined />} label="系統設定" path="/admin/settings" collapsed={collapsed} />
-          <NavItem icon={<SwapOutlined />} label="員工交接" path="/admin/handover" collapsed={collapsed} />
-          {(user?.role === 'admin' || user?.role === 'supervisor') && <NavItem icon={<FormOutlined />} label="每日日誌" path="/admin/daily-log" collapsed={collapsed} />}
+          {canAccessFeature(user?.role, 'reports') && <NavItem icon={<BarChartOutlined />} label="進階報表" path="/reports" collapsed={collapsed} />}
+          {canAccessFeature(user?.role, 'adminUsers') && <NavItem icon={<UserOutlined />} label="帳號維護" path="/admin/users" collapsed={collapsed} />}
+          {canAccessFeature(user?.role, 'auditLogs') && <NavItem icon={<AuditOutlined />} label="操作紀錄" path="/admin/audit-logs" collapsed={collapsed} />}
+          {canAccessFeature(user?.role, 'categories') && <NavItem icon={<TagsOutlined />} label="類別管理" path="/admin/categories" collapsed={collapsed} />}
+          {canAccessFeature(user?.role, 'settings') && <NavItem icon={<AppstoreOutlined />} label="系統設定" path="/admin/settings" collapsed={collapsed} />}
+          {canAccessFeature(user?.role, 'handover') && <NavItem icon={<SwapOutlined />} label="員工交接" path="/admin/handover" collapsed={collapsed} />}
+          {canAccessFeature(user?.role, 'dailyLogs') && <NavItem icon={<FormOutlined />} label="每日日誌" path="/admin/daily-log" collapsed={collapsed} />}
         </>
       )}
       <SectionLabel label="說明" collapsed={collapsed} />

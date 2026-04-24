@@ -5,9 +5,11 @@ import {
 } from 'antd'
 import { PrinterOutlined, SearchOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
+import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
 import dayjs from 'dayjs'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 
 // 常見標籤規格 (紙張 A4，每排列印張數)
@@ -95,17 +97,27 @@ export default function PrintLabelPage() {
   }
 
   const cfg = LABEL_PRESETS[preset]
+  const previewCount = Math.min(voters.length, cfg.cols * 2)
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>🏷️ 地址標籤列印</Title>
+    <PageScaffold
+      eyebrow="Label Studio"
+      title="地址標籤列印"
+      titleLevel={4}
+      variant="compact"
+      description="依標籤規格、地址類型與篩選條件產生 A4 地址標籤。"
+      actions={
         <Button type="primary" icon={<PrinterOutlined />} onClick={handlePrint} disabled={!voters.length}>
           列印標籤
         </Button>
-      </div>
+      }
+    >
 
-      <Card style={{ marginBottom: 16 }}>
+      <WorkspaceToolbar
+        title="標籤輸出條件"
+        description="設定名單篩選、標籤規格與地址來源後再列印。"
+        meta={<Text type="secondary">{cfg.cols} 欄 × {cfg.rows} 列，共 {cfg.cols * cfg.rows} 格/頁</Text>}
+      >
         <Form form={form} layout="inline" onFinish={handleSearch}>
           <Form.Item name="search">
             <Input placeholder="姓名/手機/地址" prefix={<SearchOutlined />} style={{ width: 200 }} />
@@ -154,13 +166,13 @@ export default function PrintLabelPage() {
             </Text>
           </Col>
         </Row>
-      </Card>
+      </WorkspaceToolbar>
 
       <Card>
         <Text type="secondary">共 {total} 筆（最多列印 1000 筆）</Text>
         {voters.length > 0 && (
           <div style={{ marginTop: 16 }}>
-            <Text style={{ fontSize: 12 }}>預覽（前 12 筆）：</Text>
+            <Text style={{ fontSize: 12 }}>預覽（前 {previewCount} 筆）：</Text>
             <div style={{
               display: 'grid',
               gridTemplateColumns: `repeat(${cfg.cols}, 1fr)`,
@@ -170,7 +182,7 @@ export default function PrintLabelPage() {
               padding: 8,
               maxWidth: 600,
             }}>
-              {voters.slice(0, cfg.cols * 2).map((v, i) => (
+              {voters.slice(0, previewCount).map((v, i) => (
                 <div key={i} style={{
                   border: '1px dashed #d9d9d9',
                   padding: '4px 8px',
@@ -186,6 +198,6 @@ export default function PrintLabelPage() {
           </div>
         )}
       </Card>
-    </div>
+    </PageScaffold>
   )
 }

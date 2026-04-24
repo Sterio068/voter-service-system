@@ -21,6 +21,15 @@ jobs:
 
       - run: npm ci
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production dependency audit
+        run: npm run audit:prod
+
       - name: Build icons
         run: npm run build:icons
 
@@ -52,6 +61,15 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production dependency audit
+        run: npm run audit:prod
 
       - name: Build icons
         run: npm run build:icons

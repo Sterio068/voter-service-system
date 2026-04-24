@@ -10,11 +10,12 @@ import {
   MobileOutlined, RobotOutlined, CheckCircleOutlined, CloseCircleOutlined
 } from '@ant-design/icons'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
 import dayjs from 'dayjs'
 import QRCode from 'qrcode'
 import type { UploadFile } from 'antd/es/upload'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 declare const __APP_VERSION__: string
 
@@ -26,6 +27,7 @@ function formatBytes(bytes: number) {
 
 export default function SettingsPage() {
   const [form] = Form.useForm()
+  const lastAutoBackup = Form.useWatch('last_auto_backup', form)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [networkInfo, setNetworkInfo] = useState<any>(null)
@@ -37,7 +39,10 @@ export default function SettingsPage() {
   const [restoreModalOpen, setRestoreModalOpen] = useState(false)
   const [restoring, setRestoring] = useState(false)
   const [backupPath, setBackupPath] = useState<string>('')
+  const [backupStatus, setBackupStatus] = useState<any>(null)
+  const [backupPathPolicy, setBackupPathPolicy] = useState<{ whitelist_enforced: boolean; allowed_roots: string[] }>({ whitelist_enforced: false, allowed_roots: [] })
   const [savingBackupPath, setSavingBackupPath] = useState(false)
+  const [verifyingBackup, setVerifyingBackup] = useState<string | null>(null)
   const isElectron = !!(window as any).electronAPI
   const [tailscale, setTailscale] = useState<{ installed: boolean; running: boolean; ip: string | null; port: number } | null>(null)
   const [tailscaleLoading, setTailscaleLoading] = useState(false)
@@ -51,15 +56,24 @@ export default function SettingsPage() {
   const [aiSaving, setAiSaving] = useState(false)
   const [aiTesting, setAiTesting] = useState(false)
   const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [dataQuality, setDataQuality] = useState<any>(null)
+  const [dataQualityLoading, setDataQualityLoading] = useState(false)
+  const [retentionPreview, setRetentionPreview] = useState<any>(null)
+  const [retentionLoading, setRetentionLoading] = useState(false)
+  const [retentionRunning, setRetentionRunning] = useState(false)
+  const [retentionModalOpen, setRetentionModalOpen] = useState(false)
+  const [retentionConfirmForm] = Form.useForm()
 
   useEffect(() => {
     loadSettings()
     loadNetworkInfo()
     loadBackups()
+    loadBackupStatus()
     loadBackupPath()
     loadGcalStatus()
     loadTailscale()
     loadAIConfig()
+    loadRetentionPreview()
   }, [])
 
   const loadSettings = async () => {
@@ -101,7 +115,12 @@ export default function SettingsPage() {
   const loadBackupPath = async () => {
     try {
       const res = await api.get('/admin/backup/path')
-      setBackupPath(res.data.data?.path || '')
+      const data = res.data.data || {}
+      setBackupPath(data.path || '')
+      setBackupPathPolicy({
+        whitelist_enforced: !!data.whitelist_enforced,
+        allowed_roots: Array.isArray(data.allowed_roots) ? data.allowed_roots : [],
+      })
     } catch {}
   }
 
@@ -174,6 +193,47 @@ export default function SettingsPage() {
     } finally { setAiTesting(false) }
   }
 
+  const loadDataQuality = async () => {
+    setDataQualityLoading(true)
+    try {
+      const res = await api.get('/admin/data-quality')
+      setDataQuality(res.data.data)
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || '資料品質掃描失敗')
+    } finally {
+      setDataQualityLoading(false)
+    }
+  }
+
+  const loadRetentionPreview = async () => {
+    setRetentionLoading(true)
+    try {
+      const res = await api.get('/admin/data-retention/preview')
+      setRetentionPreview(res.data.data)
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || '資料保留預覽失敗')
+    } finally {
+      setRetentionLoading(false)
+    }
+  }
+
+  const handleRunRetention = async () => {
+    const values = await retentionConfirmForm.validateFields()
+    setRetentionRunning(true)
+    try {
+      const res = await api.post('/admin/data-retention/run', { confirm: values.confirm })
+      message.success(res.data.message || '資料保留清理已完成')
+      setRetentionModalOpen(false)
+      retentionConfirmForm.resetFields()
+      loadRetentionPreview()
+      loadDataQuality()
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || '資料保留清理失敗')
+    } finally {
+      setRetentionRunning(false)
+    }
+  }
+
   const handleSelectBackupPath = async () => {
     const electronAPI = (window as any).electronAPI
     if (!electronAPI?.selectBackupPath) {
@@ -204,11 +264,19 @@ export default function SettingsPage() {
     finally { setBackupLoading(false) }
   }
 
+  const loadBackupStatus = async () => {
+    try {
+      const res = await api.get('/admin/backup/status')
+      setBackupStatus(res.data.data || null)
+    } catch {}
+  }
+
   const handleSave = async (values: any) => {
     setSaving(true)
     try {
       await api.put('/admin/settings', values)
       message.success('設定已儲存')
+      loadRetentionPreview()
     } catch { message.error('儲存失敗') }
     finally { setSaving(false) }
   }
@@ -219,6 +287,7 @@ export default function SettingsPage() {
       const res = await api.post('/admin/backup')
       message.success(res.data.message)
       loadBackups()
+      loadBackupStatus()
       notification.info({
         message: '備份完成',
         description: '建議將備份檔複製到外部裝置或雲端儲存，以防止硬碟損壞造成資料遺失。',
@@ -270,25 +339,80 @@ export default function SettingsPage() {
     } catch { message.error('刪除失敗') }
   }
 
+  const handleVerifyBackup = async (name: string) => {
+    setVerifyingBackup(name)
+    try {
+      const res = await api.get(`/backup/verify/${encodeURIComponent(name)}`)
+      const data = res.data.data
+      if (data?.backup_file_ok && data?.signature_ok) {
+        notification.success({ message: '備份驗證通過', description: '完整性、系統 schema 與簽章皆正常。' })
+      } else if (data?.backup_file_ok && data?.trust_level === 'unsigned_legacy') {
+        notification.warning({ message: '備份檔案可用，但缺少簽章', description: '這是舊格式備份。建議重新建立新備份以取得簽章保護。' })
+      } else {
+        notification.error({ message: '備份驗證未通過', description: `狀態：${data?.signature_status || data?.integrity_check || 'unknown'}` })
+      }
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '驗證失敗')
+    } finally {
+      setVerifyingBackup(null)
+    }
+  }
+
   const backupColumns = [
     { title: '備份檔案', dataIndex: 'name', ellipsis: true },
     { title: '大小', dataIndex: 'size', width: 90, render: (s: number) => formatBytes(s) },
+    {
+      title: '簽章',
+      dataIndex: 'signed',
+      width: 90,
+      render: (signed: boolean) => signed
+        ? <Tag color="green">已簽章</Tag>
+        : <Tag color="orange">舊格式</Tag>,
+    },
     { title: '建立時間', dataIndex: 'created_at', width: 150, render: (d: string) => dayjs(d).format('YYYY-MM-DD HH:mm') },
     {
-      title: '操作', width: 60,
+      title: '操作', width: 100,
       render: (_: any, r: any) => (
-        <Popconfirm title="確定刪除此備份？" onConfirm={() => handleDeleteBackup(r.name)}>
-          <Button size="small" icon={<DeleteOutlined />} danger type="text" />
-        </Popconfirm>
+        <Space size={4}>
+          <Button
+            size="small"
+            icon={<CheckCircleOutlined />}
+            loading={verifyingBackup === r.name}
+            onClick={() => handleVerifyBackup(r.name)}
+            type="text"
+          />
+          <Popconfirm title="確定刪除此備份？" onConfirm={() => handleDeleteBackup(r.name)}>
+            <Button size="small" icon={<DeleteOutlined />} danger type="text" />
+          </Popconfirm>
+        </Space>
       ),
     },
   ]
 
+  const dataQualityColumns = [
+    { title: '檢查項目', dataIndex: 'label' },
+    {
+      title: '風險',
+      dataIndex: 'severity',
+      width: 90,
+      render: (severity: string) => <Tag color={severity === 'high' ? 'red' : 'orange'}>{severity === 'high' ? '高' : '中'}</Tag>,
+    },
+    {
+      title: '問題數',
+      dataIndex: 'count',
+      width: 90,
+      render: (count: number) => <Text type={count > 0 ? 'danger' : 'success'} strong>{count}</Text>,
+    },
+  ]
+
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>⚙️ 系統設定</Title>
-      </div>
+    <PageScaffold
+      eyebrow="System Governance"
+      title="系統設定"
+      titleLevel={4}
+      variant="compact"
+      description="集中管理服務處資訊、備份還原、資安連線、資料品質與資料保留政策。"
+    >
 
       {/* 基本設定 */}
       <Card loading={loading} style={{ marginBottom: 16 }}>
@@ -348,6 +472,41 @@ export default function SettingsPage() {
           <Form.Item name="login_lock_minutes" label="鎖定時間（分鐘）">
             <InputNumber min={5} max={60} style={{ width: 150 }} />
           </Form.Item>
+
+          <Divider orientation="left" orientationMargin={0}>資料保留政策</Divider>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="資料保留清理不會硬刪選民主檔"
+            description="系統會封存舊稽核紀錄、刪除舊前端錯誤紀錄，並對超過期限的已停用選民做去識別化。實際執行前仍需在下方預覽並輸入確認字串。"
+          />
+          <Form.Item
+            name="data_retention_enabled"
+            label="啟用資料保留政策"
+            valuePropName="checked"
+            getValueFromEvent={(v: boolean) => v ? '1' : '0'}
+            getValueProps={(v: string) => ({ checked: v === '1' })}
+          >
+            <Switch checkedChildren="啟用" unCheckedChildren="停用" />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item name="retention_audit_archive_days" label="稽核紀錄封存天數">
+                <InputNumber min={30} max={3650} addonAfter="天" style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="retention_client_error_days" label="前端錯誤保留天數">
+                <InputNumber min={7} max={3650} addonAfter="天" style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="retention_soft_deleted_voter_days" label="停用選民去識別天數">
+                <InputNumber min={30} max={3650} addonAfter="天" style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
 
           <Form.Item>
             <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving}>
@@ -489,6 +648,7 @@ export default function SettingsPage() {
           <Text style={{ flex: 1, fontSize: 12, wordBreak: 'break-all' }}>
             備份目錄：<code style={{ fontSize: 11 }}>{backupPath || '（預設）'}</code>
           </Text>
+          {backupPathPolicy.whitelist_enforced && <Tag color="blue">目錄白名單</Tag>}
           {isElectron && (
             <Button
               size="small"
@@ -500,10 +660,28 @@ export default function SettingsPage() {
             </Button>
           )}
         </div>
-        {form.getFieldValue('last_auto_backup') && (
+        {backupPathPolicy.whitelist_enforced && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="備份目錄已啟用白名單限制"
+            description={`允許根目錄：${backupPathPolicy.allowed_roots.join('、')}`}
+          />
+        )}
+        {lastAutoBackup && (
           <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
-            <ClockCircleOutlined /> 上次自動備份：{dayjs(form.getFieldValue('last_auto_backup')).format('YYYY-MM-DD HH:mm')}
+            <ClockCircleOutlined /> 上次自動備份：{dayjs(lastAutoBackup).format('YYYY-MM-DD HH:mm')}
           </Text>
+        )}
+        {backupStatus?.last_error && (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="最近一次自動備份失敗"
+            description={`${backupStatus.last_error_at ? `${dayjs(backupStatus.last_error_at).format('YYYY-MM-DD HH:mm')}：` : ''}${backupStatus.last_error}`}
+          />
         )}
 
         <Table
@@ -591,6 +769,81 @@ export default function SettingsPage() {
       {/* 系統資訊 */}
       <Card title={<><InfoCircleOutlined /> 系統資訊</>} style={{ marginTop: 16 }}>
         <Text>版本：<strong>v{__APP_VERSION__}</strong></Text>
+      </Card>
+
+      {/* 資料品質 */}
+      <Card
+        title={<><DatabaseOutlined /> 資料品質掃描</>}
+        style={{ marginTop: 16 }}
+        extra={<Button size="small" icon={<ReloadOutlined />} loading={dataQualityLoading} onClick={loadDataQuality}>開始掃描</Button>}
+      >
+        {dataQuality ? (
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Alert
+              type={dataQuality.summary?.status === 'ok' ? 'success' : dataQuality.summary?.status === 'attention' ? 'error' : 'warning'}
+              showIcon
+              message={
+                dataQuality.summary?.status === 'ok'
+                  ? '目前未偵測到資料品質問題'
+                  : `偵測到 ${dataQuality.summary?.issue_count || 0} 個資料品質問題`
+              }
+              description={`高風險項目：${dataQuality.summary?.high_issue_count || 0}。掃描時間：${dayjs(dataQuality.checked_at).format('YYYY-MM-DD HH:mm:ss')}`}
+            />
+            <Table
+              size="small"
+              rowKey="key"
+              pagination={false}
+              columns={dataQualityColumns}
+              dataSource={dataQuality.checks || []}
+            />
+          </Space>
+        ) : (
+          <Text type="secondary">可掃描重複手機/身分證、孤兒附件、附件檔案遺失與關聯資料異常。</Text>
+        )}
+      </Card>
+
+      {/* 資料保留 */}
+      <Card
+        title={<><DatabaseOutlined /> 資料保留預覽</>}
+        style={{ marginTop: 16 }}
+        extra={<Button size="small" icon={<ReloadOutlined />} loading={retentionLoading} onClick={loadRetentionPreview}>重新預覽</Button>}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Alert
+            type={retentionPreview?.enabled ? 'warning' : 'info'}
+            showIcon
+            message={retentionPreview?.enabled ? '資料保留政策已啟用' : '資料保留政策尚未啟用'}
+            description="執行前會再次要求輸入 RUN_RETENTION；請先確認近期備份已簽章且可驗證。"
+          />
+          <Row gutter={12}>
+            <Col xs={24} md={8}>
+              <Card size="small">
+                <Text type="secondary">待封存稽核紀錄</Text>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{retentionPreview?.counts?.audit_logs_to_archive ?? 0}</div>
+              </Card>
+            </Col>
+            <Col xs={24} md={8}>
+              <Card size="small">
+                <Text type="secondary">待刪除前端錯誤</Text>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{retentionPreview?.counts?.client_errors_to_delete ?? 0}</div>
+              </Card>
+            </Col>
+            <Col xs={24} md={8}>
+              <Card size="small">
+                <Text type="secondary">待去識別停用選民</Text>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{retentionPreview?.counts?.inactive_voters_to_anonymize ?? 0}</div>
+              </Card>
+            </Col>
+          </Row>
+          <Button
+            danger
+            disabled={!retentionPreview?.enabled}
+            loading={retentionRunning}
+            onClick={() => setRetentionModalOpen(true)}
+          >
+            執行資料保留清理
+          </Button>
+        </Space>
       </Card>
 
       {/* AI 助理設定 */}
@@ -739,6 +992,39 @@ export default function SettingsPage() {
           </div>
         </Space>
       </Modal>
-    </div>
+
+      <Modal
+        title="執行資料保留清理"
+        open={retentionModalOpen}
+        onCancel={() => { setRetentionModalOpen(false); retentionConfirmForm.resetFields() }}
+        onOk={handleRunRetention}
+        okText="確認執行"
+        okButtonProps={{ danger: true, loading: retentionRunning }}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="此操作會封存或清理舊資料"
+          description="請確認已完成最新備份，且備份驗證通過。停用選民會做去識別化以保留關聯完整性，不會硬刪主檔。"
+        />
+        <Form form={retentionConfirmForm} layout="vertical">
+          <Form.Item
+            name="confirm"
+            label="確認字串"
+            rules={[
+              { required: true, message: '請輸入確認字串' },
+              {
+                validator: (_, value) => value === 'RUN_RETENTION'
+                  ? Promise.resolve()
+                  : Promise.reject(new Error('請輸入 RUN_RETENTION')),
+              },
+            ]}
+          >
+            <Input placeholder="RUN_RETENTION" />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </PageScaffold>
   )
 }

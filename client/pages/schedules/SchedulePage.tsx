@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
   Card, Button, Space, Typography, Modal, Form, Input, DatePicker,
-  Select, message, Tag, Drawer, Row, Col, InputNumber, Table, Empty,
+  Select, message, Tag, Drawer, Row, Col, InputNumber, Table,
   Divider, Tabs, Statistic, Popconfirm, Alert, Checkbox, TimePicker
 } from 'antd'
 import { PlusOutlined, PrinterOutlined, FileWordOutlined, GiftOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
@@ -16,8 +16,13 @@ import { useDataSync } from '../../hooks/useDataSync'
 import { SCHEDULE_TYPE_COLORS as TYPE_COLORS, SCHEDULE_TYPE_LABELS as TYPE_LABELS, CEREMONY_SCHEDULE_TYPES, CEREMONY_TYPE_LABELS } from '../../utils/constants'
 import dayjs from 'dayjs'
 import { useThemeStore } from '../../stores/themeStore'
+import PageScaffold from '../../components/ui/PageScaffold'
+import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
+import FormFooter from '../../components/ui/FormFooter'
+import EmptyState from '../../components/ui/EmptyState'
+import FormSection from '../../components/ui/FormSection'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 const { RangePicker } = DatePicker
 
@@ -592,8 +597,30 @@ export default function SchedulePage() {
     dayjs(s.start_time).format('YYYY-MM-DD') === dayjs().format('YYYY-MM-DD')
   )
 
+  const closeScheduleDrawer = () => {
+    setDrawerOpen(false)
+    setEditingScheduleId(null)
+    form.resetFields()
+    setCeremonyItems([])
+    setDrawerScheduleType('')
+  }
+
   return (
-    <div>
+    <PageScaffold
+      eyebrow="Calendar Ops"
+      title="行程管理"
+      titleLevel={4}
+      variant="compact"
+      description="整合日程、諮詢時段、禮儀事件與列印輸出，降低排程衝突。"
+      actions={
+        <>
+          <Button onClick={() => setConsultOpen(true)}>今日諮詢</Button>
+          <Button onClick={() => { setSlotDate(dayjs().format('YYYY-MM-DD')); fetchSlots(dayjs().format('YYYY-MM-DD')); setSlotMgrOpen(true) }}>諮詢時段</Button>
+          <Button icon={<PrinterOutlined />} onClick={() => { setPrintStartDate(dayjs()); setPrintModalOpen(true) }}>列印行程</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setDrawerOpen(true) }}>新增行程</Button>
+        </>
+      }
+    >
       <style>{`
         .fc-dark { background: #1f1f1f; color: #ccc; }
         .fc-dark .fc-toolbar-title { color: #ccc; }
@@ -605,17 +632,14 @@ export default function SchedulePage() {
         .fc-dark .fc-button:hover { background: #444; }
         .fc-dark .fc-button-primary:not(:disabled).fc-button-active { background: #007AFF; border-color: #007AFF; }
       `}</style>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>📅 行程管理</Title>
-        <Space>
-          <Button onClick={() => setConsultOpen(true)}>今日諮詢</Button>
-          <Button onClick={() => { setSlotDate(dayjs().format('YYYY-MM-DD')); fetchSlots(dayjs().format('YYYY-MM-DD')); setSlotMgrOpen(true) }}>諮詢時段</Button>
-          <Button icon={<PrinterOutlined />} onClick={() => { setPrintStartDate(dayjs()); setPrintModalOpen(true) }}>列印行程</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setDrawerOpen(true) }}>新增行程</Button>
-        </Space>
-      </div>
 
-      <Card style={{ marginBottom: 12 }}>
+      <WorkspaceToolbar
+        title="行程篩選"
+        description="搜尋標題、地點或備註，並依類型與狀態聚焦月曆。"
+        meta={(searchKeyword || filterType || filterStatus)
+          ? <Text type="secondary">顯示 {filteredSchedules.length} / {schedules.length} 筆</Text>
+          : <Text type="secondary">共 {schedules.length} 筆</Text>}
+      >
         <Space wrap>
           <Input.Search
             placeholder="搜尋行程標題、地點、備註"
@@ -636,11 +660,8 @@ export default function SchedulePage() {
           {(searchKeyword || filterType || filterStatus) && (
             <Button onClick={() => { setSearchKeyword(''); setFilterType(''); setFilterStatus('') }}>清除篩選</Button>
           )}
-          {(searchKeyword || filterType || filterStatus) && (
-            <span style={{ color: '#888', fontSize: 13 }}>顯示 {filteredSchedules.length} / {schedules.length} 筆</span>
-          )}
         </Space>
-      </Card>
+      </WorkspaceToolbar>
 
       <Card>
         <FullCalendar
@@ -717,46 +738,47 @@ export default function SchedulePage() {
 
       {/* 新增行程 */}
       <Drawer title={editingScheduleId ? '編輯行程' : '新增行程'} open={drawerOpen}
-        onClose={() => { setDrawerOpen(false); setEditingScheduleId(null); form.resetFields(); setCeremonyItems([]); setDrawerScheduleType('') }}
+        onClose={closeScheduleDrawer}
         width={560} destroyOnClose
-        footer={<Space><Button onClick={() => { setDrawerOpen(false); setEditingScheduleId(null); form.resetFields(); setCeremonyItems([]); setDrawerScheduleType('') }}>取消</Button><Button type="primary" onClick={() => form.submit()}>儲存</Button></Space>}>
+        footer={<FormFooter onCancel={closeScheduleDrawer} onSubmit={() => form.submit()} />}>
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="title" label="行程標題" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="time_range" label="時間" rules={[{ required: true }]}>
-            <RangePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm" minuteStep={15} />
-          </Form.Item>
-          <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item name="schedule_type" label="行程類型">
-                <Select allowClear onChange={v => setDrawerScheduleType(v || '')}>
-                  {(scheduleTypes.length > 0
-                    ? scheduleTypes
-                    : Object.entries(TYPE_LABELS).map(([code, name]) => ({ code, name, color: TYPE_COLORS[code] || '#8c8c8c' }))
-                  ).map(t => (
-                    <Option key={t.code} value={t.code}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: t.color, display: 'inline-block' }} />
-                        {t.name}
-                      </span>
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="location" label="地點"><Input /></Form.Item>
-            </Col>
-          </Row>
-          <Form.Item name="note" label="備註"><Input.TextArea rows={2} /></Form.Item>
-          <Form.Item name="related_group_ids" label="相關團體">
-            <Select mode="multiple" allowClear placeholder="選擇相關團體（可複選）" optionFilterProp="label"
-              options={groupList.map((g: any) => ({ value: g.id, label: g.name }))} />
-          </Form.Item>
+          <FormSection title="行程基本資料" description="設定時間、類型、地點與相關團體，避免跨日與同時段衝突。">
+            <Form.Item name="title" label="行程標題" rules={[{ required: true }]}><Input /></Form.Item>
+            <Form.Item name="time_range" label="時間" rules={[{ required: true }]}>
+              <RangePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm" minuteStep={15} />
+            </Form.Item>
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item name="schedule_type" label="行程類型">
+                  <Select allowClear onChange={v => setDrawerScheduleType(v || '')}>
+                    {(scheduleTypes.length > 0
+                      ? scheduleTypes
+                      : Object.entries(TYPE_LABELS).map(([code, name]) => ({ code, name, color: TYPE_COLORS[code] || '#8c8c8c' }))
+                    ).map(t => (
+                      <Option key={t.code} value={t.code}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: '50%', background: t.color, display: 'inline-block' }} />
+                          {t.name}
+                        </span>
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="location" label="地點"><Input /></Form.Item>
+              </Col>
+            </Row>
+            <Form.Item name="note" label="備註"><Input.TextArea rows={2} /></Form.Item>
+            <Form.Item name="related_group_ids" label="相關團體">
+              <Select mode="multiple" allowClear placeholder="選擇相關團體（可複選）" optionFilterProp="label"
+                options={groupList.map((g: any) => ({ value: g.id, label: g.name }))} />
+            </Form.Item>
+          </FormSection>
 
           {/* 公祭特殊資訊 */}
           {isPublicMemorial && (
-            <>
-              <Divider style={{ borderColor: '#4a1942' }}><span style={{ color: '#4a1942' }}>⛩ 公祭資訊</span></Divider>
+            <FormSection title="公祭資訊" description="記錄家祭、公祭時間與地點，方便列印與現場支援。">
               <Row gutter={12}>
                 <Col span={12}>
                   <Form.Item name="family_ceremony_time" label="家祭時間">
@@ -784,13 +806,12 @@ export default function SchedulePage() {
               <Form.Item name="deceased_age" label="往生者年齡">
                 <InputNumber min={1} max={150} style={{ width: 120 }} addonAfter="歲" />
               </Form.Item>
-            </>
+            </FormSection>
           )}
 
           {/* 禮儀子表單 */}
           {isCeremonyType && (
-            <>
-              <Divider><GiftOutlined /> 禮儀資訊</Divider>
+            <FormSection title="禮儀資訊" description="禮儀性質、受贈人與品項會同步形成支出紀錄。">
               <Row gutter={12}>
                 <Col span={12}>
                   <Form.Item name="ceremony_type" label="禮儀性質">
@@ -927,7 +948,7 @@ export default function SchedulePage() {
                   </Text>
                 </div>
               )}
-            </>
+            </FormSection>
           )}
         </Form>
       </Drawer>
@@ -936,7 +957,7 @@ export default function SchedulePage() {
       <Modal title={`今日法律諮詢（${todayConsults.length} 件）`}
         open={consultOpen} onCancel={() => setConsultOpen(false)} footer={null}>
         {todayConsults.length === 0 ? (
-          <Empty description="今日無諮詢排程" />
+          <EmptyState title="今日無諮詢排程" description="若有法律諮詢行程，會在此快速立案。" />
         ) : (
           <Table size="small" pagination={false} dataSource={todayConsults} rowKey="id"
             columns={[
@@ -975,7 +996,7 @@ export default function SchedulePage() {
           dataSource={slots}
           rowKey="id"
           pagination={false}
-          locale={{ emptyText: <Empty description="此日期尚無時段" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+          locale={{ emptyText: <EmptyState title="此日期尚無時段" description="新增時段後即可控管法律諮詢容量。" /> }}
           columns={[
             { title: '時段', dataIndex: 'slot_time', width: 80 },
             { title: '容量', dataIndex: 'max_capacity', width: 60 },
@@ -1072,7 +1093,7 @@ export default function SchedulePage() {
                       }}>新增禮儀記錄</Button>
                   </div>
                   {detailCeremonies.length === 0
-                    ? <Empty description="尚無禮儀記錄" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                    ? <EmptyState title="尚無禮儀記錄" description="新增後可在行程詳情中追蹤品項、廠商與付款。" />
                     : detailCeremonies.map((c: any) => (
                       <Card key={c.id} size="small" style={{ marginBottom: 10 }}
                         title={
@@ -1309,6 +1330,6 @@ export default function SchedulePage() {
           )}
         </Form>
       </Modal>
-    </div>
+    </PageScaffold>
   )
 }

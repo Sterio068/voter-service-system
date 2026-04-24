@@ -3,10 +3,14 @@ import { Table, Button, Space, Input, Select, Tag, Typography, Card, Drawer, For
 import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, DeleteOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
+import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
+import FormFooter from '../../components/ui/FormFooter'
+import FormSection from '../../components/ui/FormSection'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 
 export default function GroupListPage() {
@@ -114,41 +118,51 @@ export default function GroupListPage() {
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>🏢 團體資料</Title>
-        <Space>
+    <PageScaffold
+      eyebrow="Community Graph"
+      title="團體資料"
+      titleLevel={4}
+      variant="compact"
+      description="管理社區組織、團體類別與成員來源，建立服務網絡。"
+      actions={
+        <>
           <Button icon={<UploadOutlined />} onClick={() => { setImportResult(null); setImportModalOpen(true) }}>批量匯入</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingGroup(null); form.resetFields(); setDrawerOpen(true) }}>新增團體</Button>
-        </Space>
-      </div>
-      <Card style={{ marginBottom: 16 }}>
+        </>
+      }
+    >
+      <WorkspaceToolbar
+        title="團體篩選"
+        description="搜尋團體名稱或依類別聚焦社群網絡。"
+        meta={<Text type="secondary">共 {total} 筆</Text>}
+      >
         <Space wrap>
           <Input.Search placeholder="搜尋團體名稱" allowClear style={{ width: 200 }} onSearch={(v) => { setSearch(v); setPage(1) }} prefix={<SearchOutlined />} />
           <Select placeholder="類別篩選" allowClear style={{ width: 150 }} onChange={(v) => { setFilterCategory(v || ''); setPage(1) }}>
             {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
           </Select>
-          <Text type="secondary">共 {total} 筆</Text>
         </Space>
-      </Card>
+      </WorkspaceToolbar>
       <Card>
         <Table columns={columns} dataSource={data} rowKey="id" loading={loading} size="small"
           pagination={{ current: page, pageSize, total, showTotal: t => `共 ${t} 筆`, onChange: setPage }} scroll={{ x: 800 }} />
       </Card>
       <Drawer title={editingGroup ? '編輯團體' : '新增團體'} open={drawerOpen} onClose={() => setDrawerOpen(false)} width={500}
         destroyOnClose
-        footer={<Space><Button onClick={() => setDrawerOpen(false)}>取消</Button><Button type="primary" onClick={() => form.submit()}>儲存</Button></Space>}>
+        footer={<FormFooter onCancel={() => setDrawerOpen(false)} onSubmit={() => form.submit()} />}>
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="name" label="團體名稱" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="category" label="團體類別">
-            <Select allowClear>{categories.map(c => <Option key={c} value={c}>{c}</Option>)}</Select>
-          </Form.Item>
-          <Row gutter={12}>
-            <Col span={12}><Form.Item name="phone" label="聯絡電話"><Input /></Form.Item></Col>
-            <Col span={12}><Form.Item name="member_count" label="預估成員數"><Input type="number" /></Form.Item></Col>
-          </Row>
-          <Form.Item name="address" label="地址"><Input /></Form.Item>
-          <Form.Item name="note" label="備註"><Input.TextArea rows={3} /></Form.Item>
+          <FormSection title="團體基本資料" description="先建立團體名稱、分類與聯絡方式，後續可再管理成員。">
+            <Form.Item name="name" label="團體名稱" rules={[{ required: true }]}><Input /></Form.Item>
+            <Form.Item name="category" label="團體類別">
+              <Select allowClear>{categories.map(c => <Option key={c} value={c}>{c}</Option>)}</Select>
+            </Form.Item>
+            <Row gutter={12}>
+              <Col span={12}><Form.Item name="phone" label="聯絡電話"><Input /></Form.Item></Col>
+              <Col span={12}><Form.Item name="member_count" label="預估成員數"><Input type="number" /></Form.Item></Col>
+            </Row>
+            <Form.Item name="address" label="地址"><Input /></Form.Item>
+            <Form.Item name="note" label="備註"><Input.TextArea rows={3} /></Form.Item>
+          </FormSection>
         </Form>
       </Drawer>
       {/* 批量匯入 Modal */}
@@ -183,6 +197,6 @@ export default function GroupListPage() {
           )}
         </Space>
       </Modal>
-    </div>
+    </PageScaffold>
   )
 }

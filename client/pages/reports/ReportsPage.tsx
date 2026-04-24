@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Tabs, Select, Typography, Space, Button, Alert, Modal, Form, Input, message } from 'antd'
+import { Card, Tabs, Select, Button, Alert, Modal, Form, Input, message } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
 import { useThemeStore } from '../../stores/themeStore'
 import { usePersistedState, exportToPDF } from './utils'
+import PageScaffold from '../../components/ui/PageScaffold'
+import { useAuthStore } from '../../stores/authStore'
+import { hasModulePermission } from '../../utils/permissions'
 
 import ReportsHome from './components/ReportsHome'
 import AssigneeWorkload from './components/AssigneeWorkload'
@@ -25,11 +28,12 @@ import TeamEfficiency from './components/TeamEfficiency'
 import SurveyCrossAnalysis from './components/SurveyCrossAnalysis'
 import AssigneeLoadIndex from './components/AssigneeLoadIndex'
 
-const { Title } = Typography
 const { Option } = Select
 
 export default function ReportsPage() {
   const currentYear = new Date().getFullYear().toString()
+  const { user } = useAuthStore()
+  const canExportReports = hasModulePermission(user?.role, 'reports', 'export')
   const [year, setYear] = usePersistedState('monthly_year', currentYear)
   const years = [String(new Date().getFullYear()), String(new Date().getFullYear()-1), String(new Date().getFullYear()-2)]
   const [activeTab, setActiveTab] = useState('home')
@@ -162,10 +166,14 @@ ${eData.map((r: any) => `<tr><td>${r.category || '未分類'}</td><td>${r.total_
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>📊 進階報表</Title>
-        <Space>
+    <PageScaffold
+      eyebrow="Decision Analytics"
+      title="進階報表"
+      titleLevel={4}
+      variant="compact"
+      description="集中查看服務量能、選區缺口、案件風險與月報輸出。"
+      actions={
+        <>
           {systemAlerts.length > 0 && (
             <Alert
               type="warning"
@@ -176,25 +184,37 @@ ${eData.map((r: any) => `<tr><td>${r.category || '未分類'}</td><td>${r.total_
               style={{ marginBottom: 0 }}
             />
           )}
-          <Button onClick={() => setNarrativeOpen(true)}>匯出月報</Button>
-          <Button onClick={() => handleExportPDF(narrative)}>匯出 PDF</Button>
-          <Modal title="月報匯出設定" open={narrativeOpen} onCancel={() => setNarrativeOpen(false)}
-            onOk={() => { handleExportReport(narrative); setNarrativeOpen(false) }} okText="匯出" destroyOnClose>
-            <Form layout="vertical">
-              <Form.Item label="主任綜整說明（可留空）">
-                <Input.TextArea rows={4} value={narrative} onChange={e => setNarrative(e.target.value)}
-                  placeholder="例如：本月陳情量較上月增加12%，主要集中在交通類議題，已協調相關局處優先處理..." />
-              </Form.Item>
-            </Form>
-          </Modal>
+          {canExportReports && (
+            <>
+              <Button onClick={() => setNarrativeOpen(true)}>匯出月報</Button>
+              <Button onClick={() => handleExportPDF(narrative)}>匯出 PDF</Button>
+              <Modal
+                title="月報匯出設定"
+                open={narrativeOpen}
+                onCancel={() => setNarrativeOpen(false)}
+                onOk={() => { handleExportReport(narrative); setNarrativeOpen(false) }}
+                okText="確認匯出月報"
+                cancelText="取消"
+                destroyOnClose
+              >
+                <Form layout="vertical">
+                  <Form.Item label="主任綜整說明（可留空）">
+                    <Input.TextArea rows={4} value={narrative} onChange={e => setNarrative(e.target.value)}
+                      placeholder="例如：本月陳情量較上月增加12%，主要集中在交通類議題，已協調相關局處優先處理..." />
+                  </Form.Item>
+                </Form>
+              </Modal>
+            </>
+          )}
           <Select value={year} onChange={setYear} style={{ width: 100 }}>
             {years.map(y => <Option key={y} value={y}>{y}年</Option>)}
           </Select>
-        </Space>
-      </div>
+        </>
+      }
+    >
       <Card>
         <Tabs items={tabItems} activeKey={activeTab} onChange={setActiveTab} defaultActiveKey="home" />
       </Card>
-    </div>
+    </PageScaffold>
   )
 }

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { Table, Button, Space, Tag, Typography, Card, Modal, Form, Input, Select, message, Switch, Popconfirm } from 'antd'
+import { Table, Button, Space, Tag, Card, Modal, Form, Input, Select, message, Switch } from 'antd'
 import { PlusOutlined, EditOutlined, KeyOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
 import { ROLE_LABELS, ROLE_COLORS } from '../../utils/constants'
+import PageScaffold from '../../components/ui/PageScaffold'
 import dayjs from 'dayjs'
 
-const { Title } = Typography
 const { Option } = Select
 
 export default function UserManagePage() {
@@ -82,11 +82,14 @@ export default function UserManagePage() {
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>👤 帳號維護</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingUser(null); form.resetFields(); setModalOpen(true) }}>新增帳號</Button>
-      </div>
+    <PageScaffold
+      eyebrow="Access Control"
+      title="帳號維護"
+      titleLevel={4}
+      variant="compact"
+      description="管理系統帳號、角色權限與密碼重設，支援最小權限治理。"
+      actions={<Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingUser(null); form.resetFields(); setModalOpen(true) }}>新增帳號</Button>}
+    >
       <Card>
         <Table columns={columns} dataSource={data} rowKey="id" loading={loading} size="small" pagination={false} />
       </Card>
@@ -121,6 +124,6 @@ export default function UserManagePage() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </PageScaffold>
   )
 }

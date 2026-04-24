@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+import { getSetting } from '../utils/settings'
 
 // LINE Webhook integration
 // Setup requirements:
@@ -24,13 +25,18 @@ export default async function lineWebhookRoutes(fastify: FastifyInstance) {
 
   // Receive LINE events (POST)
   fastify.post('/api/line/webhook', {
-    config: { rawBody: true } // need raw body for signature verification
+    config: {
+      rawBody: true, // need raw body for signature verification
+      rateLimit: {
+        max: 120,
+        timeWindow: '1 minute',
+      },
+    },
   }, async (request, reply) => {
     const body = request.body as any
 
     // Get channel secret from settings
-    const secretRow = db.prepare("SELECT value FROM settings WHERE key='line_channel_secret'").get() as any
-    const channelSecret = secretRow?.value || ''
+    const channelSecret = getSetting('line_channel_secret') || ''
 
     // Get raw body for signature verification
     const rawBody = JSON.stringify(request.body)
@@ -97,8 +103,7 @@ export default async function lineWebhookRoutes(fastify: FastifyInstance) {
   // GET /api/line/status - check LINE integration status (C-4: requires admin permission)
   fastify.get('/api/line/status', { preHandler: [requirePermission('admin', 'view')] }, async (request, reply) => {
     const linkedCount = (db.prepare(`SELECT COUNT(*) as c FROM voters WHERE tags LIKE '%LINE:%' AND is_active=1`).get() as any).c
-    const secretRow = db.prepare("SELECT value FROM settings WHERE key='line_channel_secret'").get() as any
-    const channelSecretConfigured = !!(secretRow?.value)
+    const channelSecretConfigured = !!getSetting('line_channel_secret')
     return reply.send({ success: true, data: { linked_voters: linkedCount, webhook_active: true, channel_secret_configured: channelSecretConfigured } })
   })
 }

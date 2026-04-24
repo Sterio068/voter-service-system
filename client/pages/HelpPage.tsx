@@ -1,13 +1,15 @@
 import React, { useState } from 'react'
 import { Typography, Collapse, Steps, Alert, Tag, Divider, Card, Space, Table } from 'antd'
 import {
-  BookOutlined, CalendarOutlined, TeamOutlined, FileTextOutlined,
+  CalendarOutlined, TeamOutlined, FileTextOutlined,
   MailOutlined, CheckSquareOutlined, SettingOutlined,
   InfoCircleOutlined, SafetyOutlined, TagsOutlined,
   DashboardOutlined, SwapOutlined, MobileOutlined,
   GiftOutlined, ShopOutlined, DollarOutlined, PrinterOutlined,
   ProfileOutlined, RobotOutlined,
 } from '@ant-design/icons'
+import PageScaffold from '../components/ui/PageScaffold'
+import { buildHelpRoleData } from '../utils/helpAccess'
 
 const { Title, Paragraph, Text, Link } = Typography
 const { Panel } = Collapse
@@ -58,22 +60,7 @@ const shortcutData = [
 ]
 
 // ── 角色權限表格 ──────────────────────────────────────────
-const roleData = [
-  { module: '選民資料', admin: '✅ 完整', supervisor: '✅ 完整', assistant: '✅ 完整', volunteer: '👁 僅檢視' },
-  { module: '陳情案件', admin: '✅ 完整', supervisor: '✅ 完整', assistant: '✅ 完整', volunteer: '👁 僅檢視' },
-  { module: '公文管理', admin: '✅ 完整', supervisor: '✅ 完整', assistant: '✅ 完整', volunteer: '❌' },
-  { module: '行程管理', admin: '✅ 完整', supervisor: '✅ 完整', assistant: '✅ 完整', volunteer: '👁 僅檢視' },
-  { module: '禮儀記錄', admin: '✅ 完整', supervisor: '✅ 完整', assistant: '✅ 完整', volunteer: '👁 僅檢視' },
-  { module: '廠商管理', admin: '✅ 完整', supervisor: '✅ 完整', assistant: '✅ 完整', volunteer: '👁 僅檢視' },
-  { module: '收支統計', admin: '✅ 完整', supervisor: '✅ 完整', assistant: '✅ 完整', volunteer: '❌' },
-  { module: '待辦事項', admin: '✅ 完整', supervisor: '✅ 完整', assistant: '✅ 完整', volunteer: '👁 僅檢視' },
-  { module: '報表統計', admin: '✅', supervisor: '✅', assistant: '❌', volunteer: '❌' },
-  { module: '帳號維護', admin: '✅', supervisor: '❌', assistant: '❌', volunteer: '❌' },
-  { module: '系統設定', admin: '✅', supervisor: '✅', assistant: '❌', volunteer: '❌' },
-  { module: '類別管理', admin: '✅', supervisor: '✅', assistant: '❌', volunteer: '❌' },
-  { module: '提案追蹤', admin: '✅ 完整', supervisor: '✅ 完整', assistant: '✅ 完整', volunteer: '👁 僅檢視' },
-  { module: 'AI 助理', admin: '✅', supervisor: '✅', assistant: '✅', volunteer: '❌' },
-]
+const roleData = buildHelpRoleData()
 
 const roleColumns = [
   { title: '模組', dataIndex: 'module', key: 'module', width: 120 },
@@ -86,15 +73,14 @@ const roleColumns = [
 // ── 主頁面 ────────────────────────────────────────────────
 export default function HelpPage() {
   return (
+    <PageScaffold
+      eyebrow="Guide Center"
+      title="使用說明"
+      titleLevel={4}
+      variant="compact"
+      description="整理角色權限、快捷鍵、主要模組操作與部署維運注意事項。"
+    >
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 0 40px' }}>
-      <div style={{ marginBottom: 28 }}>
-        <Title level={2} style={{ marginBottom: 4 }}>
-          <BookOutlined style={{ marginRight: 10, color: '#007AFF' }} />
-          使用說明
-        </Title>
-        <Text type="secondary">選民服務系統完整使用教學 · 版本 1.5</Text>
-      </div>
-
       <Collapse
         defaultActiveKey={['intro', 'gcal']}
         style={{ background: 'transparent', border: 'none' }}
@@ -123,14 +109,17 @@ export default function HelpPage() {
 
           <SubSection title="角色說明">
             <ul>
-              <li><Tag color="red">管理員</Tag> 擁有所有功能權限，包含帳號維護、系統設定、備份</li>
-              <li><Tag color="orange">主管</Tag> 可使用所有業務功能及報表，但不能管理帳號</li>
-              <li><Tag color="blue">助理</Tag> 可執行日常業務（陳情、公文、行程、待辦）</li>
-              <li><Tag color="default">志工</Tag> 僅能檢視選民、陳情、行程資料</li>
+              <li><Tag color="red">管理員</Tag> 擁有完整業務與管理權限，可操作帳號、稽核、設定、交接與日誌。</li>
+              <li><Tag color="orange">主管</Tag> 可處理主要業務、報表與收支，也能查看稽核與系統設定，但不能管理帳號。</li>
+              <li><Tag color="blue">助理</Tag> 可新增與編修核心業務資料，能看報表與類別；禮儀、廠商與收支目前以唯讀為主。</li>
+              <li><Tag color="default">志工</Tag> 以唯讀為主，可查看選民、陳情、團體、公文、行程、禮儀、待辦與提案資料。</li>
             </ul>
           </SubSection>
 
           <SubSection title="角色權限總表">
+            <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+              下表依目前系統的實際 route guard 與模組權限自動整理；若後續角色設定調整，這裡會同步反映。
+            </Paragraph>
             <Table
               dataSource={roleData}
               columns={roleColumns}
@@ -381,12 +370,12 @@ export default function HelpPage() {
           </Paragraph>
           <SubSection title="新增禮儀記錄">
             <StepCard steps={[
-              { title: '方式一：新增/查看行程 → 「禮儀記錄」分頁 → 「＋ 新增禮儀記錄」' },
-              { title: '方式二：左側選單「禮儀記錄」→ 在清單頁直接編輯' },
+              { title: '方式一：左側選單「禮儀記錄」→ 右上角「新增禮儀記錄」' },
+              { title: '方式二：新增/查看行程 → 「禮儀記錄」分頁 → 「＋ 新增禮儀記錄」以自動關聯行程' },
               { title: '填寫禮儀性質、受贈人姓名（必填）、關係、活動日期、地點' },
               { title: '若為多人聯合致贈，勾選「聯合致贈」並填寫聯合人說明' },
               { title: '點選「＋ 新增品項」逐筆填寫送禮明細（品項、廠商、數量、單價）' },
-              { title: '確認付款方式（現金/轉帳/刷卡）及付款狀態，儲存' },
+              { title: '確認付款狀態與總金額後儲存' },
             ]} />
           </SubSection>
           <SubSection title="禮儀記錄清單頁">
@@ -1218,5 +1207,6 @@ export default function HelpPage() {
 
       </Collapse>
     </div>
+    </PageScaffold>
   )
 }

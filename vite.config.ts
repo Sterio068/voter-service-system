@@ -19,7 +19,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'antd-vendor': ['antd', '@ant-design/icons'],
           'chart-vendor': ['recharts'],
           'calendar-vendor': [
             '@fullcalendar/react',
@@ -28,7 +27,7 @@ export default defineConfig({
             '@fullcalendar/timegrid',
             '@fullcalendar/interaction',
           ],
-          'file-vendor': ['xlsx', 'docx'],
+          'file-vendor': ['@e965/xlsx', 'docx'],
           'util-vendor': ['dayjs', 'axios', 'zustand'],
         },
       },

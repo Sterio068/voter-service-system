@@ -1,17 +1,17 @@
 import { FastifyInstance } from 'fastify'
 import { db } from '../db/index'
-import { authenticate } from '../middleware/auth'
+import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
 
 export default async function ceremonyRoutes(fastify: FastifyInstance) {
   // GET /api/gift-categories
-  fastify.get('/api/gift-categories', { preHandler: [authenticate] }, async (_request, reply) => {
+  fastify.get('/api/gift-categories', { preHandler: [requirePermission('categories', 'view')] }, async (_request, reply) => {
     const data = db.prepare('SELECT * FROM gift_categories WHERE is_active=1 ORDER BY sort_order, id').all()
     return reply.send({ success: true, data })
   })
 
   // POST /api/gift-categories
-  fastify.post('/api/gift-categories', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.post('/api/gift-categories', { preHandler: [requirePermission('categories', 'create')] }, async (request, reply) => {
     const body = request.body as any
     if (!body.name?.trim()) return reply.code(400).send({ success: false, error: '類別名稱為必填' })
     const max = (db.prepare('SELECT MAX(sort_order) as m FROM gift_categories').get() as any).m || 0
@@ -20,7 +20,7 @@ export default async function ceremonyRoutes(fastify: FastifyInstance) {
   })
 
   // PUT /api/gift-categories/:id
-  fastify.put('/api/gift-categories/:id', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.put('/api/gift-categories/:id', { preHandler: [requirePermission('categories', 'edit')] }, async (request, reply) => {
     const { id } = request.params as any
     const body = request.body as any
     if (!body.name?.trim()) return reply.code(400).send({ success: false, error: '類別名稱為必填' })
@@ -29,14 +29,14 @@ export default async function ceremonyRoutes(fastify: FastifyInstance) {
   })
 
   // DELETE /api/gift-categories/:id
-  fastify.delete('/api/gift-categories/:id', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.delete('/api/gift-categories/:id', { preHandler: [requirePermission('categories', 'delete')] }, async (request, reply) => {
     const { id } = request.params as any
     db.prepare('UPDATE gift_categories SET is_active=0 WHERE id=?').run(Number(id))
     return reply.send({ success: true })
   })
 
   // GET /api/ceremonies
-  fastify.get('/api/ceremonies', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.get('/api/ceremonies', { preHandler: [requirePermission('ceremonies', 'view')] }, async (request, reply) => {
     const { ceremony_type, status, voter_id, schedule_id, year, month, search, page = 1, pageSize = 20 } = request.query as any
     const pg = Math.max(1, Number(page) || 1)
     const ps = Math.min(200, Math.max(1, Number(pageSize) || 20))
@@ -78,7 +78,7 @@ export default async function ceremonyRoutes(fastify: FastifyInstance) {
   })
 
   // GET /api/ceremonies/:id
-  fastify.get('/api/ceremonies/:id', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.get('/api/ceremonies/:id', { preHandler: [requirePermission('ceremonies', 'view')] }, async (request, reply) => {
     const { id } = request.params as any
     const record = db.prepare(`
       SELECT cr.*, v.name as voter_name, s.title as schedule_title
@@ -100,7 +100,7 @@ export default async function ceremonyRoutes(fastify: FastifyInstance) {
   })
 
   // GET /api/ceremonies/by-schedule/:scheduleId
-  fastify.get('/api/ceremonies/by-schedule/:scheduleId', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.get('/api/ceremonies/by-schedule/:scheduleId', { preHandler: [requirePermission('ceremonies', 'view')] }, async (request, reply) => {
     const { scheduleId } = request.params as any
     const records = db.prepare(`
       SELECT cr.*, v.name as voter_name
@@ -124,7 +124,7 @@ export default async function ceremonyRoutes(fastify: FastifyInstance) {
   })
 
   // POST /api/ceremonies
-  fastify.post('/api/ceremonies', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.post('/api/ceremonies', { preHandler: [requirePermission('ceremonies', 'create')] }, async (request, reply) => {
     const body = request.body as any
     if (!body.recipient_name?.trim()) return reply.code(400).send({ success: false, error: '受贈人姓名為必填' })
     const items: any[] = Array.isArray(body.items) ? body.items : []
@@ -154,7 +154,7 @@ export default async function ceremonyRoutes(fastify: FastifyInstance) {
   })
 
   // PUT /api/ceremonies/:id
-  fastify.put('/api/ceremonies/:id', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.put('/api/ceremonies/:id', { preHandler: [requirePermission('ceremonies', 'edit')] }, async (request, reply) => {
     const { id } = request.params as any
     const body = request.body as any
     if (!body.recipient_name?.trim()) return reply.code(400).send({ success: false, error: '受贈人姓名為必填' })
@@ -185,7 +185,7 @@ export default async function ceremonyRoutes(fastify: FastifyInstance) {
   })
 
   // DELETE /api/ceremonies/:id
-  fastify.delete('/api/ceremonies/:id', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.delete('/api/ceremonies/:id', { preHandler: [requirePermission('ceremonies', 'delete')] }, async (request, reply) => {
     const { id } = request.params as any
     const existing = db.prepare('SELECT recipient_name FROM ceremony_records WHERE id=?').get(Number(id)) as any
     db.exec('BEGIN')

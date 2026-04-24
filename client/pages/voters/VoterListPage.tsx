@@ -1,21 +1,28 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Table, Button, Space, Input, Select, Tag, Typography, Card,
-  Modal, Form, DatePicker, Radio, Drawer, Row, Col, Divider, message, Popconfirm, Upload, Alert, Progress, Empty, notification, Popover, Spin
+  Modal, Form, DatePicker, Radio, Drawer, Row, Col, message, Popconfirm, Upload, Alert, Progress, notification, Popover, Spin
 } from 'antd'
 import {
   PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, EyeOutlined,
   DownloadOutlined, UploadOutlined, FileExcelOutlined, FilterOutlined, TagsOutlined, StarOutlined
 } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useDataSync } from '../../hooks/useDataSync'
+import PageScaffold from '../../components/ui/PageScaffold'
+import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
+import EmptyState from '../../components/ui/EmptyState'
+import FormFooter from '../../components/ui/FormFooter'
+import SelectionActionBar from '../../components/ui/SelectionActionBar'
+import FormSection from '../../components/ui/FormSection'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import type { UploadFile } from 'antd/es/upload'
+import { hasModulePermission } from '../../utils/permissions'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 
 const TAG_COLORS: Record<string, string> = {
@@ -24,7 +31,12 @@ const TAG_COLORS: Record<string, string> = {
 
 export default function VoterListPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuthStore()
+  const canCreateVoter = hasModulePermission(user?.role, 'voters', 'create')
+  const canEditVoter = hasModulePermission(user?.role, 'voters', 'edit')
+  const canDeleteVoter = hasModulePermission(user?.role, 'voters', 'delete')
+  const canExportVoter = hasModulePermission(user?.role, 'voters', 'export')
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<any[]>([])
   const [total, setTotal] = useState(0)
@@ -45,6 +57,8 @@ export default function VoterListPage() {
   const [importResult, setImportResult] = useState<any>(null)
   const [preCheckResult, setPreCheckResult] = useState<any>(null)
   const [exporting, setExporting] = useState(false)
+  const [fullExportOpen, setFullExportOpen] = useState(false)
+  const [fullExportForm] = Form.useForm()
   const [duplicateWarning, setDuplicateWarning] = useState('')
 
   // U-7: Batch selection state
@@ -119,6 +133,17 @@ export default function VoterListPage() {
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('action') === 'new' && canCreateVoter) {
+      setEditingVoter(null)
+      setDuplicateWarning('')
+      setMobileDupWarning('')
+      setIdNumberDupWarning('')
+      form.resetFields()
+      setDrawerOpen(true)
+    }
+  }, [location.search, canCreateVoter, form])
 
   useDataSync((events) => {
     const hasVoterChange = events.some(e => e.target_type === 'voter')
@@ -292,6 +317,8 @@ export default function VoterListPage() {
       form.resetFields()
       setEditingVoter(null)
       setDuplicateWarning('')
+      setMobileDupWarning('')
+      setIdNumberDupWarning('')
       fetchVoters()
     } catch (err: any) {
       message.error(err.response?.data?.error || '儲存失敗')
@@ -319,7 +346,7 @@ export default function VoterListPage() {
     }
   }
 
-  const handleExport = async () => {
+  const handleExport = async (options: { includeSensitive?: boolean; reason?: string } = {}) => {
     setExporting(true)
     try {
       const params: any = {}
@@ -328,6 +355,12 @@ export default function VoterListPage() {
       if (filterDistrict) params.district = filterDistrict
       if (filterVillage) params.village = filterVillage
       if (filterTag) params.tag = filterTag
+      if (options.includeSensitive) {
+        params.include_sensitive = '1'
+        params.reason = options.reason
+      } else {
+        params.mask = '1'
+      }
       const res = await api.get('/voters/export', { params, responseType: 'blob' })
       const url = URL.createObjectURL(res.data)
       const a = document.createElement('a')
@@ -336,11 +369,20 @@ export default function VoterListPage() {
       a.click()
       URL.revokeObjectURL(url)
       message.success('匯出成功')
-    } catch {
-      message.error('匯出失敗')
+      if (options.includeSensitive) {
+        setFullExportOpen(false)
+        fullExportForm.resetFields()
+      }
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '匯出失敗')
     } finally {
       setExporting(false)
     }
+  }
+
+  const handleFullExport = async () => {
+    const values = await fullExportForm.validateFields()
+    await handleExport({ includeSensitive: true, reason: values.reason })
   }
 
   const handleDownloadTemplate = async () => {
@@ -457,36 +499,68 @@ export default function VoterListPage() {
       width: 120,
       render: (_, record) => (
         <Space>
-          <Button size="small" icon={<EyeOutlined />} onClick={() => navigate(`/voters/${record.id}`)} />
-          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
-          <Popconfirm title={`確定停用「${record.name}」？`} onConfirm={() => handleDelete(record.id, record.name)}>
-            <Button size="small" icon={<DeleteOutlined />} danger />
-          </Popconfirm>
+          <Button
+            size="small"
+            icon={<EyeOutlined />}
+            aria-label="查看選民"
+            onClick={() => navigate(`/voters/${record.id}`)}
+          />
+          {canEditVoter && (
+            <Button
+              size="small"
+              icon={<EditOutlined />}
+              aria-label="編輯選民"
+              onClick={() => handleEdit(record)}
+            />
+          )}
+          {canDeleteVoter && (
+            <Popconfirm title={`確定停用「${record.name}」？`} onConfirm={() => handleDelete(record.id, record.name)}>
+              <Button size="small" icon={<DeleteOutlined />} aria-label="停用選民" danger />
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>👥 選民資料</Title>
-        <Space>
-          {(user?.role === 'admin' || user?.role === 'supervisor') && (
+    <PageScaffold
+      eyebrow="Voter CRM"
+      title="選民資料"
+      titleLevel={4}
+      variant="compact"
+      description="集中管理名冊、標籤、匯入匯出與個資保護作業。"
+      actions={
+        <>
+          {canExportVoter && (
             <>
-              <Button icon={<DownloadOutlined />} onClick={handleExport} loading={exporting}>匯出 Excel</Button>
-              <Button icon={<UploadOutlined />} onClick={() => { setImportFile(null); setImportResult(null); setPreCheckResult(null); setImportModalOpen(true) }}>批次匯入</Button>
+              <Button icon={<DownloadOutlined />} onClick={() => handleExport()} loading={exporting}>匯出 Excel（遮罩）</Button>
+              {user?.role === 'admin' && (
+                <Button danger icon={<DownloadOutlined />} onClick={() => setFullExportOpen(true)} loading={exporting}>
+                  完整匯出
+                </Button>
+              )}
             </>
           )}
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => {
-            setEditingVoter(null); form.resetFields(); setDrawerOpen(true)
-          }}>
-            新增選民
-          </Button>
-        </Space>
-      </div>
+          {canCreateVoter && (
+            <>
+              <Button icon={<UploadOutlined />} onClick={() => { setImportFile(null); setImportResult(null); setPreCheckResult(null); setImportModalOpen(true) }}>批次匯入</Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => {
+                setEditingVoter(null); form.resetFields(); setDrawerOpen(true)
+              }}>
+                新增選民
+              </Button>
+            </>
+          )}
+        </>
+      }
+    >
 
-      <Card style={{ marginBottom: 16 }}>
+      <WorkspaceToolbar
+        title="名冊篩選"
+        description="以姓名、電話、戶籍區域與標籤快速縮小選民名單。"
+        meta={<Text type="secondary">共 {total} 筆</Text>}
+      >
         <Space wrap>
           <Input.Search
             placeholder="姓名/手機/地址搜尋"
@@ -527,9 +601,8 @@ export default function VoterListPage() {
               清除篩選
             </Button>
           )}
-          <Text type="secondary">共 {total} 筆</Text>
         </Space>
-      </Card>
+      </WorkspaceToolbar>
 
       <Card>
         <Table
@@ -538,14 +611,14 @@ export default function VoterListPage() {
           rowKey="id"
           loading={loading}
           size="small"
-          rowSelection={{
+          rowSelection={canEditVoter ? {
             selectedRowKeys,
             onChange: (keys) => setSelectedRowKeys(keys),
-          }}
+          } : undefined}
           locale={{
             emptyText: (search || filterCity || filterDistrict || filterVillage || filterTag)
-              ? <Empty description="查無符合條件的資料" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              : <Empty description="尚無資料" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+              ? <EmptyState variant="search" title="查無符合條件的選民" description="試著放寬姓名、區域或標籤條件。" />
+              : <EmptyState title="尚無選民資料" description="新增第一筆選民後，名冊、標籤與互動紀錄會在這裡彙整。" />,
           }}
           pagination={{
             current: page, pageSize, total,
@@ -558,29 +631,20 @@ export default function VoterListPage() {
         />
       </Card>
 
-      {/* U-7: Floating batch action bar */}
-      {selectedRowKeys.length > 0 && (
-        <div style={{
-          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-          background: '#007AFF', color: '#fff', borderRadius: 8, padding: '10px 24px',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.18)', display: 'flex', alignItems: 'center', gap: 16, zIndex: 1000,
-        }}>
-          <span style={{ fontWeight: 600 }}>已選 {selectedRowKeys.length} 位選民</span>
-          <Button
-            icon={<TagsOutlined />}
-            onClick={() => { setBatchTags([]); setBatchProgress(0); setBatchTagModalOpen(true) }}
-            style={{ borderColor: '#fff', color: '#fff', background: 'transparent' }}
-          >批次標籤</Button>
-          <Button
-            icon={<StarOutlined />}
-            onClick={() => { setBatchSupportLevel(null); setBatchProgress(0); setBatchSupportModalOpen(true) }}
-            style={{ borderColor: '#fff', color: '#fff', background: 'transparent' }}
-          >批次設定支持度</Button>
-          <Button
-            onClick={() => setSelectedRowKeys([])}
-            style={{ borderColor: '#fff', color: '#007AFF', background: '#fff' }}
-          >取消選取</Button>
-        </div>
+      {canEditVoter && (
+        <SelectionActionBar
+          fixed
+          selectedCount={selectedRowKeys.length}
+          itemLabel="位選民"
+          onClear={() => setSelectedRowKeys([])}
+        >
+          <Button size="small" icon={<TagsOutlined />} onClick={() => { setBatchTags([]); setBatchProgress(0); setBatchTagModalOpen(true) }}>
+            批次標籤
+          </Button>
+          <Button size="small" icon={<StarOutlined />} onClick={() => { setBatchSupportLevel(null); setBatchProgress(0); setBatchSupportModalOpen(true) }}>
+            批次設定支持度
+          </Button>
+        </SelectionActionBar>
       )}
 
       {/* 批次匯入 Modal */}
@@ -738,6 +802,35 @@ export default function VoterListPage() {
         </Space>
       </Modal>
 
+      <Modal
+        title="完整個資匯出"
+        open={fullExportOpen}
+        onCancel={() => setFullExportOpen(false)}
+        onOk={handleFullExport}
+        okText="確認完整匯出"
+        okButtonProps={{ danger: true, loading: exporting }}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="完整匯出會包含未遮罩的身份證、電話、Email 與地址"
+          description="此操作僅限管理員，系統會記錄匯出理由與篩選條件。若只是一般名冊需求，請使用遮罩匯出。"
+        />
+        <Form form={fullExportForm} layout="vertical">
+          <Form.Item
+            name="reason"
+            label="完整匯出理由"
+            rules={[
+              { required: true, message: '請填寫完整匯出理由' },
+              { min: 5, message: '理由至少 5 個字' },
+            ]}
+          >
+            <Input.TextArea rows={3} maxLength={200} showCount placeholder="例：主管核准寄送正式通知，需完整地址與電話" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       <Drawer
         title={editingVoter ? '編輯選民' : '新增選民'}
         open={drawerOpen}
@@ -745,9 +838,10 @@ export default function VoterListPage() {
         width={600}
         destroyOnClose
         footer={
-          <Space>
-            <Button onClick={() => setDrawerOpen(false)}>取消</Button>
-            {!editingVoter && (
+          <FormFooter
+            onCancel={() => setDrawerOpen(false)}
+            onSubmit={() => form.submit()}
+            extra={!editingVoter && (
               <Button onClick={async () => {
                 try {
                   const values = await form.validateFields()
@@ -759,6 +853,9 @@ export default function VoterListPage() {
                   await api.post('/voters', payload)
                   message.success('選民資料已建立')
                   form.resetFields()
+                  setDuplicateWarning('')
+                  setMobileDupWarning('')
+                  setIdNumberDupWarning('')
                   fetchVoters()
                 } catch (err: any) {
                   if (err?.errorFields) return
@@ -766,149 +863,160 @@ export default function VoterListPage() {
                 }
               }}>儲存並繼續新增</Button>
             )}
-            <Button type="primary" onClick={() => form.submit()}>儲存</Button>
-          </Space>
+          />
         }
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Divider orientation="left" orientationMargin={0}>基本資料</Divider>
-          <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item name="name" label="姓名" rules={[{ required: true, message: '請輸入姓名' }]}>
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="gender" label="性別">
-                <Radio.Group>
-                  <Radio value="男">男</Radio>
-                  <Radio value="女">女</Radio>
-                  <Radio value="其他">其他</Radio>
-                </Radio.Group>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="birth_date" label="出生日期">
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="mobile"
-                label="手機"
-                rules={[{ pattern: /^09\d{8}$/, message: '手機格式：09xxxxxxxx' }]}
-                validateStatus={mobileDupWarning ? 'warning' : undefined}
-                help={mobileDupWarning || (duplicateWarning ? <span style={{ color: '#fa8c16', fontSize: 12 }}>{duplicateWarning}</span> : undefined)}
-              >
-                <Input onBlur={e => { checkDuplicate(e.target.value); checkMobileDuplicate(e.target.value) }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="phone" label="市話">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="line_id" label="LINE ID">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="id_number"
-                label="身分證號"
-                rules={[{ pattern: /^[A-Z][12]\d{8}$/, message: '身分證格式不正確' }]}
-                validateStatus={idNumberDupWarning ? 'warning' : undefined}
-                help={idNumberDupWarning || undefined}
-              >
-                <Input onBlur={e => checkIdNumberDuplicate(e.target.value)} />
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item name="email" label="電子郵件" rules={[{ type: 'email', message: '請輸入有效的電子郵件' }]}>
-                <Input type="email" />
-              </Form.Item>
-            </Col>
-          </Row>
+          <FormSection title="基本資料" description="姓名與聯絡方式是服務追蹤、匯出與重複檢查的核心欄位。">
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item name="name" label="姓名" rules={[{ required: true, message: '請輸入姓名' }]}>
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="gender" label="性別">
+                  <Radio.Group>
+                    <Radio value="男">男</Radio>
+                    <Radio value="女">女</Radio>
+                    <Radio value="其他">其他</Radio>
+                  </Radio.Group>
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="birth_date" label="出生日期">
+                  <DatePicker style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="mobile"
+                  label="手機"
+                  rules={[{ pattern: /^09\d{8}$/, message: '手機格式：09xxxxxxxx' }]}
+                  validateStatus={mobileDupWarning ? 'warning' : undefined}
+                  help={mobileDupWarning || (duplicateWarning ? <span style={{ color: '#fa8c16', fontSize: 12 }}>{duplicateWarning}</span> : undefined)}
+                >
+                  <Input
+                    onChange={() => {
+                      if (duplicateWarning) setDuplicateWarning('')
+                      if (mobileDupWarning) setMobileDupWarning('')
+                    }}
+                    onBlur={e => { checkDuplicate(e.target.value); checkMobileDuplicate(e.target.value) }}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="phone" label="市話">
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="line_id" label="LINE ID">
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="id_number"
+                  label="身分證號"
+                  rules={[{ pattern: /^[A-Z][12]\d{8}$/, message: '身分證格式不正確' }]}
+                  validateStatus={idNumberDupWarning ? 'warning' : undefined}
+                  help={idNumberDupWarning || undefined}
+                >
+                  <Input
+                    onChange={() => { if (idNumberDupWarning) setIdNumberDupWarning('') }}
+                    onBlur={e => checkIdNumberDuplicate(e.target.value)}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={24}>
+                <Form.Item name="email" label="電子郵件" rules={[{ type: 'email', message: '請輸入有效的電子郵件' }]}>
+                  <Input type="email" />
+                </Form.Item>
+              </Col>
+            </Row>
+          </FormSection>
 
-          <Divider orientation="left" orientationMargin={0}>戶籍資料</Divider>
-          <Row gutter={12}>
-            <Col span={8}>
-              <Form.Item name="household_city" label="縣市">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="household_district" label="鄉鎮區">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="household_village" label="村里">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item name="household_address" label="詳細地址">
-                <Input />
-              </Form.Item>
-            </Col>
-          </Row>
+          <FormSection title="戶籍資料" description="完整區域資訊可支援選區篩選、地址標籤與地理分析。">
+            <Row gutter={12}>
+              <Col span={8}>
+                <Form.Item name="household_city" label="縣市">
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item name="household_district" label="鄉鎮區">
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item name="household_village" label="村里">
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={24}>
+                <Form.Item name="household_address" label="詳細地址">
+                  <Input />
+                </Form.Item>
+              </Col>
+            </Row>
+          </FormSection>
 
-          <Divider orientation="left" orientationMargin={0}>職業資訊</Divider>
-          <Row gutter={12}>
-            <Col span={8}>
-              <Form.Item name="occupation" label="職業">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="company" label="服務單位">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="job_title" label="職稱">
-                <Input />
-              </Form.Item>
-            </Col>
-          </Row>
+          <FormSection title="職業與標籤" description="標籤與職業資訊會影響分眾服務、活動邀請與關係經營。">
+            <Row gutter={12}>
+              <Col span={8}>
+                <Form.Item name="occupation" label="職業">
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item name="company" label="服務單位">
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item name="job_title" label="職稱">
+                  <Input />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item name="tags" label="標籤">
+              <Select mode="multiple" placeholder="選擇標籤">
+                {tags.map(t => <Option key={t} value={t}>{t}</Option>)}
+              </Select>
+            </Form.Item>
+          </FormSection>
 
-          <Form.Item name="tags" label="標籤">
-            <Select mode="multiple" placeholder="選擇標籤">
-              {tags.map(t => <Option key={t} value={t}>{t}</Option>)}
-            </Select>
-          </Form.Item>
+          <FormSection title="其他資訊" description="補充來源、介紹人與備註，讓後續交接更有脈絡。">
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item name="source" label="認識來源">
+                  <Select allowClear>
+                    <Option value="activity">活動認識</Option>
+                    <Option value="referral">朋友介紹</Option>
+                    <Option value="signboard">看板/文宣</Option>
+                    <Option value="online">網路</Option>
+                    <Option value="walk_in">自行來訪</Option>
+                    <Option value="other">其他</Option>
+                  </Select>
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="referrer_id" label="介紹人">
+                  <Select allowClear showSearch placeholder="搜尋介紹人（選民）"
+                    filterOption={(input, opt) => String(opt?.children || '').toLowerCase().includes(input.toLowerCase())}>
+                    {data.map((v: any) => <Option key={v.id} value={v.id}>{v.name}{v.mobile ? ` (${v.mobile})` : ''}</Option>)}
+                  </Select>
+                </Form.Item>
+              </Col>
+            </Row>
 
-          <Divider orientation="left" orientationMargin={0}>其他資訊</Divider>
-          <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item name="source" label="認識來源">
-                <Select allowClear>
-                  <Option value="activity">活動認識</Option>
-                  <Option value="referral">朋友介紹</Option>
-                  <Option value="signboard">看板/文宣</Option>
-                  <Option value="online">網路</Option>
-                  <Option value="walk_in">自行來訪</Option>
-                  <Option value="other">其他</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="referrer_id" label="介紹人">
-                <Select allowClear showSearch placeholder="搜尋介紹人（選民）"
-                  filterOption={(input, opt) => String(opt?.children || '').toLowerCase().includes(input.toLowerCase())}>
-                  {data.map((v: any) => <Option key={v.id} value={v.id}>{v.name}{v.mobile ? ` (${v.mobile})` : ''}</Option>)}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item name="note" label="備註">
-            <Input.TextArea rows={3} />
-          </Form.Item>
+            <Form.Item name="note" label="備註">
+              <Input.TextArea rows={3} />
+            </Form.Item>
+          </FormSection>
         </Form>
       </Drawer>
-    </div>
+    </PageScaffold>
   )
 }

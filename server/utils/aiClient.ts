@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { db } from '../db/index'
+import { getSetting } from './settings'
 
 export type AIProvider = 'none' | 'gemini' | 'openai' | 'ollama'
 
@@ -38,15 +39,12 @@ function assertSafeBaseUrl(raw: string): void {
 }
 
 export function getAIConfig(): AIConfig {
-  const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('ai_provider','ai_model','ai_api_key','ai_base_url','ai_max_tokens')").all() as any[]
-  const m: Record<string, string> = {}
-  for (const r of rows) m[r.key] = r.value || ''
   return {
-    provider: (m.ai_provider || 'none') as AIProvider,
-    model: m.ai_model || '',
-    apiKey: m.ai_api_key || '',
-    baseUrl: m.ai_base_url || 'http://localhost:11434',
-    maxTokens: Math.min(parseInt(m.ai_max_tokens || '1024', 10) || 1024, 4096),
+    provider: (getSetting('ai_provider') || 'none') as AIProvider,
+    model: getSetting('ai_model') || '',
+    apiKey: getSetting('ai_api_key') || '',
+    baseUrl: getSetting('ai_base_url') || 'http://localhost:11434',
+    maxTokens: Math.min(parseInt(getSetting('ai_max_tokens') || '1024', 10) || 1024, 4096),
   }
 }
 

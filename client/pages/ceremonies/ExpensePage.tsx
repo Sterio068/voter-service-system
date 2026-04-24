@@ -1,20 +1,25 @@
 import React, { useState, useEffect } from 'react'
 import {
-  Card, Row, Col, Statistic, Select, DatePicker, Typography, Table, Tag,
+  Card, Row, Col, Statistic, Select, Typography, Table, Tag,
   Progress, Space, Button, Modal, Form, Input, InputNumber, message, Popconfirm, Empty, Tabs
 } from 'antd'
-import { PlusOutlined, DeleteOutlined, TrophyOutlined, DollarOutlined } from '@ant-design/icons'
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts'
+import { PlusOutlined, DeleteOutlined, TrophyOutlined } from '@ant-design/icons'
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
 import dayjs from 'dayjs'
 import { CEREMONY_TYPE_LABELS } from '../../utils/constants'
+import { useAuthStore } from '../../stores/authStore'
+import { hasModulePermission } from '../../utils/permissions'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 
 const TYPE_COLORS_LIST = ['#1677ff','#52c41a','#fa8c16','#722ed1','#eb2f96','#13c2c2','#faad14','#f5222d','#a0d911']
 
 export default function ExpensePage() {
+  const role = useAuthStore((s) => s.user?.role)
+  const canManageBudgets = hasModulePermission(role, 'expenses', 'edit')
   const [year, setYear] = useState(dayjs().year())
   const [month, setMonth] = useState<number | null>(null)
   const [summary, setSummary] = useState<any>({})
@@ -104,7 +109,7 @@ export default function ExpensePage() {
     { title: '備註', dataIndex: 'note', render: (v: string) => v || '—' },
     {
       title: '操作', width: 60,
-      render: (_: any, r: any) => (
+      render: (_: any, r: any) => canManageBudgets ? (
         <Popconfirm title="確定刪除？" onConfirm={async () => {
           try {
             await api.delete(`/expenses/budgets/${r.id}`)
@@ -112,17 +117,23 @@ export default function ExpensePage() {
             fetchSummary()
           } catch { message.error('刪除失敗') }
         }}>
-          <Button size="small" danger icon={<DeleteOutlined />} />
+          <Button size="small" danger icon={<DeleteOutlined />} aria-label="刪除預算" />
         </Popconfirm>
-      )
+      ) : <Text type="secondary">唯讀</Text>
     }
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>💰 收支統計</Title>
-        <Space>
+    <PageScaffold
+      eyebrow="Expense Intelligence"
+      title="收支統計"
+      titleLevel={4}
+      variant="compact"
+      description={canManageBudgets
+        ? '分析年度/月度支出、付款狀態、預算使用率與類型分布。'
+        : '分析年度/月度支出、付款狀態與預算使用率。目前帳號為唯讀模式。'}
+      actions={
+        <>
           <Select value={year} onChange={v => { setYear(v); setMonth(null) }} style={{ width: 90 }}>
             {availableYears.map(y => <Option key={y} value={y}>{y}年</Option>)}
           </Select>
@@ -130,8 +141,9 @@ export default function ExpensePage() {
             onChange={v => setMonth(v || null)}>
             {Array.from({ length: 12 }, (_, i) => <Option key={i + 1} value={i + 1}>{i + 1}月</Option>)}
           </Select>
-        </Space>
-      </div>
+        </>
+      }
+    >
 
       {/* 總覽卡 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -228,7 +240,9 @@ export default function ExpensePage() {
           key: 'budget', label: '預算管理',
           children: (
             <Card size="small"
-              extra={<Button size="small" icon={<PlusOutlined />} type="primary" onClick={() => { budgetForm.resetFields(); setBudgetModalOpen(true) }}>設定預算</Button>}>
+              extra={canManageBudgets
+                ? <Button size="small" icon={<PlusOutlined />} type="primary" onClick={() => { budgetForm.resetFields(); setBudgetModalOpen(true) }}>設定預算</Button>
+                : null}>
               {budgets.length === 0
                 ? <Empty description="尚未設定預算" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 : <Table dataSource={budgets} rowKey="id" size="small" pagination={false} columns={budgetColumns} />
@@ -253,37 +267,39 @@ export default function ExpensePage() {
       ]} />
 
       {/* 預算設定 Modal */}
-      <Modal title="設定預算" open={budgetModalOpen}
-        onCancel={() => { setBudgetModalOpen(false); budgetForm.resetFields() }}
-        onOk={() => budgetForm.submit()} okText="儲存" destroyOnClose>
-        <Form form={budgetForm} layout="vertical" onFinish={async (values) => {
-          try {
-            await api.post('/expenses/budgets', { ...values, year })
-            message.success('預算已儲存')
-            setBudgetModalOpen(false)
-            budgetForm.resetFields()
-            fetchBudgets()
-          } catch { message.error('儲存失敗') }
-        }}>
-          <Form.Item name="budget_type" label="預算類型" initialValue="total">
-            <Select>
-              <Option value="total">年度總預算</Option>
-              <Option value="monthly">月度預算</Option>
-            </Select>
-          </Form.Item>
-          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.budget_type !== cur.budget_type}>
-            {({ getFieldValue }) => getFieldValue('budget_type') === 'monthly' && (
-              <Form.Item name="month" label="月份" rules={[{ required: true }]}>
-                <Select>{Array.from({ length: 12 }, (_, i) => <Option key={i + 1} value={i + 1}>{i + 1}月</Option>)}</Select>
-              </Form.Item>
-            )}
-          </Form.Item>
-          <Form.Item name="amount" label="預算金額（NT$）" rules={[{ required: true }]}>
-            <InputNumber min={0} style={{ width: '100%' }} formatter={v => `NT$ ${v}`} parser={(v: any) => Number(String(v).replace(/[^0-9]/g, '')) || 0} />
-          </Form.Item>
-          <Form.Item name="note" label="備註"><Input /></Form.Item>
-        </Form>
-      </Modal>
-    </div>
+      {canManageBudgets && (
+        <Modal title="設定預算" open={budgetModalOpen}
+          onCancel={() => { setBudgetModalOpen(false); budgetForm.resetFields() }}
+          onOk={() => budgetForm.submit()} okText="儲存" destroyOnClose>
+          <Form form={budgetForm} layout="vertical" onFinish={async (values) => {
+            try {
+              await api.post('/expenses/budgets', { ...values, year })
+              message.success('預算已儲存')
+              setBudgetModalOpen(false)
+              budgetForm.resetFields()
+              fetchBudgets()
+            } catch { message.error('儲存失敗') }
+          }}>
+            <Form.Item name="budget_type" label="預算類型" initialValue="total">
+              <Select>
+                <Option value="total">年度總預算</Option>
+                <Option value="monthly">月度預算</Option>
+              </Select>
+            </Form.Item>
+            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.budget_type !== cur.budget_type}>
+              {({ getFieldValue }) => getFieldValue('budget_type') === 'monthly' && (
+                <Form.Item name="month" label="月份" rules={[{ required: true }]}>
+                  <Select>{Array.from({ length: 12 }, (_, i) => <Option key={i + 1} value={i + 1}>{i + 1}月</Option>)}</Select>
+                </Form.Item>
+              )}
+            </Form.Item>
+            <Form.Item name="amount" label="預算金額（NT$）" rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: '100%' }} formatter={v => `NT$ ${v}`} parser={(v: any) => Number(String(v).replace(/[^0-9]/g, '')) || 0} />
+            </Form.Item>
+            <Form.Item name="note" label="備註"><Input /></Form.Item>
+          </Form>
+        </Modal>
+      )}
+    </PageScaffold>
   )
 }

@@ -3,6 +3,9 @@ dist/
 dist-electron/
 dist-server/
 release/
+.tmp/
+test-results/
+playwright-report/
 data/
 uploads/
 backups/

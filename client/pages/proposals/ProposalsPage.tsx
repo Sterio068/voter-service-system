@@ -12,8 +12,11 @@ import {
 import api from '../../utils/api'
 import dayjs from 'dayjs'
 import AIButton from '../../components/ai/AIButton'
+import PageScaffold from '../../components/ui/PageScaffold'
+import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
+import { SCROLLABLE_FORM_MODAL_STYLE, SCROLLABLE_FORM_MODAL_STYLES } from '../../components/ui/modalStyles'
 
-const { Title, Text, Paragraph } = Typography
+const { Text, Paragraph } = Typography
 const { TextArea } = Input
 
 // P3: source_url 協定白名單（防止 javascript: / data:）
@@ -233,10 +236,14 @@ export default function ProposalsPage() {
   const totalCount = Object.values(stats).reduce((a, b) => a + b, 0)
 
   return (
-    <div style={{ padding: '16px 20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0 }}>提案追蹤</Title>
-        <Space>
+    <PageScaffold
+      eyebrow="Proposal Tracker"
+      title="提案追蹤"
+      titleLevel={4}
+      variant="compact"
+      description="追蹤議會提案、審查狀態、來源連結與 AI 匯入解析。"
+      actions={
+        <>
           <Button icon={<DownloadOutlined />} onClick={handleExport} loading={exporting}>
             匯出 Excel
           </Button>
@@ -244,8 +251,9 @@ export default function ProposalsPage() {
             AI 匯入
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增提案</Button>
-        </Space>
-      </div>
+        </>
+      }
+    >
 
       {/* Stats bar */}
       <Row gutter={12} style={{ marginBottom: 16 }}>
@@ -257,8 +265,12 @@ export default function ProposalsPage() {
       </Row>
 
       <Card>
-        {/* Filter bar */}
-        <Space wrap style={{ marginBottom: 12 }}>
+        <WorkspaceToolbar
+          title="提案篩選"
+          description="依關鍵字、審查狀態與提案類型整理追蹤清單。"
+          meta={<Text type="secondary">共 {total} 筆</Text>}
+        >
+        <Space wrap>
           <Input
             placeholder="搜尋主旨、提案編號、內容"
             prefix={<SearchOutlined />}
@@ -291,6 +303,7 @@ export default function ProposalsPage() {
             清除篩選
           </Button>
         </Space>
+        </WorkspaceToolbar>
 
         <Table
           rowKey="id"
@@ -317,6 +330,8 @@ export default function ProposalsPage() {
         cancelText="取消"
         width={680}
         destroyOnClose
+        style={SCROLLABLE_FORM_MODAL_STYLE}
+        styles={SCROLLABLE_FORM_MODAL_STYLES}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
           <Form.Item name="title" label="提案主旨" rules={[{ required: true, message: '請輸入主旨' }]}>
@@ -551,6 +566,6 @@ export default function ProposalsPage() {
           </>
         )}
       </Drawer>
-    </div>
+    </PageScaffold>
   )
 }

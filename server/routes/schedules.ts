@@ -31,8 +31,16 @@ export default async function scheduleRoutes(fastify: FastifyInstance) {
     const { start, end, status, schedule_type } = request.query as any
     const conds: string[] = []
     const params: any[] = []
-    if (start) { conds.push('s.start_time >= ?'); params.push(start) }
-    if (end) { conds.push('s.start_time <= ?'); params.push(end) }
+    if (start && end) {
+      conds.push('s.start_time < ? AND COALESCE(s.end_time, s.start_time) > ?')
+      params.push(end, start)
+    } else if (start) {
+      conds.push('COALESCE(s.end_time, s.start_time) >= ?')
+      params.push(start)
+    } else if (end) {
+      conds.push('s.start_time <= ?')
+      params.push(end)
+    }
     if (status) { conds.push('s.status = ?'); params.push(status) }
     if (schedule_type) { conds.push('s.schedule_type = ?'); params.push(schedule_type) }
     conds.push('s.is_active = 1')
@@ -64,7 +72,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance) {
     }
     // 衝突偵測
     if (body.start_time && body.end_time) {
-      const conflict = db.prepare(`SELECT id, title, start_time, end_time FROM schedules WHERE is_active=1 AND status != 'cancelled' AND start_time < ? AND end_time > ? LIMIT 1`)
+      const conflict = db.prepare(`SELECT id, title, start_time, end_time FROM schedules WHERE is_active=1 AND COALESCE(status,'scheduled') != 'cancelled' AND start_time < ? AND COALESCE(end_time, start_time) > ? LIMIT 1`)
         .get(body.end_time, body.start_time) as any
       if (conflict) {
         const startStr = conflict.start_time ? String(conflict.start_time).slice(11, 16) : ''
@@ -96,6 +104,26 @@ export default async function scheduleRoutes(fastify: FastifyInstance) {
     for (const k of allowedFields) { if (body[k] !== undefined) safeData[k] = body[k] }
     if (Object.keys(safeData).length === 0) {
       return reply.code(400).send({ success: false, error: '沒有可更新的欄位' })
+    }
+    const nextStart = safeData.start_time ?? s.start_time
+    const nextEnd = safeData.end_time ?? s.end_time
+    if (nextStart && nextEnd && nextStart >= nextEnd) {
+      return reply.code(400).send({ success: false, error: '結束時間必須晚於開始時間' })
+    }
+    if (nextStart && nextEnd && (safeData.start_time !== undefined || safeData.end_time !== undefined)) {
+      const conflict = db.prepare(`
+        SELECT id, title, start_time, end_time
+        FROM schedules
+        WHERE id != ? AND is_active=1 AND COALESCE(status,'scheduled') != 'cancelled'
+          AND start_time < ? AND COALESCE(end_time, start_time) > ?
+        LIMIT 1
+      `).get(Number(id), nextEnd, nextStart) as any
+      if (conflict) {
+        const startStr = conflict.start_time ? String(conflict.start_time).slice(11, 16) : ''
+        const endStr = conflict.end_time ? String(conflict.end_time).slice(11, 16) : ''
+        const timeRange = (startStr && endStr) ? ` (${startStr}–${endStr})` : ''
+        return reply.code(409).send({ success: false, error: `與行程「${conflict.title}」${timeRange} 發生衝突` })
+      }
     }
     const sets = Object.keys(safeData).map(k => `${k}=?`).join(',')
     db.prepare(`UPDATE schedules SET ${sets},updated_at=datetime('now','localtime') WHERE id=?`).run(...Object.values(safeData), Number(id))

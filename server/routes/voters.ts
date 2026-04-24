@@ -27,6 +27,133 @@ function normalizeBirthDate(raw: string | undefined): string | undefined {
   return raw
 }
 
+function toSafeNumber(value: unknown): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function mergeTextValues(...values: Array<unknown>): string | null {
+  const parts = values
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .filter((value, index, arr) => arr.indexOf(value) === index)
+  return parts.length ? parts.join('\n\n') : null
+}
+
+function latestDateValue(...values: Array<unknown>): string | null {
+  const dates = values
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .sort()
+  return dates.length ? dates[dates.length - 1] : null
+}
+
+function countRows(sql: string, ...params: any[]): number {
+  try {
+    return Number((db.prepare(sql).get(...params) as any)?.c || 0)
+  } catch {
+    return 0
+  }
+}
+
+function mergeEngagementRecords(targetId: number, sourceId: number): boolean {
+  const target = db.prepare('SELECT * FROM voter_engagement WHERE voter_id=?').get(targetId) as any
+  const source = db.prepare('SELECT * FROM voter_engagement WHERE voter_id=?').get(sourceId) as any
+
+  if (!source) return false
+
+  if (!target) {
+    db.prepare("UPDATE voter_engagement SET voter_id=?, updated_at=datetime('now','localtime') WHERE voter_id=?").run(targetId, sourceId)
+    return true
+  }
+
+  db.prepare(`
+    UPDATE voter_engagement
+    SET support_level=?,
+        is_key_supporter=?,
+        is_volunteer=?,
+        activity_count=?,
+        last_contact_date=?,
+        notes=?,
+        updated_at=datetime('now','localtime')
+    WHERE voter_id=?
+  `).run(
+    Math.max(toSafeNumber(target.support_level), toSafeNumber(source.support_level)),
+    (toSafeNumber(target.is_key_supporter) || toSafeNumber(source.is_key_supporter)) ? 1 : 0,
+    (toSafeNumber(target.is_volunteer) || toSafeNumber(source.is_volunteer)) ? 1 : 0,
+    toSafeNumber(target.activity_count) + toSafeNumber(source.activity_count),
+    latestDateValue(target.last_contact_date, source.last_contact_date),
+    mergeTextValues(target.notes, source.notes),
+    targetId,
+  )
+  db.prepare('DELETE FROM voter_engagement WHERE voter_id=?').run(sourceId)
+  return true
+}
+
+function mergeDuplicateEventParticipants(targetId: number, sourceId: number): number {
+  const duplicates = db.prepare(`
+    SELECT
+      source.id AS source_id,
+      target.id AS target_id,
+      source.role AS source_role,
+      target.role AS target_role,
+      source.attendance AS source_attendance,
+      target.attendance AS target_attendance,
+      source.note AS source_note,
+      target.note AS target_note
+    FROM event_participants source
+    JOIN event_participants target
+      ON target.event_id = source.event_id
+     AND target.voter_id = ?
+    WHERE source.voter_id = ?
+  `).all(targetId, sourceId) as any[]
+
+  const updateParticipant = db.prepare('UPDATE event_participants SET role=?, attendance=?, note=? WHERE id=?')
+  const deleteParticipant = db.prepare('DELETE FROM event_participants WHERE id=?')
+
+  duplicates.forEach((row) => {
+    const targetRole = String(row.target_role ?? '').trim()
+    const sourceRole = String(row.source_role ?? '').trim()
+    const mergedRole =
+      targetRole && targetRole !== 'participant'
+        ? targetRole
+        : (sourceRole || targetRole || 'participant')
+    updateParticipant.run(
+      mergedRole,
+      Math.max(toSafeNumber(row.target_attendance), toSafeNumber(row.source_attendance)),
+      mergeTextValues(row.target_note, row.source_note),
+      row.target_id,
+    )
+    deleteParticipant.run(row.source_id)
+  })
+
+  return duplicates.length
+}
+
+function mergeDuplicateGroupMembers(targetId: number, sourceId: number): number {
+  const duplicates = db.prepare(`
+    SELECT source.id AS source_id, target.id AS target_id, source.role AS source_role, target.role AS target_role
+    FROM group_members source
+    JOIN group_members target
+      ON target.group_id = source.group_id
+     AND target.voter_id = ?
+    WHERE source.voter_id = ?
+  `).all(targetId, sourceId) as any[]
+
+  const updateMember = db.prepare('UPDATE group_members SET role=? WHERE id=?')
+  const deleteMember = db.prepare('DELETE FROM group_members WHERE id=?')
+
+  duplicates.forEach((row) => {
+    const mergedRole = String(row.target_role ?? '').trim() || String(row.source_role ?? '').trim() || null
+    if (mergedRole !== row.target_role) {
+      updateMember.run(mergedRole, row.target_id)
+    }
+    deleteMember.run(row.source_id)
+  })
+
+  return duplicates.length
+}
+
 const CreateVoterSchema = z.object({
   name: z.string().min(1, '姓名為必填'),
   gender: z.enum(['男','女','其他']).nullable().optional(),
@@ -94,13 +221,15 @@ export default async function voterRoutes(fastify: FastifyInstance) {
     const _q = request.query as any
     const page = Math.max(1, Number(_q.page) || 1)
     const pageSize = Math.min(200, Math.max(1, Number(_q.pageSize) || 20))
-    const { search, city, district, village, tag, is_active = 1, is_blacklisted } = _q
+    const { search, city, district, village, tag, mobile, id_number, is_active = 1, is_blacklisted } = _q
     const conds = ['v.is_active = ?']
     const params: any[] = [Number(is_active) === 0 ? 0 : 1]
     if (search) { const es = escapeLike(search); conds.push("(v.name LIKE ? ESCAPE '\\' OR v.mobile LIKE ? ESCAPE '\\' OR v.phone LIKE ? ESCAPE '\\' OR v.household_address LIKE ? ESCAPE '\\')"); params.push(`%${es}%`,`%${es}%`,`%${es}%`,`%${es}%`) }
     if (city) { conds.push('v.household_city = ?'); params.push(city) }
     if (district) { conds.push('v.household_district = ?'); params.push(district) }
     if (village) { conds.push('v.household_village = ?'); params.push(village) }
+    if (mobile) { conds.push('v.mobile = ?'); params.push(String(mobile)) }
+    if (id_number) { conds.push('v.id_number = ?'); params.push(String(id_number).toUpperCase()) }
     // F-5: Blacklist filter
     if (is_blacklisted === '1' || is_blacklisted === 1) { conds.push('v.is_blacklisted = 1') }
 
@@ -446,27 +575,45 @@ export default async function voterRoutes(fastify: FastifyInstance) {
         (SELECT COUNT(*) FROM petitions WHERE voter_id=?) as petitions,
         (SELECT COUNT(*) FROM contact_records WHERE voter_id=?) as contacts,
         (SELECT COUNT(*) FROM tasks WHERE related_voter_id=?) as tasks,
-        (SELECT COUNT(*) FROM voter_engagement WHERE voter_id=?) as engagements
-    `).get(sourceId, sourceId, sourceId, sourceId) as any
+        (SELECT COUNT(*) FROM voter_engagement WHERE voter_id=?) as engagements,
+        (SELECT COUNT(*) FROM voter_activity_history WHERE voter_id=?) as activity_history
+    `).get(sourceId, sourceId, sourceId, sourceId, sourceId) as any
     const petitions = counts.petitions
     const contacts = counts.contacts
     const tasks = counts.tasks
     const engagements = counts.engagements
+    const activityHistory = counts.activity_history
 
     if (preview === 'true') {
-      return reply.send({ success: true, preview: { petitions, contacts, tasks, engagements, source_name: source.name, target_name: target.name } })
+      return reply.send({
+        success: true,
+        preview: {
+          petitions,
+          contacts,
+          tasks,
+          engagements,
+          activity_history: activityHistory,
+          event_participants: countRows('SELECT COUNT(*) as c FROM event_participants WHERE voter_id=?', sourceId),
+          survey_responses: countRows('SELECT COUNT(*) as c FROM survey_responses WHERE voter_id=?', sourceId),
+          notification_recipients: countRows('SELECT COUNT(*) as c FROM notification_recipients WHERE voter_id=?', sourceId),
+          group_members: countRows('SELECT COUNT(*) as c FROM group_members WHERE voter_id=?', sourceId),
+          referrers: countRows('SELECT COUNT(*) as c FROM voters WHERE referrer_id=?', sourceId),
+          source_name: source.name,
+          target_name: target.name,
+        },
+      })
     }
 
     // Count additional affected records for history
-    const eventParticipantsCount = (() => { try { return (db.prepare('SELECT COUNT(*) as c FROM event_participants WHERE voter_id=?').get(sourceId) as any).c } catch { return 0 } })()
-    const surveyResponsesCount = (() => { try { return (db.prepare('SELECT COUNT(*) as c FROM survey_responses WHERE voter_id=?').get(sourceId) as any).c } catch { return 0 } })()
-    const notifRecipientsCount = (() => { try { return (db.prepare('SELECT COUNT(*) as c FROM notification_recipients WHERE voter_id=?').get(sourceId) as any).c } catch { return 0 } })()
-    const voterRelationsACount = (() => { try { return (db.prepare('SELECT COUNT(*) as c FROM voter_relations WHERE voter_id_a=?').get(sourceId) as any).c } catch { return 0 } })()
-    const voterRelationsBCount = (() => { try { return (db.prepare('SELECT COUNT(*) as c FROM voter_relations WHERE voter_id_b=?').get(sourceId) as any).c } catch { return 0 } })()
-    const relatedVoterCount = (() => { try { return (db.prepare('SELECT COUNT(*) as c FROM voter_relations WHERE related_voter_id=?').get(sourceId) as any).c } catch { return 0 } })()
-    const groupMembersCount = (() => { try { return (db.prepare('SELECT COUNT(*) as c FROM group_members WHERE voter_id=?').get(sourceId) as any).c } catch { return 0 } })()
-    const documentsCount = (() => { try { return (db.prepare('SELECT COUNT(*) as c FROM documents WHERE voter_id=?').get(sourceId) as any).c } catch { return 0 } })()
-    const referrerCount = (() => { try { return (db.prepare('SELECT COUNT(*) as c FROM voters WHERE referrer_id=?').get(sourceId) as any).c } catch { return 0 } })()
+    const eventParticipantsCount = countRows('SELECT COUNT(*) as c FROM event_participants WHERE voter_id=?', sourceId)
+    const surveyResponsesCount = countRows('SELECT COUNT(*) as c FROM survey_responses WHERE voter_id=?', sourceId)
+    const notifRecipientsCount = countRows('SELECT COUNT(*) as c FROM notification_recipients WHERE voter_id=?', sourceId)
+    const voterRelationsACount = countRows('SELECT COUNT(*) as c FROM voter_relations WHERE voter_id_a=?', sourceId)
+    const voterRelationsBCount = countRows('SELECT COUNT(*) as c FROM voter_relations WHERE voter_id_b=?', sourceId)
+    const relatedVoterCount = countRows('SELECT COUNT(*) as c FROM voter_relations WHERE related_voter_id=?', sourceId)
+    const groupMembersCount = countRows('SELECT COUNT(*) as c FROM group_members WHERE voter_id=?', sourceId)
+    const documentsCount = countRows('SELECT COUNT(*) as c FROM documents WHERE voter_id=?', sourceId)
+    const referrerCount = countRows('SELECT COUNT(*) as c FROM voters WHERE referrer_id=?', sourceId)
 
     // Execute merge in transaction
     db.exec('BEGIN')
@@ -474,7 +621,8 @@ export default async function voterRoutes(fastify: FastifyInstance) {
       db.prepare('UPDATE petitions SET voter_id=? WHERE voter_id=?').run(targetId, sourceId)
       db.prepare('UPDATE contact_records SET voter_id=? WHERE voter_id=?').run(targetId, sourceId)
       db.prepare('UPDATE tasks SET related_voter_id=? WHERE related_voter_id=?').run(targetId, sourceId)
-      db.prepare('UPDATE voter_engagement SET voter_id=? WHERE voter_id=? AND NOT EXISTS (SELECT 1 FROM voter_engagement WHERE voter_id=?)').run(targetId, sourceId, targetId)
+      db.prepare('UPDATE voter_activity_history SET voter_id=? WHERE voter_id=?').run(targetId, sourceId)
+      const engagementTransferred = mergeEngagementRecords(targetId, sourceId)
       // A-1: Additional FK redirects（只 catch "no such column/table" 這類 schema 差異錯誤，其他錯誤讓 transaction rollback）
       const safeRedirect = (sql: string, ...params: any[]) => {
         try { db.prepare(sql).run(...params) }
@@ -485,6 +633,8 @@ export default async function voterRoutes(fastify: FastifyInstance) {
           throw e
         }
       }
+      const mergedDuplicateEventParticipants = mergeDuplicateEventParticipants(targetId, sourceId)
+      const mergedDuplicateGroupMembers = mergeDuplicateGroupMembers(targetId, sourceId)
       safeRedirect('UPDATE event_participants SET voter_id=? WHERE voter_id=?', targetId, sourceId)
       safeRedirect('UPDATE survey_responses SET voter_id=? WHERE voter_id=?', targetId, sourceId)
       safeRedirect('UPDATE notification_recipients SET voter_id=? WHERE voter_id=?', targetId, sourceId)
@@ -495,16 +645,50 @@ export default async function voterRoutes(fastify: FastifyInstance) {
       safeRedirect('UPDATE group_members SET voter_id=? WHERE voter_id=?', targetId, sourceId)
       safeRedirect('UPDATE documents SET voter_id=? WHERE voter_id=?', targetId, sourceId)
       safeRedirect('UPDATE voters SET referrer_id=? WHERE referrer_id=?', targetId, sourceId)
+      safeRedirect('DELETE FROM voter_relations WHERE voter_id=? AND related_voter_id=?', targetId, targetId)
+      safeRedirect('DELETE FROM voter_relations WHERE voter_id_a=? AND voter_id_b=?', targetId, targetId)
       // Soft delete source
       db.prepare("UPDATE voters SET is_active=0, note=COALESCE(note,'') || ' [已合併至選民ID:' || ? || ']' WHERE id=?").run(targetId, sourceId)
       // A-1: Insert into voter_merge_history
-      const affectedRecords = JSON.stringify({ petitions, contacts, tasks, event_participants: eventParticipantsCount, survey_responses: surveyResponsesCount, notification_recipients: notifRecipientsCount, voter_relations_a: voterRelationsACount, voter_relations_b: voterRelationsBCount, related_voter: relatedVoterCount, group_members: groupMembersCount, documents: documentsCount, referrers: referrerCount })
+      const affectedRecords = JSON.stringify({
+        petitions,
+        contacts,
+        tasks,
+        engagements: engagementTransferred ? engagements : 0,
+        activity_history: activityHistory,
+        event_participants: eventParticipantsCount,
+        survey_responses: surveyResponsesCount,
+        notification_recipients: notifRecipientsCount,
+        voter_relations_a: voterRelationsACount,
+        voter_relations_b: voterRelationsBCount,
+        related_voter: relatedVoterCount,
+        group_members: groupMembersCount,
+        documents: documentsCount,
+        referrers: referrerCount,
+        merged_duplicate_event_participants: mergedDuplicateEventParticipants,
+        merged_duplicate_group_members: mergedDuplicateGroupMembers,
+      })
       db.prepare('INSERT INTO voter_merge_history(old_voter_id,new_voter_id,merged_by,affected_records) VALUES(?,?,?,?)').run(sourceId, targetId, cu.id, affectedRecords)
       db.exec('COMMIT')
     } catch(e) { db.exec('ROLLBACK'); throw e }
 
     createAuditLog(request, cu.id, { action: 'update', module: '選民管理', target_type: 'voter', target_id: targetId, target_name: `${source.name} → ${target.name}` })
-    return reply.send({ success: true, message: `已將「${source.name}」合併至「${target.name}」`, transferred: { petitions, contacts, tasks } })
+    return reply.send({
+      success: true,
+      message: `已將「${source.name}」合併至「${target.name}」`,
+      transferred: {
+        petitions,
+        contacts,
+        tasks,
+        engagements,
+        activity_history: activityHistory,
+        event_participants: eventParticipantsCount,
+        survey_responses: surveyResponsesCount,
+        notification_recipients: notifRecipientsCount,
+        group_members: groupMembersCount,
+        referrers: referrerCount,
+      },
+    })
   })
 
   // D-13: GET /api/voters/:id/activity-history

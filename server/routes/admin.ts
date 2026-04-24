@@ -5,6 +5,9 @@ import path from 'path'
 import { db, dbPath } from '../db/index'
 import { authenticate, requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+import { setSetting } from '../utils/settings'
+import { isSecretSettingKey } from '../utils/secrets'
+import { applyDataRetention, getDataRetentionPolicy, previewDataRetention } from '../utils/dataRetention'
 
 export default async function adminRoutes(fastify: FastifyInstance) {
   // ===== 使用者名單（所有已登入者可取得，僅供承辦下拉選單用）=====
@@ -122,7 +125,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   })
 
   // ===== 類別管理 =====
-  fastify.get('/api/admin/categories', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.get('/api/admin/categories', { preHandler: [requirePermission('categories', 'view')] }, async (request, reply) => {
     const { type } = request.query as any
     const cats = type
       ? db.prepare('SELECT * FROM categories WHERE type = ? ORDER BY sort_order').all(type)
@@ -167,11 +170,18 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     'jwt_secret', 'machine_fingerprint',
     'line_channel_access_token', 'line_channel_secret',
     'gcal_client_id', 'gcal_client_secret',
+    'ai_api_key',
   ])
   fastify.get('/api/admin/settings', { preHandler: [requirePermission('settings', 'view')] }, async (_, reply) => {
     const rows = db.prepare('SELECT * FROM settings').all() as any[]
-    const result: Record<string, string | null> = {}
-    rows.forEach(s => { if (!SENSITIVE_SETTINGS.has(s.key)) result[s.key] = s.value })
+    const result: Record<string, string | boolean | null> = {}
+    rows.forEach(s => {
+      if (isSecretSettingKey(s.key)) {
+        result[`${s.key}_configured`] = !!s.value
+        return
+      }
+      if (!SENSITIVE_SETTINGS.has(s.key)) result[s.key] = s.value
+    })
     result.backup_path = process.env.BACKUPS_PATH || ''
     return reply.send({ success: true, data: result })
   })
@@ -190,10 +200,12 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   const ALLOWED_SETTINGS = new Set([
     'office_name', 'office_address', 'office_contact', 'office_phone', 'office_fax', 'office_email',
     'auto_backup_enabled', 'auto_backup_interval', 'backup_path',
+    'data_retention_enabled', 'retention_audit_archive_days', 'retention_client_error_days', 'retention_soft_deleted_voter_days',
     'idle_timeout', 'login_lock_attempts', 'login_lock_minutes',
     'stats_exclude_inactive', 'election_year_mode',
     'line_channel_access_token', 'line_channel_secret',
     'gcal_client_id', 'gcal_client_secret',
+    'first_run',
   ])
 
   fastify.put('/api/admin/settings', { preHandler: [requirePermission('settings', 'edit')] }, async (request, reply) => {
@@ -203,10 +215,9 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     if (illegal.length > 0) {
       return reply.code(400).send({ success: false, error: `不允許修改的設定項目：${illegal.join(', ')}` })
     }
-    const ins = db.prepare("INSERT INTO settings(key,value,updated_at) VALUES(?,?,datetime('now','localtime')) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at")
     db.exec('BEGIN')
     try {
-      for (const [k, v] of Object.entries(updates)) ins.run(k, v)
+      for (const [k, v] of Object.entries(updates)) setSetting(k as any, v as any)
       db.exec('COMMIT')
     } catch (e) { db.exec('ROLLBACK'); throw e }
     createAuditLog(request, cu.id, { action: 'update', module: '系統設定' })
@@ -355,6 +366,135 @@ export default async function adminRoutes(fastify: FastifyInstance) {
         errors: { last_24h_count: errorCount, last_error: lastError },
       }
     })
+  })
+
+  // ===== Data Quality Scan =====
+  fastify.get('/api/admin/data-quality', { preHandler: [requirePermission('admin', 'view')] }, async (_request, reply) => {
+    const duplicateMobiles = db.prepare(`
+      SELECT mobile, COUNT(*) as count, GROUP_CONCAT(id) as voter_ids
+      FROM voters
+      WHERE is_active=1 AND mobile IS NOT NULL AND TRIM(mobile) <> ''
+      GROUP BY mobile
+      HAVING COUNT(*) > 1
+      ORDER BY count DESC
+      LIMIT 50
+    `).all() as any[]
+
+    const duplicateIdNumbers = db.prepare(`
+      SELECT id_number, COUNT(*) as count, GROUP_CONCAT(id) as voter_ids
+      FROM voters
+      WHERE is_active=1 AND id_number IS NOT NULL AND TRIM(id_number) <> ''
+      GROUP BY id_number
+      HAVING COUNT(*) > 1
+      ORDER BY count DESC
+      LIMIT 50
+    `).all() as any[]
+
+    const invalidMobiles = db.prepare(`
+      SELECT id, name, mobile
+      FROM voters
+      WHERE is_active=1
+        AND mobile IS NOT NULL
+        AND TRIM(mobile) <> ''
+        AND (LENGTH(mobile) != 10 OR mobile NOT LIKE '09%' OR mobile GLOB '*[^0-9]*')
+      ORDER BY updated_at DESC
+      LIMIT 50
+    `).all() as any[]
+
+    const orphanAttachmentRows = db.prepare(`
+      SELECT ref_type, COUNT(*) as count
+      FROM attachments a
+      WHERE ref_type NOT IN ('petition','voter','document','consultation','ceremony','event','proposal')
+        OR (ref_type='petition' AND NOT EXISTS (SELECT 1 FROM petitions p WHERE p.id=a.ref_id))
+        OR (ref_type='voter' AND NOT EXISTS (SELECT 1 FROM voters v WHERE v.id=a.ref_id))
+        OR (ref_type='document' AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.id=a.ref_id))
+        OR (ref_type='consultation' AND NOT EXISTS (SELECT 1 FROM consultation_appointments c WHERE c.id=a.ref_id))
+        OR (ref_type='ceremony' AND NOT EXISTS (SELECT 1 FROM ceremony_records cr WHERE cr.id=a.ref_id))
+        OR (ref_type='event' AND NOT EXISTS (SELECT 1 FROM events e WHERE e.id=a.ref_id))
+        OR (ref_type='proposal' AND NOT EXISTS (SELECT 1 FROM proposals pr WHERE pr.id=a.ref_id))
+      GROUP BY ref_type
+    `).all() as any[]
+
+    const uploadBase = process.env.UPLOADS_PATH || path.join(process.cwd(), 'uploads')
+    const attachmentRows = db.prepare('SELECT id, file_name, file_path FROM attachments ORDER BY id DESC LIMIT 1000').all() as any[]
+    const missingFiles = attachmentRows
+      .filter(row => {
+        const filePath = path.resolve(uploadBase, row.file_path || '')
+        return filePath.startsWith(path.resolve(uploadBase) + path.sep) && !fs.existsSync(filePath)
+      })
+      .slice(0, 50)
+
+    const orphanRelations = db.prepare(`
+      SELECT COUNT(*) as count
+      FROM voter_relations vr
+      WHERE NOT EXISTS (SELECT 1 FROM voters v WHERE v.id=vr.voter_id)
+         OR NOT EXISTS (SELECT 1 FROM voters v WHERE v.id=vr.related_voter_id)
+    `).get() as any
+
+    const orphanGroupMembers = db.prepare(`
+      SELECT COUNT(*) as count
+      FROM group_members gm
+      WHERE NOT EXISTS (SELECT 1 FROM groups g WHERE g.id=gm.group_id)
+         OR NOT EXISTS (SELECT 1 FROM voters v WHERE v.id=gm.voter_id)
+    `).get() as any
+
+    const checks = [
+      { key: 'duplicate_mobiles', label: '重複手機', severity: 'high', count: duplicateMobiles.length, sample: duplicateMobiles.slice(0, 10) },
+      { key: 'duplicate_id_numbers', label: '重複身分證號', severity: 'high', count: duplicateIdNumbers.length, sample: duplicateIdNumbers.slice(0, 10) },
+      { key: 'invalid_mobiles', label: '手機格式異常', severity: 'medium', count: invalidMobiles.length, sample: invalidMobiles.slice(0, 10) },
+      { key: 'orphan_attachments', label: '孤兒附件關聯', severity: 'medium', count: orphanAttachmentRows.reduce((sum, row) => sum + Number(row.count || 0), 0), sample: orphanAttachmentRows },
+      { key: 'missing_attachment_files', label: '附件檔案遺失', severity: 'medium', count: missingFiles.length, sample: missingFiles.slice(0, 10) },
+      { key: 'orphan_voter_relations', label: '選民關係孤兒資料', severity: 'medium', count: Number(orphanRelations?.count || 0), sample: [] },
+      { key: 'orphan_group_members', label: '團體成員孤兒資料', severity: 'medium', count: Number(orphanGroupMembers?.count || 0), sample: [] },
+    ]
+    const issueCount = checks.reduce((sum, check) => sum + check.count, 0)
+    const highIssueCount = checks.filter(check => check.severity === 'high').reduce((sum, check) => sum + check.count, 0)
+
+    return reply.send({
+      success: true,
+      data: {
+        checked_at: new Date().toISOString(),
+        summary: {
+          issue_count: issueCount,
+          high_issue_count: highIssueCount,
+          status: issueCount === 0 ? 'ok' : highIssueCount > 0 ? 'attention' : 'warning',
+        },
+        checks,
+      },
+    })
+  })
+
+  // ===== Data Retention =====
+  fastify.get('/api/admin/data-retention/preview', { preHandler: [requirePermission('admin', 'view')] }, async (_request, reply) => {
+    const policy = getDataRetentionPolicy(db)
+    return reply.send({
+      success: true,
+      data: {
+        enabled: policy.enabled,
+        policy,
+        counts: previewDataRetention(db, policy),
+      },
+    })
+  })
+
+  fastify.post('/api/admin/data-retention/run', { preHandler: [requirePermission('admin', 'edit')] }, async (request, reply) => {
+    const cu = (request as any).currentUser
+    const { confirm } = request.body as any
+    const policy = getDataRetentionPolicy(db)
+    if (!policy.enabled) {
+      return reply.code(400).send({ success: false, error: '資料保留政策尚未啟用' })
+    }
+    if (confirm !== 'RUN_RETENTION') {
+      return reply.code(400).send({ success: false, error: '請輸入確認字串 RUN_RETENTION 後再執行' })
+    }
+    const result = applyDataRetention(db, policy)
+    createAuditLog(request, cu.id, {
+      action: 'delete',
+      module: '資料保留',
+      target_type: 'data_retention',
+      detail: JSON.stringify({ policy, result }),
+    } as any)
+    return reply.send({ success: true, message: '資料保留清理已完成', data: result })
   })
 
   // ===== F-3: Frontend Error Collection =====

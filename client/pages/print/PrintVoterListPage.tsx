@@ -5,9 +5,11 @@ import {
 } from 'antd'
 import { PrinterOutlined, SearchOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
+import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
 import dayjs from 'dayjs'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 
 const ALL_COLUMNS = [
@@ -121,15 +123,24 @@ export default function PrintVoterListPage() {
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>🖨️ 選民名冊列印</Title>
+    <PageScaffold
+      eyebrow="Print Studio"
+      title="選民名冊列印"
+      titleLevel={4}
+      variant="compact"
+      description="選擇欄位與篩選條件後產生 A4 橫式選民名冊。"
+      actions={
         <Button type="primary" icon={<PrinterOutlined />} onClick={handlePrint} disabled={!voters.length}>
           列印名冊
         </Button>
-      </div>
+      }
+    >
 
-      <Card style={{ marginBottom: 16 }}>
+      <WorkspaceToolbar
+        title="名冊輸出條件"
+        description="先查詢要列印的選民，再選擇名冊欄位。"
+        meta={<Text type="secondary">最多顯示 500 筆</Text>}
+      >
         <Form form={form} layout="inline" onFinish={handleSearch}>
           <Form.Item name="search">
             <Input placeholder="姓名/手機/地址" prefix={<SearchOutlined />} style={{ width: 200 }} />
@@ -162,7 +173,7 @@ export default function PrintVoterListPage() {
             <Checkbox key={c.key} value={c.key} style={{ fontSize: 12 }}>{c.label}</Checkbox>
           ))}
         </Checkbox.Group>
-      </Card>
+      </WorkspaceToolbar>
 
       <Card>
         <Text type="secondary" style={{ marginBottom: 8, display: 'block' }}>
@@ -178,6 +189,6 @@ export default function PrintVoterListPage() {
           scroll={{ y: 400 }}
         />
       </Card>
-    </div>
+    </PageScaffold>
   )
 }

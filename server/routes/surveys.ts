@@ -13,7 +13,7 @@ function generatePetitionCaseNumber(): string {
     ).get(`${year}-%`) as any
     const currentMax = maxRow?.m ?? 0
     db.prepare(
-      "INSERT INTO seq_numbers(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=MAX(value,excluded.value)+1"
+      "INSERT INTO seq_numbers(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=MAX(value + 1, excluded.value)"
     ).run(seqName, currentMax + 1)
     const row = db.prepare('SELECT value FROM seq_numbers WHERE name=?').get(seqName) as any
     db.exec('COMMIT')

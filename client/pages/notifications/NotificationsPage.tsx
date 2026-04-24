@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import {
-  Card, Table, Button, Space, Tag, Typography, Modal, Form, Input,
+  Card, Table, Button, Space, Tag, Modal, Form, Input,
   Select, message, Alert, Popconfirm
 } from 'antd'
 import { PlusOutlined, SendOutlined, DeleteOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
 
-const { Title, Text } = Typography
 const { Option } = Select
 const { TextArea } = Input
 
@@ -40,7 +40,9 @@ export default function NotificationsPage() {
       await api.post('/notifications', values)
       message.success('通知草稿已建立')
       setCreateOpen(false); form.resetFields(); fetchNotifications()
-    } catch { message.error('建立失敗') }
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '建立失敗')
+    }
   }
 
   const handleSend = async (id: number) => {
@@ -48,7 +50,9 @@ export default function NotificationsPage() {
       await api.post(`/notifications/${id}/send`)
       message.success('已標記為發送')
       fetchNotifications()
-    } catch { message.error('操作失敗') }
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '操作失敗')
+    }
   }
 
   const handleDelete = async (id: number) => {
@@ -56,7 +60,9 @@ export default function NotificationsPage() {
       await api.delete(`/notifications/${id}`)
       message.success('通知已刪除')
       fetchNotifications()
-    } catch { message.error('刪除失敗') }
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '刪除失敗')
+    }
   }
 
   const columns = [
@@ -71,9 +77,12 @@ export default function NotificationsPage() {
     { title: '建立時間', dataIndex: 'created_at', width: 120, render: (v: string) => v?.slice(0, 10) },
     { title: '操作', width: 100, render: (_: any, r: any) => (
       <Space>
-        {r.status === 'draft' && (
+        {r.status === 'draft' && r.target_type === 'all' && (
           <Button size="small" type="primary" icon={<SendOutlined />}
             onClick={() => handleSend(r.id)}>標記發送</Button>
+        )}
+        {r.status === 'draft' && r.target_type !== 'all' && (
+          <Tag color="gold">待支援發送</Tag>
         )}
         {r.status === 'draft' && (
           <Popconfirm
@@ -91,13 +100,18 @@ export default function NotificationsPage() {
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>📢 通知管理</Title>
+    <PageScaffold
+      eyebrow="Broadcast Center"
+      title="通知管理"
+      titleLevel={4}
+      variant="compact"
+      description="管理系統通知、LINE/SMS 草稿與發送紀錄，後續可接第三方訊息平台。"
+      actions={(
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setCreateOpen(true) }}>
           新增通知
         </Button>
-      </div>
+      )}
+    >
       <Alert
         style={{ marginBottom: 16 }}
         type="info"
@@ -111,8 +125,20 @@ export default function NotificationsPage() {
       <Modal title="新增通知" open={createOpen} onCancel={() => setCreateOpen(false)}
         onOk={() => form.submit()} okText="建立草稿" destroyOnClose>
         <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="title" label="標題" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="content" label="內容" rules={[{ required: true }]}><TextArea rows={4} /></Form.Item>
+          <Form.Item
+            name="title"
+            label="標題"
+            rules={[{ required: true, whitespace: true, message: '請輸入通知標題' }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="content"
+            label="內容"
+            rules={[{ required: true, whitespace: true, message: '請輸入通知內容' }]}
+          >
+            <TextArea rows={4} />
+          </Form.Item>
           <Space size={12} style={{ width: '100%' }}>
             <Form.Item name="channel" label="發送管道" initialValue="app" style={{ flex: 1 }}>
               <Select>
@@ -124,13 +150,11 @@ export default function NotificationsPage() {
             <Form.Item name="target_type" label="目標對象" initialValue="all" style={{ flex: 1 }}>
               <Select>
                 <Option value="all">全部選民</Option>
-                <Option value="tag">依標籤</Option>
-                <Option value="area">依選區</Option>
               </Select>
             </Form.Item>
           </Space>
         </Form>
       </Modal>
-    </div>
+    </PageScaffold>
   )
 }

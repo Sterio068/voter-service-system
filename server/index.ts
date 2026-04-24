@@ -3,6 +3,7 @@ import fastifyJwt from '@fastify/jwt'
 import fastifyCors from '@fastify/cors'
 import fastifyCookie from '@fastify/cookie'
 import fastifyMultipart from '@fastify/multipart'
+import fastifyRateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
 import path from 'path'
 import fs from 'fs'
@@ -10,6 +11,10 @@ import os from 'os'
 import { exec } from 'child_process'
 import { runMigrations } from './db/migrate'
 import { db } from './db/index'
+import { getSetting, setSetting } from './utils/settings'
+import { applySecurityHeaders } from './utils/securityHeaders'
+import { sendSpaFallback } from './utils/spaFallback'
+import { applyDataRetention, getDataRetentionPolicy } from './utils/dataRetention'
 import { authenticate, requirePermission } from './middleware/auth'
 import authRoutes from './routes/auth'
 import adminRoutes from './routes/admin'
@@ -41,6 +46,7 @@ import aiRoutes from './routes/ai'
 
 const PORT = parseInt(process.env.PORT || '8080')
 const HOST = process.env.HOST || '0.0.0.0'
+let schedulesStarted = false
 
 // Catch unhandled errors to prevent complete process death
 process.on('uncaughtException', (error: Error) => {
@@ -64,26 +70,37 @@ process.on('unhandledRejection', (reason: unknown) => {
 
 export async function buildServer() {
   const fastify = Fastify({
-    logger: process.env.NODE_ENV !== 'production',
+    logger: process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test',
     trustProxy: true,
   })
 
+  fastify.addHook('onRequest', async (_request, reply) => {
+    applySecurityHeaders(reply)
+  })
+
   // 先執行資料庫遷移，以便可從 settings 讀取 jwt_secret
-  runMigrations()
+  await runMigrations()
 
   // JWT secret：優先使用環境變數，否則從 DB 取出或自動產生隨機值並儲存
   const jwtSecret = (() => {
     if (process.env.JWT_SECRET) return process.env.JWT_SECRET
+    let existingSecret: string | null = null
     try {
-      const row = db.prepare("SELECT value FROM settings WHERE key='jwt_secret'").get() as any
-      if (row?.value && row.value.length >= 32) return row.value as string
-    } catch {}
+      existingSecret = getSetting('jwt_secret')
+    } catch (error) {
+      console.error('[Security] Failed to decrypt JWT secret. Check VOTER_SERVICE_SETTINGS_KEY / SETTINGS_ENCRYPTION_KEY.')
+      throw error
+    }
+    if (existingSecret && existingSecret.length >= 32) return existingSecret
+
     const { randomBytes } = require('crypto')
     const newSecret: string = randomBytes(32).toString('hex')
     try {
-      db.prepare("INSERT INTO settings(key,value) VALUES('jwt_secret',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-        .run(newSecret)
-    } catch {}
+      setSetting('jwt_secret', newSecret)
+    } catch (error) {
+      console.error('[Security] Failed to persist generated JWT secret.')
+      throw error
+    }
     console.log('[Security] Generated new JWT secret and stored in settings')
     return newSecret
   })()
@@ -106,6 +123,18 @@ export async function buildServer() {
   // Cookie
   await fastify.register(fastifyCookie)
 
+  // API rate limiting：先加全域保護，再由登入/Webhook 等敏感路由覆寫更嚴格限制。
+  await fastify.register(fastifyRateLimit, {
+    max: Number.parseInt(process.env.RATE_LIMIT_MAX || '600', 10),
+    timeWindow: process.env.RATE_LIMIT_WINDOW || '1 minute',
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: 429,
+      success: false,
+      error: '請求過於頻繁，請稍後再試',
+      retry_after: context.after,
+    }),
+  })
+
   // 檔案上傳
   await fastify.register(fastifyMultipart, {
     limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
@@ -123,6 +152,7 @@ export async function buildServer() {
   // 靜態前端（生產模式）
   if (process.env.NODE_ENV === 'production') {
     const distPath = path.join(__dirname, '../dist')
+    const indexHtmlPath = path.join(distPath, 'index.html')
     await fastify.register(fastifyStatic, {
       root: distPath,
       prefix: '/',
@@ -132,9 +162,9 @@ export async function buildServer() {
     // SPA fallback
     fastify.setNotFoundHandler((request, reply) => {
       if (!request.url.startsWith('/api/')) {
-        reply.sendFile('index.html', distPath)
+        return sendSpaFallback(reply, indexHtmlPath)
       } else {
-        reply.code(404).send({ success: false, error: 'Not Found' })
+        return reply.code(404).send({ success: false, error: 'Not Found' })
       }
     })
   }
@@ -195,6 +225,10 @@ export async function buildServer() {
 
     if (statusCode === 400) {
       return reply.code(400).send({ success: false, error: { code: 400, message: error.message || '請求格式錯誤' } })
+    }
+
+    if (statusCode === 429) {
+      return reply.code(429).send({ success: false, error: '請求過於頻繁，請稍後再試' })
     }
 
     const msg = error.message || 'Unknown error'
@@ -322,6 +356,8 @@ function scheduleAutoBackup() {
 
       const now = new Date().toISOString()
       setSettingValue('last_auto_backup', now)
+      setSettingValue('last_auto_backup_error', '')
+      setSettingValue('last_auto_backup_error_at', '')
       console.log(`✅ 自動備份完成：${backupPath}`)
 
       // Keep only last 10 auto-backups
@@ -334,9 +370,12 @@ function scheduleAutoBackup() {
       })
     } catch (e) {
       console.error('自動備份失敗：', e)
+      const message = e instanceof Error ? e.message : String(e)
+      setSettingValue('last_auto_backup_error', message)
+      setSettingValue('last_auto_backup_error_at', new Date().toISOString())
       try {
         db.prepare(`INSERT INTO audit_logs(user_id, action, module, target_name, created_at)
-          VALUES(1,'error','自動備份','自動備份失敗：' || ?,datetime('now','localtime'))`).run(String(e))
+          VALUES(1,'error','自動備份','自動備份失敗：' || ?,datetime('now','localtime'))`).run(message)
       } catch {}
     }
   }
@@ -493,7 +532,15 @@ function checkAndCreateAlerts() {
     const overdue = (db.prepare(`SELECT COUNT(*) as c FROM petitions WHERE due_date < ? AND status NOT IN ('closed','cancelled')`).get(today) as any).c
 
     // Check 2: uncontacted voters > 100 for 60+ days
-    const uncontacted = (db.prepare(`SELECT COUNT(*) as c FROM voters WHERE is_active=1 AND (last_contact_date IS NULL OR last_contact_date < ?)`).get(twoMonthsAgo) as any).c
+    const uncontacted = (db.prepare(`
+      SELECT COUNT(*) as c
+      FROM voters v
+      WHERE v.is_active=1
+        AND NOT EXISTS (
+          SELECT 1 FROM contact_records cr
+          WHERE cr.voter_id=v.id AND cr.contact_date >= ?
+        )
+    `).get(twoMonthsAgo) as any).c
 
     // Check 3: petition count increase vs last month
     const thisMonthStart = today.slice(0, 7) + '-01'
@@ -518,22 +565,12 @@ function checkAndCreateAlerts() {
 // F-2: Audit log archiving
 function archiveOldAuditLogs() {
   try {
-    const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() - 90)
-    const cutoffStr = cutoff.toISOString().slice(0, 10)
-
-    // Move old records to archive
-    db.exec('BEGIN')
-    db.prepare(`INSERT OR IGNORE INTO archive_audit_logs SELECT id,user_id,action,module,target_type,target_id,target_name,detail,ip_address,created_at FROM audit_logs WHERE created_at < ?`).run(cutoffStr)
-    const deleted = db.prepare(`DELETE FROM audit_logs WHERE created_at < ?`).run(cutoffStr)
-    db.exec('COMMIT')
-
-    console.log(`[Archive] Archived ${deleted.changes} audit log entries older than ${cutoffStr}`)
-    db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-      .run('last_audit_archive', new Date().toISOString())
+    const policy = getDataRetentionPolicy(db)
+    if (!policy.enabled) return
+    const result = applyDataRetention(db, policy)
+    console.log(`[DataRetention] Archived ${result.audit_logs_archived} audit logs, deleted ${result.client_errors_deleted} client errors, anonymized ${result.inactive_voters_anonymized} inactive voters`)
   } catch (e) {
-    console.error('[Archive] Failed:', e)
-    try { db.exec('ROLLBACK') } catch {}
+    console.error('[DataRetention] Failed:', e)
   }
 }
 
@@ -543,7 +580,9 @@ function scheduleAuditArchive() {
   const doCheck = () => {
     try {
       const lastArchiveRow = db.prepare("SELECT value FROM settings WHERE key='last_audit_archive'").get() as any
-      const lastArchive = lastArchiveRow?.value ? new Date(lastArchiveRow.value) : null
+      const lastRetentionRow = db.prepare("SELECT value FROM settings WHERE key='last_data_retention_run'").get() as any
+      const lastValue = lastRetentionRow?.value || lastArchiveRow?.value
+      const lastArchive = lastValue ? new Date(lastValue) : null
       const daysSince = lastArchive ? (Date.now() - lastArchive.getTime()) / (1000 * 60 * 60 * 24) : Infinity
       // Run if > 25 days since last archive
       if (daysSince > 25) {
@@ -640,11 +679,14 @@ async function start() {
 }
 
 export function startSchedules() {
+  if (schedulesStarted) return false
+  schedulesStarted = true
   scheduleAutoBackup()
   scheduleConsistencyCheck()
   scheduleWeeklyBackupVerify()
   scheduleDailyAlerts()
   scheduleAuditArchive()
+  return true
 }
 
 if (require.main === module && !process.versions.electron) {

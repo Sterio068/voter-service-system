@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import {
-  Card, Row, Col, Select, Typography, Button, Spin, Statistic, Table, Tag, Space
+  Card, Row, Col, Select, Typography, Button, Spin, Statistic, Table, Tag
 } from 'antd'
 import { PrinterOutlined, BarChartOutlined } from '@ant-design/icons'
 import {
@@ -8,9 +8,10 @@ import {
   PieChart, Pie, Cell, Legend, LineChart, Line
 } from 'recharts'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
 import dayjs from 'dayjs'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 
 const STATUS_LABELS: Record<string, string> = {
@@ -92,21 +93,23 @@ export default function PetitionStatsPage() {
         }
       `}</style>
 
-      <div className="page-header">
-        <Space>
-          <Title level={4} style={{ margin: 0 }}>📊 陳情統計報表</Title>
-          <Select value={year} onChange={setYear} style={{ width: 90 }} className="no-print">
-            {yearOptions.map(y => <Option key={y} value={y}>{y} 年</Option>)}
-          </Select>
-        </Space>
-        <Button type="primary" icon={<PrinterOutlined />} onClick={handlePrint} className="no-print">
-          列印報表
-        </Button>
-      </div>
-
-      <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-        {officeName}　{year} 年度陳情業務統計
-      </Text>
+      <PageScaffold
+        eyebrow="Print Report"
+        title="陳情統計報表"
+        titleLevel={4}
+        variant="compact"
+        description={`${officeName} ${year} 年度陳情業務統計`}
+        actions={
+          <>
+            <Select value={year} onChange={setYear} style={{ width: 90 }} className="no-print">
+              {yearOptions.map(y => <Option key={y} value={y}>{y} 年</Option>)}
+            </Select>
+            <Button type="primary" icon={<PrinterOutlined />} onClick={handlePrint} className="no-print">
+              列印報表
+            </Button>
+          </>
+        }
+      >
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>
@@ -239,6 +242,7 @@ export default function PetitionStatsPage() {
           </Row>
         </>
       )}
+      </PageScaffold>
     </div>
   )
 }

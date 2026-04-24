@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import {
-  Card, Tabs, Tag, Button, Space, Typography, Empty, Spin, Breadcrumb, message, Drawer, Form, Input, Select,
+  Card, Tabs, Tag, Button, Space, Typography, Spin, Breadcrumb, message, Drawer, Form, Input, Select,
   DatePicker, Radio, Row, Col, Divider
 } from 'antd'
 import { ArrowLeftOutlined, EditOutlined, StarFilled, PhoneOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
+import EmptyState from '../../components/ui/EmptyState'
+import FormFooter from '../../components/ui/FormFooter'
 import dayjs from 'dayjs'
 import BasicTab from './components/BasicTab'
 import ContactTab from './components/ContactTab'
@@ -14,7 +17,7 @@ import EngagementTab from './components/EngagementTab'
 import TaskTab from './components/TaskTab'
 import RelationsTab from './components/RelationsTab'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 
 const TAG_COLORS: Record<string, string> = {
@@ -95,7 +98,7 @@ export default function VoterDetailPage() {
   }
 
   if (loading) return <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>
-  if (!voter) return <Empty description="選民不存在" />
+  if (!voter) return <EmptyState title="選民不存在" description="這筆資料可能已被刪除或目前沒有讀取權限。" />
 
   const voterId = Number(id)
 
@@ -133,23 +136,28 @@ export default function VoterDetailPage() {
     {
       key: 'documents',
       label: '文件',
-      children: <Empty description="尚無文件" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+      children: <EmptyState title="尚無相關文件" description="未來公文、附件或列印紀錄可在此彙整。" />,
     },
   ]
 
   return (
-    <div>
-      <Breadcrumb items={[{ title: '選民資料', href: '/voters' }, { title: voter.name }]} style={{ marginBottom: 16 }} />
-      <div className="page-header">
-        <Space>
+    <PageScaffold
+      eyebrow="Voter Profile"
+      title={voter.name}
+      titleLevel={4}
+      variant="compact"
+      description={voter.household_address || voter.mobile || '選民完整互動檢視'}
+      actions={
+        <>
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>返回</Button>
-          <Title level={4} style={{ margin: 0 }}>{voter.name}</Title>
           {(voter.tags || []).map((tag: string) => (
             <Tag key={tag} color={TAG_COLORS[tag] || 'blue'}>{tag}</Tag>
           ))}
-        </Space>
-        <Button icon={<EditOutlined />} type="primary" onClick={handleEdit}>編輯</Button>
-      </div>
+          <Button icon={<EditOutlined />} type="primary" onClick={handleEdit}>編輯</Button>
+        </>
+      }
+    >
+      <Breadcrumb items={[{ title: '選民資料', href: '/voters' }, { title: voter.name }]} style={{ marginBottom: 16 }} />
 
       {/* U-10: Summary header bar */}
       <Card size="small" style={{ marginBottom: 12, background: '#fafafa' }}>
@@ -200,10 +208,11 @@ export default function VoterDetailPage() {
         width={600}
         destroyOnClose
         footer={
-          <Space>
-            <Button onClick={() => setDrawerOpen(false)}>取消</Button>
-            <Button type="primary" loading={savingEdit} onClick={() => form.submit()}>儲存</Button>
-          </Space>
+          <FormFooter
+            onCancel={() => setDrawerOpen(false)}
+            onSubmit={() => form.submit()}
+            submitLoading={savingEdit}
+          />
         }
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
@@ -279,6 +288,6 @@ export default function VoterDetailPage() {
       <Card>
         <Tabs defaultActiveKey="basic" type="card" items={tabItems} />
       </Card>
-    </div>
+    </PageScaffold>
   )
 }

@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { aiChat, testAIConnection, getAIConfig, isAIEnabled, sanitizeError } from '../utils/aiClient'
+import { setSetting } from '../utils/settings'
 
 const PETITION_CATEGORIES = ['市政建設', '社會福利', '教育文化', '環境衛生', '交通運輸', '都市計畫', '法律諮詢', '就業服務', '其他']
 const VALID_PROVIDERS = ['none', 'gemini', 'openai', 'ollama']
@@ -75,12 +76,11 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       const check = validateBaseUrl(String(body.baseUrl))
       if (!check.ok) return reply.code(400).send({ success: false, error: `Ollama 端點無效：${check.error}` })
     }
-    const upd = db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-    if (body.provider !== undefined) upd.run('ai_provider', body.provider)
-    if (body.model !== undefined) upd.run('ai_model', String(body.model).slice(0, 100))
-    if (body.apiKey !== undefined && !String(body.apiKey).startsWith('***')) upd.run('ai_api_key', String(body.apiKey).slice(0, 256))
-    if (body.baseUrl !== undefined) upd.run('ai_base_url', String(body.baseUrl))
-    if (body.maxTokens !== undefined) upd.run('ai_max_tokens', String(parseInt(body.maxTokens)))
+    if (body.provider !== undefined) setSetting('ai_provider', body.provider)
+    if (body.model !== undefined) setSetting('ai_model', String(body.model).slice(0, 100))
+    if (body.apiKey !== undefined && !String(body.apiKey).startsWith('***')) setSetting('ai_api_key', String(body.apiKey).slice(0, 256))
+    if (body.baseUrl !== undefined) setSetting('ai_base_url', String(body.baseUrl))
+    if (body.maxTokens !== undefined) setSetting('ai_max_tokens', String(parseInt(body.maxTokens, 10)))
     return reply.send({ success: true, message: 'AI 設定已儲存' })
   })
 

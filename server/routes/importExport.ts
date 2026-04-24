@@ -1,10 +1,11 @@
 import { FastifyInstance } from 'fastify'
 import { db } from '../db/index'
-import { requirePermission, authenticate } from '../middleware/auth'
+import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
-import * as XLSX from 'xlsx'
+import * as XLSX from '@e965/xlsx'
 import bcrypt from 'bcrypt'
 import { parseAddressFields, looksLikeFullAddress } from '../utils/parseAddress'
+import { maskVoterExportRecord } from '../utils/piiMasking'
 
 function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
@@ -45,7 +46,7 @@ const PETITION_EXPORT_HEADERS = [
 
 export default async function importExportRoutes(fastify: FastifyInstance) {
   // ===== 選民範本下載 =====
-  fastify.get('/api/voters/import/template', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.get('/api/voters/import/template', { preHandler: [requirePermission('voters', 'create')] }, async (request, reply) => {
     const wb = XLSX.utils.book_new()
     // 範本工作表
     const ws = XLSX.utils.aoa_to_sheet([
@@ -103,7 +104,15 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
   // ===== 選民匯出 =====
   fastify.get('/api/voters/export', { preHandler: [requirePermission('voters', 'export')] }, async (request, reply) => {
     const cu = (request as any).currentUser
-    const { search, city, district, village, tag } = request.query as any
+    const { search, city, district, village, tag, mask, include_sensitive, reason } = request.query as any
+    const fullSensitiveExport = include_sensitive === '1' || include_sensitive === 'true' || mask === '0' || mask === 'false'
+    const exportReason = typeof reason === 'string' ? reason.trim() : ''
+    if (fullSensitiveExport && cu.role !== 'admin') {
+      return reply.code(403).send({ success: false, error: '完整個資匯出僅限管理員使用' })
+    }
+    if (fullSensitiveExport && exportReason.length < 5) {
+      return reply.code(400).send({ success: false, error: '完整個資匯出需填寫至少 5 個字的匯出理由' })
+    }
     const conds = ['v.is_active = 1']
     const params: any[] = []
     if (search) { const es = escapeLike(search); conds.push("(v.name LIKE ? ESCAPE '\\' OR v.mobile LIKE ? ESCAPE '\\' OR v.household_address LIKE ? ESCAPE '\\')"); params.push(`%${es}%`, `%${es}%`, `%${es}%`) }
@@ -133,7 +142,12 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
       module: '選民管理',
       target_type: 'voter_export',
       target_id: 0,
-      target_name: `匯出 ${exportedCount} 筆選民資料`,
+      target_name: `${fullSensitiveExport ? '完整' : '遮罩'}匯出 ${exportedCount} 筆選民資料`,
+      detail: {
+        masked: !fullSensitiveExport,
+        reason: fullSensitiveExport ? exportReason : null,
+        filters: { search: !!search, city: city || null, district: district || null, village: village || null, tag: tag || null },
+      },
     })
     // Large export warning
     if (exportedCount > 500) {
@@ -144,7 +158,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     // G-2: Add watermark fields
     const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
     const markedData = voters.map((v: any) => ({
-      ...v,
+      ...(fullSensitiveExport ? v : maskVoterExportRecord(v)),
       _exported_by: cu.name,
       _exported_at: timestamp,
     }))
@@ -488,7 +502,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
   })
 
   // ===== 陳情範本下載 =====
-  fastify.get('/api/petitions/import/template', { preHandler: [authenticate] }, async (_req, reply) => {
+  fastify.get('/api/petitions/import/template', { preHandler: [requirePermission('petitions', 'create')] }, async (_req, reply) => {
     const headers = ['陳情日期', '陳情人姓名', '聯絡電話', '陳情方式', '陳情類別', '急迫程度', '陳情內容', '區域縣市', '區域鄉鎮市區', '區域村里', '詳細地址']
     const example = ['2026-04-01', '王小明', '0912345678', '電話', '道路交通', '一般', '住家前方路燈故障，已黑暗多日，請協助修繕。', '臺北市', '大安區', '某里', '某路某段某號']
     const helpRows = [
@@ -538,8 +552,8 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     const errors: { row: number; error: string }[] = []
 
     const importStmt = db.prepare(`
-      INSERT INTO petitions (case_number,petition_date,voter_id,voter_name,contact_phone,channel,category,content,area_city,area_district,area_village,area_address,urgency,status,created_by,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'normal','pending',?,datetime('now','localtime'),datetime('now','localtime'))
+      INSERT INTO petitions (case_number,petition_date,voter_id,contact_phone,channel,category,content,area_city,area_district,area_village,area_address,urgency,status,created_by,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'pending',?,datetime('now','localtime'),datetime('now','localtime'))
     `)
 
     for (let i = 1; i < rows.length; i++) {
@@ -570,13 +584,14 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
         const caseNum = `${year}-${seq}`
 
         importStmt.run(
-          caseNum, dateStr, voterId, nameRaw || null, phoneRaw || null, channel,
+          caseNum, dateStr, voterId, phoneRaw || null, channel,
           String(r[COL.category] || '').trim() || null,
           content,
           String(r[COL.city] || '').trim() || null,
           String(r[COL.district] || '').trim() || null,
           String(r[COL.village] || '').trim() || null,
           String(r[COL.address] || '').trim() || null,
+          urgency,
           cu.id
         )
         imported++
@@ -591,7 +606,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
   })
 
   // ===== 團體範本下載 =====
-  fastify.get('/api/groups/import/template', { preHandler: [authenticate] }, async (_req, reply) => {
+  fastify.get('/api/groups/import/template', { preHandler: [requirePermission('groups', 'create')] }, async (_req, reply) => {
     const headers = ['團體名稱', '類別', '聯絡電話', '地址', '預估成員數', '備註']
     const example = ['大安社區發展協會', '社區', '02-12345678', '臺北市大安區某路某段', '50', '每月第一週六聚會']
     const helpRows = [

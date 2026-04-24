@@ -9,7 +9,18 @@ export default async function taskRoutes(fastify: FastifyInstance) {
     const { status, assignee_id, voter_id, page = 1, pageSize = 20 } = request.query as any
     const conds: string[] = []
     const params: any[] = []
-    if (status) { conds.push('t.status = ?'); params.push(status) }
+    if (status) {
+      const statuses = (Array.isArray(status) ? status : String(status).split(','))
+        .map((value: string) => value.trim())
+        .filter(Boolean)
+      if (statuses.length === 1) {
+        conds.push('t.status = ?')
+        params.push(statuses[0])
+      } else if (statuses.length > 1) {
+        conds.push(`t.status IN (${statuses.map(() => '?').join(',')})`)
+        params.push(...statuses)
+      }
+    }
     if (assignee_id) { conds.push('t.assignee_id = ?'); params.push(Number(assignee_id)) }
     if (voter_id) { conds.push('t.related_voter_id = ?'); params.push(Number(voter_id)) }
     const where = conds.length ? 'WHERE ' + conds.join(' AND ') : ''

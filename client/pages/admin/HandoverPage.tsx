@@ -1,9 +1,10 @@
 // Staff handover page - transfer all cases when employee leaves
 
 import React, { useState, useEffect } from 'react'
-import { Card, Select, Button, Table, Statistic, Row, Col, Modal, Alert, message } from 'antd'
+import { Card, Select, Button, Statistic, Row, Col, Modal, Alert, message } from 'antd'
 import { SwapOutlined, WarningOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
 
 export default function HandoverPage() {
   const [users, setUsers] = useState<any[]>([])
@@ -48,7 +49,13 @@ export default function HandoverPage() {
   }
 
   return (
-    <div style={{ padding: 24 }}>
+    <PageScaffold
+      eyebrow="Handover Control"
+      title="員工交接"
+      titleLevel={4}
+      variant="compact"
+      description="批量轉移離職或輪調人員的未結案件與待辦，避免服務中斷。"
+    >
       <Card title="員工離職交接" extra={<WarningOutlined style={{ color: '#ff4d4f' }} />}>
         <Alert message="此功能將批量轉移員工的未結案件與待辦事項，請謹慎操作" type="warning" showIcon style={{ marginBottom: 16 }} />
         <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -76,6 +83,6 @@ export default function HandoverPage() {
         <p>確定要將所有未結案件從 <strong>{users.find(u => u.id === sourceUser)?.name}</strong> 轉移給 <strong>{users.find(u => u.id === targetUser)?.name}</strong> 嗎？</p>
         <p>此操作會轉移 {preview?.petitions} 件陳情 和 {preview?.tasks} 件待辦，無法復原。</p>
       </Modal>
-    </div>
+    </PageScaffold>
   )
 }

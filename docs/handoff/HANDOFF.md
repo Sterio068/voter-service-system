@@ -1,6 +1,6 @@
 # 選民服務系統 — 完整交接文件
 
-**版本**：v1.0.8（2026-04-23）
+**版本**：v1.0.8（2026-04-25）
 **授權**：私有專案
 **Repo**：https://github.com/Sterio068/voter-service-system
 
@@ -18,6 +18,11 @@
 - 資料庫：單一 .db 檔（SQLite WAL 模式）放使用者目錄
 
 **不是 web 服務**：沒有多使用者共享伺服器，每台電腦獨立安裝、獨立資料庫。但透過 LAN IP 可讓同辦公室多人連同一後端。
+
+**目前交付狀態補充**：
+- restore-on-startup 已有 rollback 保護：pending restore 套用失敗時，系統會回復原主 DB，並保留 `*.restore.failed-*` 供排查。
+- `POST /api/voters/:id/merge` 已補 `voter_activity_history`、`voter_engagement` 與 duplicate membership 處理，實務上較不容易在髒資料下 rollback。
+- Electron main process 已補本機 Fastify watchdog，連續 health check 失敗時會嘗試自動重啟；server scheduler 已做 idempotent 保護。
 
 ---
 
@@ -39,7 +44,7 @@
 | 日期 | dayjs | 1.11.10 |
 | 圖表 | Recharts | 2.12.2 |
 | 日曆 | FullCalendar | 6.1.11 |
-| 檔案 | xlsx（SheetJS）+ docx | - |
+| 檔案 | @e965/xlsx（SheetJS 相容 fork）+ docx | - |
 | 外部整合 | googleapis、openai | - |
 | 打包 | electron-builder | 26.8.1 |
 
@@ -98,7 +103,7 @@ voter-service-system/
 │   ├── App.tsx                 # 根元件 + BrowserRouter + 所有 Route 定義
 │   ├── main.tsx               # React 入口
 │   ├── pages/                  # 56 個頁面元件
-│   │   ├── Dashboard.tsx      # 儀表板（首頁）
+│   │   ├── Dashboard.tsx      # Today Command Center 今日工作台（首頁）
 │   │   ├── LoginPage.tsx
 │   │   ├── voters/            # 選民管理 (ListPage、DetailPage、各 Tab)
 │   │   ├── petitions/         # 陳情管理
@@ -145,9 +150,11 @@ voter-service-system/
 ├── docs/                       # 文件
 │   ├── user-manual.html       # 使用者手冊
 │   ├── installation-guide.html
-│   └── handoff/               # ← 你正在看的交接文件
+│   ├── handoff/               # ← 你正在看的交接文件
+│   └── runbooks/              # 備份還原、資料保護、資料品質、發布、安裝、事故處理
 │
-├── .github/workflows/release.yml   # CI: tag v* 時自動 build Mac+Win 並發佈 Release
+├── .github/workflows/ci.yml        # PR / main: typecheck + test + build + production audit
+├── .github/workflows/release.yml   # tag v* 時自動 build Mac+Win 並發佈 Release
 ├── package.json
 ├── vite.config.ts             # 前端 build 設定（含 chunk split）
 ├── tsconfig.json              # 前端 TS 設定
@@ -155,7 +162,7 @@ voter-service-system/
 └── tsconfig.electron.json     # Electron TS 設定
 ```
 
-> ⚠️ **陷阱**：`server/routes/` 下有幾個 `.js` 檔案是舊的編譯產物（admin.js、auth.js 等），**僅 `.ts` 為實際程式碼**。可以忽略或清掉。
+> ✅ `server/` 下舊的 `.js` 編譯產物已清除；後續請以 `.ts` 作為唯一來源，避免重新把編譯產物放回 source tree。
 
 ---
 
@@ -186,6 +193,11 @@ npm run dev
 |------|------|
 | `npm run dev` | 全端開發模式 |
 | `npm run build` | build client + main + preload |
+| `npm run typecheck` | client + server + Electron TypeScript 檢查 |
+| `npm test` | Node test runner + tsx 執行單元測試 |
+| `npm run test:e2e` | Playwright Chromium smoke / navigation / role-access 測試 |
+| `npm run audit:prod` | production dependencies audit |
+| `npm run verify` | typecheck + test + build + production audit |
 | `npm run dist:mac` | 產生 Mac DMG |
 | `npm run dist:win` | 產生 Windows EXE |
 | `npm run dist:all` | 兩個平台都產生（需 macOS） |
@@ -194,9 +206,7 @@ npm run dev
 ### TypeScript 檢查
 
 ```bash
-npx tsc -p tsconfig.json --noEmit         # client
-npx tsc -p tsconfig.server.json --noEmit  # server
-npx tsc -p tsconfig.electron.json --noEmit # electron
+npm run typecheck
 ```
 
 ### better-sqlite3 native module 注意
@@ -425,11 +435,15 @@ fastify.post('/api/voters', {
 
 **`client/App.tsx`** 定義（所有需登入的路由都在 `<MainLayout>` 下）：
 
+> 目前頁面元件已用 `React.lazy` + `Suspense` 做 route-level code splitting；新增頁面時請沿用 lazy import，避免把大型頁面重新塞回初始 bundle。
+
 ```
 /                            → Dashboard
 /login                       → LoginPage
 
 /voters                      → VoterListPage
+/voters/merge                → VoterMergePage
+/voters/call-bank            → CallBankPage
 /voters/:id                  → VoterDetailPage（含 6 個 Tab）
 
 /petitions                   → PetitionListPage
@@ -442,12 +456,13 @@ fastify.post('/api/voters', {
 /schedules                   → SchedulePage（FullCalendar）
 /documents                   → DocumentListPage
 /tasks                       → TasksPage
-/events                      → EventListPage
-/surveys                     → SurveyListPage
-/surveys/:id                 → SurveyDetailPage
+/events                      → EventsPage
+/surveys                     → SurveysPage
 /notifications               → NotificationsPage
 /proposals                   → ProposalsPage
 /reports                     → ReportsPage（多種報表）
+/print/voters                → PrintVoterListPage
+/print/labels                → PrintLabelPage
 
 /ceremonies                  → CeremonyPage
 /vendors                     → VendorPage
@@ -482,7 +497,8 @@ fastify.post('/api/voters', {
 - 寫：`schedules` 新增/更新/刪除時 → 同步到 Google Calendar
 - 讀：GET `/api/integrations/gcal/accounts` 取得已綁定帳號清單
 - 失敗不擋主操作：`syncScheduleToGCal(...).catch(logGCalError)`
-- 設定：`gcal_client_id`、`gcal_client_secret` 存 settings 表
+- 設定：`gcal_client_id`、`gcal_client_secret` 存 settings 表；secret 由 `server/utils/secrets.ts` 加密
+- 設定頁重新儲存時，`client_secret` 留空代表保留舊 secret，不會把既有憑證清空
 
 ### LINE（單向接收）
 
@@ -490,7 +506,8 @@ fastify.post('/api/voters', {
 - 公開端點 `POST /api/line/webhook`（無認證，LINE 官方呼叫）
 - 綁定 LINE user ID 到選民（在 `voters.tags` 欄位以 `LINE:xxx` 標籤儲存）
 - 接收 LINE 訊息自動建立聯絡紀錄
-- 設定：`line_channel_access_token`、`line_channel_secret`
+- 設定：`line_channel_access_token`、`line_channel_secret` 存 settings 表；secret 由 `server/utils/secrets.ts` 加密
+- Webhook 有 route-level rate limit，且簽章驗證失敗一律拒絕
 
 ### OpenAI / AI 助理
 
@@ -501,14 +518,36 @@ fastify.post('/api/voters', {
   - `/api/ai/summarize` — 摘要陳情/文件
   - `/api/ai/extract` — 從長文抽取結構化資料
   - `/api/ai/draft-reply` — 撰寫回覆草稿
-- API key 儲存在 settings 表（HACK：已加密儲存是 TODO）
+- API key 儲存在 settings 表，透過 `server/utils/secrets.ts` 加密；前端只取得遮罩值
 - 前端 `<AIButton>` 元件統一觸發
+
+### API 節流與邊界保護
+
+- 檔案：`server/index.ts`、`server/routes/auth.ts`、`server/routes/lineWebhook.ts`
+- 全域 `@fastify/rate-limit` 預設 `600 requests / minute`，可用 `RATE_LIMIT_MAX`、`RATE_LIMIT_WINDOW` 調整
+- 登入端點額外限制 `10 requests / 15 minutes`，並保留既有 username-based login lockout
+- LINE webhook 額外限制 `120 requests / minute`
+- 備份下載/建立/還原與附件上傳有較低 route-level rate limit，避免重 I/O 路由被濫用
+- 429 回應固定為泛化訊息，不回傳內部錯誤或 stack
+
+### 安全標頭、附件與備份驗證
+
+- 檔案：`server/utils/securityHeaders.ts`、`server/utils/fileSecurity.ts`、`server/routes/attachments.ts`、`server/routes/backup.ts`
+- 全域回應會加 `Content-Security-Policy`、`X-Frame-Options`、`Referrer-Policy`、`Permissions-Policy`、`X-Content-Type-Options`
+- CSP 目前允許 inline style 以支援 Ant Design CSS-in-JS，但不允許 inline script
+- 附件只允許 PDF/圖片 MIME，儲存副檔名由 MIME 決定，並做基本 magic-byte 驗證
+- 附件 list/download 會確認父資源存在且角色具備對應模組 view 權限；未知 `ref_type` 一律拒絕
+- 備份還原除了 `PRAGMA integrity_check`，也會檢查必要資料表與 `schema_migrations`，避免任意 SQLite 檔被當成本系統備份
+- 本機備份會產生 `.meta.json` sidecar，記錄 SHA-256、schema version、Node version 與 HMAC-SHA256 簽章；`/api/backup/verify/:filename` 會回報 signed/signature/trust_level
+- 設定頁備份清單會顯示「已簽章 / 舊格式」，並可直接呼叫 verify API 驗證單筆備份
+- 可用 `VOTER_SERVICE_BACKUP_ALLOWED_ROOTS` 或 `BACKUP_ALLOWED_ROOTS` 啟用備份目錄白名單；多個目錄用系統 path delimiter、分號或換行分隔
 
 ### Electron 授權解鎖
 
 - 檔案：`electron/main.ts` 的 `showUnlockWindow()` + `electron/preload-unlock.ts`
 - 機制：MAC 位址 + hostname → SHA256 雜湊 → 存 `settings.machine_fingerprint`
-- 首次安裝或換機時顯示解鎖視窗（要求輸入 `VENDOR_PASSWORD`，寫死在 main.ts）
+- 若有設定機器綁定密碼，首次安裝或換機時顯示解鎖視窗（要求輸入授權密碼）
+- 授權密碼來源：`VOTER_SERVICE_VENDOR_PASSWORD`，相容舊環境變數 `VENDOR_PASSWORD`；未設定時正式版不啟用 vendor lock
 - 開發模式跳過（`NODE_ENV !== 'production'`）
 
 ---
@@ -618,14 +657,14 @@ const FORM_INITIAL = { channel: '電話' }
 
 ---
 
-## 13. 測試策略（目前幾乎沒有）
+## 13. 測試策略（剛建立基線）
 
-**現狀**：**沒有自動化測試**。靠 TypeScript + Zod + 手動測試。
+**現狀**：已有 `npm test`，使用 Node 內建 test runner + `tsx` 執行 TypeScript 測試；目前覆蓋 vendor 授權密碼、secret 加密工具、安全標頭、附件檔案安全、備份 metadata、PII 遮罩工具，以及 Fastify + 暫存 SQLite 的 API integration tests（auth、fresh install 預設設定、permissions、voters、petitions、petition import/export、attachments、schedules、consultations、backup/restore、voter import/export、data retention、secrets round-trip、ceremonies/expenses/template RBAC），並新增 `restoreOnStartup` 測試驗證待還原資料庫會在啟動前真正套用到主 DB。CI 已新增 `typecheck client/server/electron/test`、`npm test`、`npm run build`、`npm audit --omit=dev`。Playwright E2E smoke/navigation/role-access 已可跑 `npm run test:e2e`，目前覆蓋登入、Dashboard 今日工作台 deep-link、主要模組 compact page shell 與共用篩選工具列、全主要路由無 ErrorBoundary 崩潰、設定頁資料保留控制、UI 新增選民、UI 新增陳情、備份建立、完整匯出理由 Modal 與下載，以及 assistant / supervisor / volunteer 的受限路由、列印頁、導覽、快捷鍵、Dashboard 入口、禮儀/收支 read-only 管控與頁內 CRUD 按鈕巡檢，smoke/navigation/role-access 共 18 條已可通過。UI primitives 已包含 `PageScaffold`、`WorkspaceToolbar`、`EmptyState`、`FormFooter`、`FormSection`、`SelectionActionBar`、`MetricCard`、`ActionQueue`，前端主路由、側邊欄與快捷鍵也已統一走共用 permission map；另外已新增 `shared/permissions.ts` 作為前後端共用 RBAC 基線，並把 reports / audit logs / categories / ceremonies / expenses 收斂成 read-only / manage 分層頁面。2026-04-25 另補上 `VendorPage`、`ProposalsPage` 長表單 Modal 的 scrollable body + 可見 footer，修正正式版 1280×768 視窗下 primary action 掉出畫面的 UX 缺陷；同日也補上 fresh install `settings` baseline seed、`backup_path` 跟隨 `BACKUPS_PATH`、正式版隔離 restore-on-restart 驗收與 12k/1.5k/300 packaged load smoke，最新版安裝包已完成 source 與 packaged app 雙驗證。
 
 **建議下一步**：
-- 後端：`server/routes/*.test.ts` + Vitest + 測試資料庫
-- 前端：重要頁面用 Playwright E2E
-- 現有的 `package.json` 無 `test` script，需要加
+- 後端：沿用 `tests/helpers/apiTestServer.ts` 的暫存 SQLite harness，繼續補 petition export/import、schedule conflict、consultation capacity、secrets round-trip 等 integration tests
+- 前端：重要頁面用 Playwright E2E，下一批優先補 Dashboard 工作佇列項目、資料品質掃描、選民合併、Google Calendar 失敗不阻擋，並依 `FULL_SYSTEM_TEST_PLAN.md` 把人工巡檢缺陷轉成回歸測試
+- 擴充既有 `npm test`，優先補 Google/LINE/AI 設定路由 secrets round-trip、團體匯入 round-trip、活動/問卷/通知模組稽核完整性
 
 ---
 
@@ -682,11 +721,10 @@ SELECT * FROM settings;
 **最後交接提交**：commit `dabe83f`（v1.0.8，2026-04-23）
 
 **建議下個 AI / 開發者優先做**：
-1. 加自動化測試（後端 Vitest + 前端 Playwright）
-2. 把 `server/middleware/auth.ts` 的 `VENDOR_PASSWORD` 改成環境變數
-3. 把 AI API key 與 Google Client Secret 加密儲存（目前明文）
-4. `xlsx` 升級到 `@e965/xlsx`（目前版有 CVE）
-5. 清除 `server/routes/` 下殘留的 `.js` 檔案
+1. 補 Google Calendar、LINE、AI 設定路由的 secrets 儲存/遮罩/讀取整合測試
+2. 擴充 E2E smoke：資料品質掃描、選民合併、權限矩陣與 Google Calendar 失敗不阻擋
+3. 補活動、問卷、通知、Call Bank 等頁面的自動化驗證與業務流程測試
+4. 補團體匯入完整 round-trip 測試，確認 `@e965/xlsx` 相容既有範本
 
 ---
 
@@ -706,8 +744,9 @@ SELECT * FROM settings;
 10. `client/utils/api.ts` — HTTP 層
 11. `electron/main.ts` — Electron 主程序
 12. 這份 HANDOFF.md ✓
+13. `docs/handoff/FULL_SYSTEM_TEST_PLAN.md` — 實機登入後的全功能巡檢矩陣
 
-讀完這 12 個檔案就能處理 95% 的 issue。
+讀完這 13 個檔案就能處理 95% 的 issue。
 
 ---
 

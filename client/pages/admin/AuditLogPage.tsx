@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { Table, Button, Space, Select, Typography, Card, DatePicker, Tag } from 'antd'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
+import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
 import dayjs from 'dayjs'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 const { RangePicker } = DatePicker
 
@@ -59,11 +61,18 @@ export default function AuditLogPage() {
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>📋 操作紀錄</Title>
-      </div>
-      <Card style={{ marginBottom: 16 }}>
+    <PageScaffold
+      eyebrow="Audit Trail"
+      title="操作紀錄"
+      titleLevel={4}
+      variant="compact"
+      description="查詢登入、匯出、異動與刪除紀錄，支援資安稽核追蹤。"
+    >
+      <WorkspaceToolbar
+        title="稽核篩選"
+        description="依操作類型、模組與日期區間查詢敏感操作紀錄。"
+        meta={<Text type="secondary">共 {total} 筆</Text>}
+      >
         <Space wrap>
           <Select placeholder="操作類型" allowClear style={{ width: 110 }} onChange={setFilterAction}>
             {Object.entries(ACTION_LABELS).map(([v, l]) => <Option key={v} value={v}>{l}</Option>)}
@@ -72,14 +81,13 @@ export default function AuditLogPage() {
             {modules.map(m => <Option key={m} value={m}>{m}</Option>)}
           </Select>
           <RangePicker onChange={(_, s) => setDateRange(s[0] && s[1] ? [s[0], s[1]] : null)} />
-          <Text type="secondary">共 {total} 筆</Text>
         </Space>
-      </Card>
+      </WorkspaceToolbar>
       <Card>
         <Table columns={columns} dataSource={data} rowKey="id" loading={loading} size="small"
           pagination={{ current: page, pageSize: 30, total, showTotal: t => `共 ${t} 筆`, onChange: setPage }}
           scroll={{ x: 700 }} />
       </Card>
-    </div>
+    </PageScaffold>
   )
 }

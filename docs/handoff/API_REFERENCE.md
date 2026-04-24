@@ -4,7 +4,7 @@
 **認證**：`Authorization: Bearer <JWT>`（除了標記 `[PUBLIC]` 的）  
 **統一回應**：`{ success: boolean, data?, error?, total? }`
 
-共 **203 個端點**。下表按模組分類。
+共 **205 個端點**。下表按模組分類。
 
 ---
 
@@ -35,7 +35,7 @@
 | GET | `/api/voters/birthdays` | voters.view | 近期生日 |
 | GET | `/api/voters/import/template` | authenticated | 下載匯入範本 |
 | POST | `/api/voters/import` | voters.create | 批次匯入 (dryRun 可選) |
-| GET | `/api/voters/export` | voters.export | 匯出 Excel |
+| GET | `/api/voters/export` | voters.export | 匯出 Excel；預設遮罩 PII，完整個資需 `include_sensitive=1&reason=...` 且限 admin |
 | GET | `/api/voters/:id/topics` | voters.view | 關注議題列表 |
 | PUT | `/api/voters/:id/topics` | voters.edit | 更新關注議題 |
 | GET | `/api/voters/:id/engagement` | voters.view | 支持度 / 志工狀態 |
@@ -111,10 +111,10 @@
 
 | Method | Path | 權限 | 說明 |
 |--------|------|------|------|
-| GET | `/api/schedules` | schedules.view | 列表（start/end 過濾） |
-| POST | `/api/schedules` | schedules.create | 新增（含衝突偵測、自動同步 GCal） |
+| GET | `/api/schedules` | schedules.view | 列表（start/end 採 overlap 過濾，支援跨日行程） |
+| POST | `/api/schedules` | schedules.create | 新增（含 overlap 衝突偵測、自動同步 GCal） |
 | GET | `/api/schedules/:id` | schedules.view | 詳情 |
-| PUT | `/api/schedules/:id` | schedules.edit | 更新 |
+| PUT | `/api/schedules/:id` | schedules.edit | 更新（排除自身後做 overlap 衝突偵測） |
 | DELETE | `/api/schedules/:id` | schedules.delete | 軟刪除 |
 
 ---
@@ -326,7 +326,7 @@
 | Method | Path | 權限 | 說明 |
 |--------|------|------|------|
 | GET | `/api/attachments` | authenticated | 列表（by target） |
-| POST | `/api/attachments` | authenticated | 上傳（multipart，限 20MB、PDF/圖片） |
+| POST | `/api/attachments` | authenticated | 上傳（multipart，限 20MB、PDF/圖片；後端 MIME allowlist + 基本檔頭驗證） |
 | GET | `/api/attachments/:id/file` | authenticated | 下載 |
 | DELETE | `/api/attachments/:id` | authenticated | 刪除 |
 
@@ -388,16 +388,19 @@
 | GET | `/api/admin/settings` | settings.view | 系統設定 |
 | PUT | `/api/admin/settings` | settings.edit | 更新設定 |
 | GET | `/api/admin/system-health` | admin.view | 系統健康（DB size、記憶體等） |
+| GET | `/api/admin/data-quality` | admin.view | 資料品質掃描（重複/孤兒/附件遺失） |
+| GET | `/api/admin/data-retention/preview` | admin.view | 資料保留預覽（待封存/刪除/去識別筆數） |
+| POST | `/api/admin/data-retention/run` | admin.edit | 執行資料保留清理；需 `confirm=RUN_RETENTION` |
 | GET | `/api/admin/alerts` | authenticated | 系統警告 |
-| POST | `/api/admin/backup` | system.edit | 立即備份 |
-| GET | `/api/admin/backup/list` | system.view | 備份列表 |
-| GET | `/api/admin/backup/download` | system.edit | 下載備份 |
+| POST | `/api/admin/backup` | system.edit | 立即備份；產生 `.meta.json` 簽章 sidecar |
+| GET | `/api/admin/backup/list` | system.view | 備份列表（含 signed、sha256、schema_version） |
+| GET | `/api/admin/backup/download` | system.edit | 下載備份（response headers 含 SHA-256 與 HMAC 簽章） |
 | DELETE | `/api/admin/backup/:name` | system.edit | 刪除備份 |
 | GET | `/api/admin/backup/status` | system.view | 備份狀態 |
-| GET | `/api/admin/backup/path` | system.view | 備份位置 |
-| POST | `/api/admin/backup/path` | system.edit | 修改備份位置 |
-| POST | `/api/admin/restore` | system.edit | 還原備份 |
-| GET | `/api/backup/verify/:filename` | admin.view | 驗證備份完整性 |
+| GET | `/api/admin/backup/path` | system.view | 備份位置與白名單狀態 |
+| POST | `/api/admin/backup/path` | system.edit | 修改備份位置；若設定 `VOTER_SERVICE_BACKUP_ALLOWED_ROOTS` 則需落在白名單內 |
+| POST | `/api/admin/restore` | system.edit | 還原備份（integrity + 必要 schema 驗證） |
+| GET | `/api/backup/verify/:filename` | admin.view | 驗證備份完整性、必要 schema 與簽章狀態 |
 
 ---
 

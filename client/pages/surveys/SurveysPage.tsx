@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Table, Button, Space, Tag, Typography, Modal, Form, Input, Select, message, Drawer, Popconfirm } from 'antd'
+import { Card, Table, Button, Space, Tag, Modal, Form, Input, Select, message, Drawer, Popconfirm } from 'antd'
 import { PlusOutlined, BarChartOutlined, DeleteOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
 
-const { Title } = Typography
 const { Option } = Select
 const { TextArea } = Input
 
@@ -34,7 +34,9 @@ export default function SurveysPage() {
       await api.post('/surveys', values)
       message.success('問卷已建立')
       setCreateOpen(false); form.resetFields(); fetchSurveys()
-    } catch { message.error('建立失敗') }
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '建立失敗')
+    }
   }
 
   const openStats = async (survey: any) => {
@@ -87,17 +89,26 @@ export default function SurveysPage() {
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>📋 問卷管理</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setCreateOpen(true) }}>新增問卷</Button>
-      </div>
+    <PageScaffold
+      eyebrow="Survey Lab"
+      title="問卷管理"
+      titleLevel={4}
+      variant="compact"
+      description="建立議題問卷、發布狀態與回應統計，支援後續交叉分析。"
+      actions={<Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setCreateOpen(true) }}>新增問卷</Button>}
+    >
       <Card>
         <Table columns={columns} dataSource={surveys} rowKey="id" loading={loading} size="small" />
       </Card>
       <Modal title="新增問卷" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={() => form.submit()} okText="建立">
         <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="title" label="問卷名稱" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item
+            name="title"
+            label="問卷名稱"
+            rules={[{ required: true, whitespace: true, message: '請輸入問卷名稱' }]}
+          >
+            <Input />
+          </Form.Item>
           <Form.Item name="description" label="說明"><TextArea rows={3} /></Form.Item>
         </Form>
       </Modal>
@@ -107,6 +118,6 @@ export default function SurveysPage() {
           {stats && <pre style={{ fontSize: 12, maxHeight: 400, overflow: 'auto' }}>{JSON.stringify(stats, null, 2)}</pre>}
         </div>
       </Drawer>
-    </div>
+    </PageScaffold>
   )
 }

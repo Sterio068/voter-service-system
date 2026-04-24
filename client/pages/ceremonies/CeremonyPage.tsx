@@ -5,10 +5,14 @@ import {
 } from 'antd'
 import { PlusOutlined, GiftOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
+import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
 import dayjs from 'dayjs'
 import { CEREMONY_TYPE_LABELS } from '../../utils/constants'
+import { useAuthStore } from '../../stores/authStore'
+import { hasModulePermission } from '../../utils/permissions'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -18,6 +22,11 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 }
 
 export default function CeremonyPage() {
+  const role = useAuthStore((s) => s.user?.role)
+  const canCreateCeremonies = hasModulePermission(role, 'ceremonies', 'create')
+  const canEditCeremonies = hasModulePermission(role, 'ceremonies', 'edit')
+  const canDeleteCeremonies = hasModulePermission(role, 'ceremonies', 'delete')
+  const canViewExpenseSummary = hasModulePermission(role, 'expenses', 'view')
   const [data, setData] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -61,10 +70,14 @@ export default function CeremonyPage() {
   }
 
   useEffect(() => {
+    if (!canViewExpenseSummary) {
+      setSummary({})
+      return
+    }
     api.get('/expenses/summary', { params: { year: filterYear, month: filterMonth || undefined } })
       .then(r => setSummary(r.data.data || {}))
       .catch(() => {})
-  }, [filterYear, filterMonth])
+  }, [canViewExpenseSummary, filterYear, filterMonth])
 
   const openDetail = async (id: number) => {
     try {
@@ -96,6 +109,19 @@ export default function CeremonyPage() {
     } catch { message.error('載入記錄失敗') }
   }
 
+  const openCreate = () => {
+    setEditingRecord(null)
+    setEditingItems([])
+    editForm.resetFields()
+    editForm.setFieldsValue({
+      ceremony_type: 'other',
+      event_date: dayjs(),
+      is_joint: false,
+      status: 'planned',
+    })
+    setEditModalOpen(true)
+  }
+
   const handleDelete = async (id: number) => {
     try {
       await api.delete(`/ceremonies/${id}`)
@@ -106,13 +132,20 @@ export default function CeremonyPage() {
 
   const handleEditSave = async (values: any) => {
     try {
-      await api.put(`/ceremonies/${editingRecord.id}`, {
+      const payload = {
         ...values,
         event_date: values.event_date ? dayjs(values.event_date).format('YYYY-MM-DD') : null,
         is_joint: values.is_joint ? 1 : 0,
         items: editingItems,
-      })
-      message.success('已更新')
+      }
+
+      if (editingRecord) {
+        await api.put(`/ceremonies/${editingRecord.id}`, payload)
+        message.success('已更新')
+      } else {
+        await api.post('/ceremonies', payload)
+        message.success('已新增')
+      }
       setEditModalOpen(false)
       editForm.resetFields()
       setEditingRecord(null)
@@ -172,12 +205,18 @@ export default function CeremonyPage() {
     {
       title: '操作', key: 'action', width: 90,
       render: (_: any, record: any) => (
-        <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          <Popconfirm title="確定刪除？" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
+        canEditCeremonies || canDeleteCeremonies ? (
+          <Space>
+            {canEditCeremonies && (
+              <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} aria-label="編輯禮儀記錄" />
+            )}
+            {canDeleteCeremonies && (
+              <Popconfirm title="確定刪除？" onConfirm={() => handleDelete(record.id)}>
+                <Button size="small" danger icon={<DeleteOutlined />} aria-label="刪除禮儀記錄" />
+              </Popconfirm>
+            )}
+          </Space>
+        ) : <Text type="secondary">唯讀</Text>
       )
     }
   ]
@@ -193,38 +232,53 @@ export default function CeremonyPage() {
   ]
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>🎁 禮儀記錄</Title>
-      </div>
+    <PageScaffold
+      eyebrow="Ceremony Ledger"
+      title="禮儀記錄"
+      titleLevel={4}
+      variant="compact"
+      description={canViewExpenseSummary
+        ? '追蹤禮儀案件、採購品項、付款狀態與年度支出統計。'
+        : '追蹤禮儀案件與採購品項；目前帳號不顯示收支統計資料。'}
+      actions={canCreateCeremonies ? (
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          新增禮儀記錄
+        </Button>
+      ) : undefined}
+    >
 
-      {/* 統計卡 */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic title={`${filterYear}年總支出`} value={totalAmount} prefix="NT$" formatter={v => Number(v).toLocaleString()} valueStyle={{ color: '#1677ff' }} />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic title="已付款" value={paidAmount} prefix="NT$" formatter={v => Number(v).toLocaleString()} valueStyle={{ color: '#52c41a' }} />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic title="待付款" value={Math.max(0, totalAmount - paidAmount)} prefix="NT$" formatter={v => Number(v).toLocaleString()} valueStyle={{ color: totalAmount - paidAmount > 0 ? '#faad14' : undefined }} />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic title="記錄筆數" value={summary.total?.count || 0} suffix="筆" />
-          </Card>
-        </Col>
-      </Row>
+      {canViewExpenseSummary && (
+        <Row gutter={16} style={{ marginBottom: 16 }}>
+          <Col span={6}>
+            <Card size="small">
+              <Statistic title={`${filterYear}年總支出`} value={totalAmount} prefix="NT$" formatter={v => Number(v).toLocaleString()} valueStyle={{ color: '#1677ff' }} />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card size="small">
+              <Statistic title="已付款" value={paidAmount} prefix="NT$" formatter={v => Number(v).toLocaleString()} valueStyle={{ color: '#52c41a' }} />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card size="small">
+              <Statistic title="待付款" value={Math.max(0, totalAmount - paidAmount)} prefix="NT$" formatter={v => Number(v).toLocaleString()} valueStyle={{ color: totalAmount - paidAmount > 0 ? '#faad14' : undefined }} />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card size="small">
+              <Statistic title="記錄筆數" value={summary.total?.count || 0} suffix="筆" />
+            </Card>
+          </Col>
+        </Row>
+      )}
 
       <Card>
-        {/* 篩選列 */}
-        <Space wrap style={{ marginBottom: 16 }}>
+        <WorkspaceToolbar
+          title="禮儀篩選"
+          description="依年度、月份、禮儀類型、狀態與受贈人查找紀錄。"
+          meta={<Text type="secondary">共 {total} 筆</Text>}
+        >
+        <Space wrap>
           <DatePicker picker="year" value={dayjs().year(filterYear).startOf('year')}
             onChange={d => { setFilterYear(d ? d.year() : dayjs().year()); setPage(1) }}
             allowClear={false} style={{ width: 100 }} />
@@ -243,6 +297,7 @@ export default function CeremonyPage() {
           <Input.Search placeholder="搜尋受贈人" allowClear style={{ width: 160 }}
             onSearch={v => { setSearch(v); setPage(1) }} />
         </Space>
+        </WorkspaceToolbar>
 
         <Table
           dataSource={data}
@@ -289,107 +344,108 @@ export default function CeremonyPage() {
         )}
       </Modal>
 
-      {/* 編輯 Modal */}
-      <Modal title="編輯禮儀記錄" open={editModalOpen}
-        onCancel={() => { setEditModalOpen(false); editForm.resetFields(); setEditingRecord(null); setEditingItems([]) }}
-        onOk={() => editForm.submit()} okText="儲存" width={600} destroyOnClose>
-        <Form form={editForm} layout="vertical" onFinish={handleEditSave}>
-          <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item name="ceremony_type" label="禮儀性質" rules={[{ required: true }]}>
-                <Select>{Object.entries(CEREMONY_TYPE_LABELS).map(([k, v]) => <Option key={k} value={k}>{v}</Option>)}</Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="event_date" label="活動日期"><DatePicker style={{ width: '100%' }} /></Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={12}>
-            <Col span={14}>
-              <Form.Item name="recipient_name" label="受贈人" rules={[{ required: true }]}><Input /></Form.Item>
-            </Col>
-            <Col span={10}>
-              <Form.Item name="recipient_relation" label="關係">
-                <Select allowClear>{['選民','親屬','里長','議員','同事','廠商','朋友','其他'].map(r => <Option key={r} value={r}>{r}</Option>)}</Select>
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={12}>
-            <Col span={12}><Form.Item name="event_location" label="地點"><Input /></Form.Item></Col>
-            <Col span={12}>
-              <Form.Item name="status" label="狀態">
-                <Select><Option value="planned">計畫中</Option><Option value="paid">已付款</Option><Option value="cancelled">取消</Option></Select>
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item name="is_joint" valuePropName="checked" label="聯合致贈">
-                <Checkbox />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="joint_note" label="聯合人說明"><Input placeholder="聯合人姓名（選填）" /></Form.Item>
-            </Col>
-          </Row>
-          <Form.Item name="note" label="備註"><Input.TextArea rows={1} /></Form.Item>
-          <Divider style={{ margin: '8px 0' }}><Text style={{ fontSize: 12 }}>送禮明細</Text></Divider>
-          <div style={{ textAlign: 'right', marginBottom: 8 }}>
-            <Button size="small" icon={<PlusOutlined />} onClick={() => setEditingItems(prev => [...prev, { key: Date.now(), item_name: '', category_id: null, vendor_id: null, quantity: 1, unit_price: 0, amount: 0, payment_method: 'cash', payment_status: 'pending' }])}>新增品項</Button>
-          </div>
-          {editingItems.map((item, idx) => (
-            <div key={item.id ?? item.key} style={{ background: '#fafafa', border: '1px solid #eee', borderRadius: 6, padding: 8, marginBottom: 8 }}>
-              <Row gutter={8} align="middle">
-                <Col flex={1}>
-                  <Select placeholder="類別" style={{ width: '100%' }} allowClear value={item.category_id}
-                    onChange={v => {
-                      const cat = giftCategories.find((c: any) => c.id === v)
-                      setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, category_id: v, item_name: cat?.name || it.item_name, unit_price: cat?.default_price ?? it.unit_price, amount: (cat?.default_price ?? it.unit_price) * it.quantity } : it))
-                    }}>
-                    {giftCategories.map((c: any) => <Option key={c.id} value={c.id}>{c.name}</Option>)}
-                  </Select>
-                </Col>
-                <Col flex={1}>
-                  <Input placeholder="品項名稱" value={item.item_name}
-                    onChange={e => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, item_name: e.target.value } : it))} />
-                </Col>
-                <Col><Button size="small" danger icon={<DeleteOutlined />} onClick={() => setEditingItems(prev => prev.filter((_, i) => i !== idx))} /></Col>
-              </Row>
-              <Row gutter={8} style={{ marginTop: 6 }}>
-                <Col span={8}>
-                  <Select placeholder="廠商" style={{ width: '100%' }} allowClear value={item.vendor_id}
-                    onChange={v => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, vendor_id: v } : it))}>
-                    {vendorList.map((v: any) => <Option key={v.id} value={v.id}>{v.name}</Option>)}
-                  </Select>
-                </Col>
-                <Col span={5}>
-                  <InputNumber placeholder="數量" min={1} value={item.quantity} style={{ width: '100%' }}
-                    onChange={v => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: v || 1, amount: (v || 1) * it.unit_price } : it))} />
-                </Col>
-                <Col span={6}>
-                  <InputNumber placeholder="單價" min={0} value={item.unit_price} style={{ width: '100%' }}
-                    formatter={v => `NT$ ${v}`}
-                    parser={(v: any) => Number(String(v).replace(/[^0-9]/g, '')) || 0}
-                    onChange={v => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, unit_price: v || 0, amount: (v || 0) * it.quantity } : it))} />
-                </Col>
-                <Col span={5}>
-                  <Select value={item.payment_status} style={{ width: '100%' }}
-                    onChange={v => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, payment_status: v } : it))}>
-                    <Option value="pending">待付</Option>
-                    <Option value="paid">已付</Option>
-                  </Select>
-                </Col>
-              </Row>
-              <div style={{ textAlign: 'right', marginTop: 4, fontSize: 12 }}>小計：<Text strong>NT$ {(item.amount || 0).toLocaleString()}</Text></div>
+      {(canCreateCeremonies || canEditCeremonies) && (
+        <Modal title={editingRecord ? '編輯禮儀記錄' : '新增禮儀記錄'} open={editModalOpen}
+          onCancel={() => { setEditModalOpen(false); editForm.resetFields(); setEditingRecord(null); setEditingItems([]) }}
+          onOk={() => editForm.submit()} okText="儲存" width={600} destroyOnClose>
+          <Form form={editForm} layout="vertical" onFinish={handleEditSave}>
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item name="ceremony_type" label="禮儀性質" rules={[{ required: true }]}>
+                  <Select>{Object.entries(CEREMONY_TYPE_LABELS).map(([k, v]) => <Option key={k} value={k}>{v}</Option>)}</Select>
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="event_date" label="活動日期"><DatePicker style={{ width: '100%' }} /></Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={12}>
+              <Col span={14}>
+                <Form.Item name="recipient_name" label="受贈人" rules={[{ required: true }]}><Input /></Form.Item>
+              </Col>
+              <Col span={10}>
+                <Form.Item name="recipient_relation" label="關係">
+                  <Select allowClear>{['選民','親屬','里長','議員','同事','廠商','朋友','其他'].map(r => <Option key={r} value={r}>{r}</Option>)}</Select>
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={12}>
+              <Col span={12}><Form.Item name="event_location" label="地點"><Input /></Form.Item></Col>
+              <Col span={12}>
+                <Form.Item name="status" label="狀態" initialValue="planned">
+                  <Select><Option value="planned">計畫中</Option><Option value="paid">已付款</Option><Option value="cancelled">取消</Option></Select>
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item name="is_joint" valuePropName="checked" label="聯合致贈">
+                  <Checkbox />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="joint_note" label="聯合人說明"><Input placeholder="聯合人姓名（選填）" /></Form.Item>
+              </Col>
+            </Row>
+            <Form.Item name="note" label="備註"><Input.TextArea rows={1} /></Form.Item>
+            <Divider style={{ margin: '8px 0' }}><Text style={{ fontSize: 12 }}>送禮明細</Text></Divider>
+            <div style={{ textAlign: 'right', marginBottom: 8 }}>
+              <Button size="small" icon={<PlusOutlined />} onClick={() => setEditingItems(prev => [...prev, { key: Date.now(), item_name: '', category_id: null, vendor_id: null, quantity: 1, unit_price: 0, amount: 0, payment_method: 'cash', payment_status: 'pending' }])}>新增品項</Button>
             </div>
-          ))}
-          {editingItems.length > 0 && (
-            <div style={{ textAlign: 'right', borderTop: '1px solid #e8e8e8', padding: '6px 0' }}>
-              合計：<Text strong style={{ color: '#1677ff' }}>NT$ {editingItems.reduce((s, i) => s + (i.amount || 0), 0).toLocaleString()}</Text>
-            </div>
-          )}
-        </Form>
-      </Modal>
-    </div>
+            {editingItems.map((item, idx) => (
+              <div key={item.id ?? item.key} style={{ background: '#fafafa', border: '1px solid #eee', borderRadius: 6, padding: 8, marginBottom: 8 }}>
+                <Row gutter={8} align="middle">
+                  <Col flex={1}>
+                    <Select placeholder="類別" style={{ width: '100%' }} allowClear value={item.category_id}
+                      onChange={v => {
+                        const cat = giftCategories.find((c: any) => c.id === v)
+                        setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, category_id: v, item_name: cat?.name || it.item_name, unit_price: cat?.default_price ?? it.unit_price, amount: (cat?.default_price ?? it.unit_price) * it.quantity } : it))
+                      }}>
+                      {giftCategories.map((c: any) => <Option key={c.id} value={c.id}>{c.name}</Option>)}
+                    </Select>
+                  </Col>
+                  <Col flex={1}>
+                    <Input placeholder="品項名稱" value={item.item_name}
+                      onChange={e => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, item_name: e.target.value } : it))} />
+                  </Col>
+                  <Col><Button size="small" danger icon={<DeleteOutlined />} onClick={() => setEditingItems(prev => prev.filter((_, i) => i !== idx))} /></Col>
+                </Row>
+                <Row gutter={8} style={{ marginTop: 6 }}>
+                  <Col span={8}>
+                    <Select placeholder="廠商" style={{ width: '100%' }} allowClear value={item.vendor_id}
+                      onChange={v => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, vendor_id: v } : it))}>
+                      {vendorList.map((v: any) => <Option key={v.id} value={v.id}>{v.name}</Option>)}
+                    </Select>
+                  </Col>
+                  <Col span={5}>
+                    <InputNumber placeholder="數量" min={1} value={item.quantity} style={{ width: '100%' }}
+                      onChange={v => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: v || 1, amount: (v || 1) * it.unit_price } : it))} />
+                  </Col>
+                  <Col span={6}>
+                    <InputNumber placeholder="單價" min={0} value={item.unit_price} style={{ width: '100%' }}
+                      formatter={v => `NT$ ${v}`}
+                      parser={(v: any) => Number(String(v).replace(/[^0-9]/g, '')) || 0}
+                      onChange={v => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, unit_price: v || 0, amount: (v || 0) * it.quantity } : it))} />
+                  </Col>
+                  <Col span={5}>
+                    <Select value={item.payment_status} style={{ width: '100%' }}
+                      onChange={v => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, payment_status: v } : it))}>
+                      <Option value="pending">待付</Option>
+                      <Option value="paid">已付</Option>
+                    </Select>
+                  </Col>
+                </Row>
+                <div style={{ textAlign: 'right', marginTop: 4, fontSize: 12 }}>小計：<Text strong>NT$ {(item.amount || 0).toLocaleString()}</Text></div>
+              </div>
+            ))}
+            {editingItems.length > 0 && (
+              <div style={{ textAlign: 'right', borderTop: '1px solid #e8e8e8', padding: '6px 0' }}>
+                合計：<Text strong style={{ color: '#1677ff' }}>NT$ {editingItems.reduce((s, i) => s + (i.amount || 0), 0).toLocaleString()}</Text>
+              </div>
+            )}
+          </Form>
+        </Modal>
+      )}
+    </PageScaffold>
   )
 }

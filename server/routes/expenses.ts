@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify'
 import { db } from '../db/index'
-import { authenticate } from '../middleware/auth'
+import { requirePermission } from '../middleware/auth'
 
 export default async function expenseRoutes(fastify: FastifyInstance) {
   // GET /api/expenses/summary  收支統計
-  fastify.get('/api/expenses/summary', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.get('/api/expenses/summary', { preHandler: [requirePermission('expenses', 'view')] }, async (request, reply) => {
     const { year, month } = request.query as any
     const y = Number(year) || new Date().getFullYear()
     const m = month ? Number(month) : null
@@ -60,7 +60,7 @@ export default async function expenseRoutes(fastify: FastifyInstance) {
   })
 
   // GET /api/expenses/years  有資料的年份清單
-  fastify.get('/api/expenses/years', { preHandler: [authenticate] }, async (_request, reply) => {
+  fastify.get('/api/expenses/years', { preHandler: [requirePermission('expenses', 'view')] }, async (_request, reply) => {
     const years = db.prepare(`
       SELECT DISTINCT strftime('%Y', event_date) as year FROM ceremony_records
       WHERE event_date IS NOT NULL ORDER BY year DESC
@@ -69,7 +69,7 @@ export default async function expenseRoutes(fastify: FastifyInstance) {
   })
 
   // GET /api/expenses/budgets
-  fastify.get('/api/expenses/budgets', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.get('/api/expenses/budgets', { preHandler: [requirePermission('expenses', 'view')] }, async (request, reply) => {
     const { year } = request.query as any
     const y = Number(year) || new Date().getFullYear()
     const budgets = db.prepare('SELECT * FROM expense_budgets WHERE year=? ORDER BY month, budget_type').all(y)
@@ -77,7 +77,7 @@ export default async function expenseRoutes(fastify: FastifyInstance) {
   })
 
   // POST /api/expenses/budgets
-  fastify.post('/api/expenses/budgets', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.post('/api/expenses/budgets', { preHandler: [requirePermission('expenses', 'edit')] }, async (request, reply) => {
     const body = request.body as any
     if (!body.year || !body.amount) return reply.code(400).send({ success: false, error: '年度和金額為必填' })
     const bMonth = body.month ? Number(body.month) : null
@@ -100,7 +100,7 @@ export default async function expenseRoutes(fastify: FastifyInstance) {
   })
 
   // DELETE /api/expenses/budgets/:id
-  fastify.delete('/api/expenses/budgets/:id', { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.delete('/api/expenses/budgets/:id', { preHandler: [requirePermission('expenses', 'edit')] }, async (request, reply) => {
     const { id } = request.params as any
     db.prepare('DELETE FROM expense_budgets WHERE id=?').run(Number(id))
     return reply.send({ success: true })

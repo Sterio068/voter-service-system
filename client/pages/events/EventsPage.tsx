@@ -5,9 +5,12 @@ import {
 } from 'antd'
 import { PlusOutlined, TeamOutlined, DeleteOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
+import PageScaffold from '../../components/ui/PageScaffold'
+import FormFooter from '../../components/ui/FormFooter'
+import FormSection from '../../components/ui/FormSection'
 import dayjs from 'dayjs'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 const { TextArea } = Input
 const { RangePicker } = DatePicker
@@ -66,7 +69,9 @@ export default function EventsPage() {
       })
       message.success('活動已建立')
       setDrawerOpen(false); form.resetFields(); fetchEvents()
-    } catch { message.error('建立失敗') }
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '建立失敗')
+    }
   }
 
   const handleAddParticipant = async (values: any) => {
@@ -135,30 +140,47 @@ export default function EventsPage() {
   const attended = participants.filter(p => p.attendance === 1).length
 
   return (
-    <div>
-      <div className="page-header">
-        <Title level={4} style={{ margin: 0 }}>🎪 活動管理</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setDrawerOpen(true) }}>新增活動</Button>
-      </div>
+    <PageScaffold
+      eyebrow="Field Events"
+      title="活動管理"
+      titleLevel={4}
+      variant="compact"
+      description="規劃活動、出席名單與後續互動紀錄，掌握地方服務觸點。"
+      actions={<Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setDrawerOpen(true) }}>新增活動</Button>}
+    >
       <Card>
         <Table columns={columns} dataSource={events} rowKey="id" loading={loading} size="small"
           onRow={r => ({ onClick: () => openDetail(r), style: { cursor: 'pointer' } })}
           pagination={{ current: page, total, pageSize: 20, showTotal: t => `共 ${t} 筆`, onChange: setPage }} />
       </Card>
       <Drawer title="新增活動" open={drawerOpen} onClose={() => setDrawerOpen(false)} width={480}
-        footer={<Space><Button onClick={() => setDrawerOpen(false)}>取消</Button><Button type="primary" onClick={() => form.submit()}>儲存</Button></Space>}>
+        footer={<FormFooter onCancel={() => setDrawerOpen(false)} onSubmit={() => form.submit()} />}>
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="title" label="活動名稱" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="date_range" label="活動日期"><RangePicker style={{ width: '100%' }} /></Form.Item>
-          <Space size={12} style={{ width: '100%' }}>
-            <Form.Item name="event_type" label="類型" style={{ flex: 1 }} initialValue="activity">
-              <Select>{Object.entries(TYPE_LABELS).map(([v, l]) => <Option key={v} value={v}>{l}</Option>)}</Select>
+          <FormSection title="活動基本資料" description="建立活動名稱、日期、類型與地點，方便後續追蹤出席。">
+            <Form.Item
+              name="title"
+              label="活動名稱"
+              rules={[{ required: true, whitespace: true, message: '請輸入活動名稱' }]}
+            >
+              <Input />
             </Form.Item>
-            <Form.Item name="capacity" label="名額" style={{ flex: 1 }}><Input type="number" /></Form.Item>
-          </Space>
-          <Form.Item name="location" label="地點"><Input /></Form.Item>
-          <Form.Item name="organizer" label="主辦單位"><Input /></Form.Item>
-          <Form.Item name="description" label="說明"><TextArea rows={3} /></Form.Item>
+            <Form.Item
+              name="date_range"
+              label="活動日期"
+              rules={[{ required: true, message: '請選擇活動日期' }]}
+            >
+              <RangePicker style={{ width: '100%' }} />
+            </Form.Item>
+            <Space size={12} style={{ width: '100%' }}>
+              <Form.Item name="event_type" label="類型" style={{ flex: 1 }} initialValue="activity">
+                <Select>{Object.entries(TYPE_LABELS).map(([v, l]) => <Option key={v} value={v}>{l}</Option>)}</Select>
+              </Form.Item>
+              <Form.Item name="capacity" label="名額" style={{ flex: 1 }}><Input type="number" /></Form.Item>
+            </Space>
+            <Form.Item name="location" label="地點"><Input /></Form.Item>
+            <Form.Item name="organizer" label="主辦單位"><Input /></Form.Item>
+            <Form.Item name="description" label="說明"><TextArea rows={3} /></Form.Item>
+          </FormSection>
         </Form>
       </Drawer>
       <Drawer title={selectedEvent?.title} open={detailOpen} onClose={() => setDetailOpen(false)} width={600}
@@ -196,6 +218,6 @@ export default function EventsPage() {
           <Form.Item name="note" label="備註"><Input /></Form.Item>
         </Form>
       </Modal>
-    </div>
+    </PageScaffold>
   )
 }

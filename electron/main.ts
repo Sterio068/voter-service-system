@@ -1,31 +1,16 @@
 import { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain } from 'electron'
+import type { FastifyInstance } from 'fastify'
 import path from 'path'
 import fs from 'fs'
 import { deflateSync } from 'zlib'
-
-// ── 授權設定（只有你知道）────────────────────────────────────────
-const VENDOR_PASSWORD = 'O100163793'
-
-// ── 取得機器指紋（MAC + 電腦名稱 → HMAC 雜湊）────────────────────
-function getMachineFingerprint(): string {
-  const { createHmac } = require('crypto') as typeof import('crypto')
-  const { networkInterfaces, hostname } = require('os') as typeof import('os')
-  const ifaces = networkInterfaces()
-  let mac = ''
-  for (const list of Object.values(ifaces)) {
-    if (!list) continue
-    for (const iface of list) {
-      if (!iface.internal && iface.mac && iface.mac !== '00:00:00:00:00:00') {
-        mac = iface.mac; break
-      }
-    }
-    if (mac) break
-  }
-  return createHmac('sha256', VENDOR_PASSWORD).update(`${mac}|${hostname()}`).digest('hex').slice(0, 32)
-}
+import {
+  buildMachineFingerprint,
+  resolveVendorPassword,
+  verifyVendorPassword,
+} from './security'
 
 // ── 解鎖視窗：指紋不符時要求輸入密碼 ─────────────────────────────
-function showUnlockWindow(): Promise<boolean> {
+function showUnlockWindow(vendorPassword: string): Promise<boolean> {
   return new Promise(resolve => {
     const win = new BrowserWindow({
       width: 380, height: 230, resizable: false, title: '軟體授權',
@@ -58,7 +43,7 @@ window.unlockAPI.onFailed(()=>{document.getElementById('e').style.display='block
 
     let resolved = false
     const handler = (_: any, pwd: string) => {
-      if (pwd === VENDOR_PASSWORD) {
+      if (verifyVendorPassword(pwd, vendorPassword)) {
         resolved = true
         ipcMain.removeListener('unlock-attempt', handler)
         win.close()
@@ -76,12 +61,18 @@ window.unlockAPI.onFailed(()=>{document.getElementById('e').style.display='block
 async function checkAndRegisterMachine(): Promise<boolean> {
   if (process.env.NODE_ENV !== 'production') return true
   try {
+    const vendorPassword = resolveVendorPassword()
+    if (!vendorPassword) {
+      console.warn('[VendorAuth] No vendor password configured. Machine lock is disabled for this production build.')
+      return true
+    }
+
     const { db } = require('../server/db/index') as typeof import('../server/db/index')
     const stored = db.prepare("SELECT value FROM settings WHERE key='machine_fingerprint'").get() as any
-    const current = getMachineFingerprint()
+    const current = buildMachineFingerprint(vendorPassword)
     if (stored?.value === current) return true
     // 指紋不符或尚未登記 → 要求解鎖
-    const ok = await showUnlockWindow()
+    const ok = await showUnlockWindow(vendorPassword)
     if (ok) {
       db.prepare("INSERT INTO settings(key,value) VALUES('machine_fingerprint',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(current)
     }
@@ -92,9 +83,20 @@ async function checkAndRegisterMachine(): Promise<boolean> {
 }
 
 const PORT = 8080
+const SERVER_HEALTHCHECK_URL = `http://127.0.0.1:${PORT}/api/health`
+const SERVER_HEALTHCHECK_INTERVAL_MS = 15000
+const SERVER_HEALTHCHECK_FAILURE_THRESHOLD = 3
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let serverStarted = false
+let restoreAppliedOnStartup = false
+let startupRestoreFailureMessage: string | null = null
+let startupRestoreFailedPath: string | null = null
+let localServer: FastifyInstance | null = null
+let serverHealthTimer: NodeJS.Timeout | null = null
+let healthCheckFailures = 0
+let healthCheckInFlight = false
+let serverRestartInFlight: Promise<boolean> | null = null
 
 // ── 設定檔管理（取代 electron-store） ────────────────────────────
 interface AppConfig {
@@ -257,28 +259,113 @@ function buildTrayIcon(): Electron.NativeImage {
 }
 
 // ── Server ────────────────────────────────────────────────────
-async function startServer(): Promise<boolean> {
-  if (serverStarted) return true
+function stopServerWatchdog() {
+  if (serverHealthTimer) {
+    clearInterval(serverHealthTimer)
+    serverHealthTimer = null
+  }
+  healthCheckFailures = 0
+}
+
+async function pingLocalServerHealth(): Promise<boolean> {
+  try {
+    const response = await fetch(SERVER_HEALTHCHECK_URL, {
+      signal: AbortSignal.timeout(4000),
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+async function stopServer(): Promise<void> {
+  stopServerWatchdog()
+  const runningServer = localServer
+  localServer = null
+  serverStarted = false
+  if (!runningServer) return
+  try {
+    await runningServer.close()
+  } catch (error) {
+    console.error('[Server] 關閉失敗:', error)
+  }
+}
+
+function startServerWatchdog() {
+  if (serverHealthTimer) return
+  serverHealthTimer = setInterval(async () => {
+    if (!serverStarted || !localServer || serverRestartInFlight || healthCheckInFlight) return
+    healthCheckInFlight = true
+    try {
+      const healthy = await pingLocalServerHealth()
+      if (healthy) {
+        healthCheckFailures = 0
+        return
+      }
+
+      healthCheckFailures += 1
+      console.warn(`[Server] 健康檢查失敗 (${healthCheckFailures}/${SERVER_HEALTHCHECK_FAILURE_THRESHOLD})`)
+      if (healthCheckFailures < SERVER_HEALTHCHECK_FAILURE_THRESHOLD) return
+
+      healthCheckFailures = 0
+      serverRestartInFlight = restartServer('本機伺服器健康檢查連續失敗')
+      await serverRestartInFlight
+    } finally {
+      healthCheckInFlight = false
+      serverRestartInFlight = null
+    }
+  }, SERVER_HEALTHCHECK_INTERVAL_MS)
+}
+
+async function startServer(options: { showFailureDialog?: boolean } = {}): Promise<boolean> {
+  if (serverStarted && localServer) return true
+  const { showFailureDialog = true } = options
   try {
     // 動態載入 server，確保在 DATA_PATH / UPLOADS_PATH 設定後才初始化 DB
     const serverModule = require('../server/index') as typeof import('../server/index')
     const fastify = await serverModule.buildServer()
     await fastify.listen({ port: PORT, host: '0.0.0.0' })
+    localServer = fastify
     serverStarted = true
+    healthCheckFailures = 0
     console.log(`✅ 伺服器啟動於 http://localhost:${PORT}`)
     serverModule.startSchedules()
+    startServerWatchdog()
     return true
   } catch (err) {
+    localServer = null
+    serverStarted = false
     console.error('伺服器啟動失敗:', err)
+    if (showFailureDialog) {
+      await dialog.showMessageBox({
+        type: 'error',
+        title: '啟動失敗',
+        message: '伺服器無法啟動，請聯絡系統管理員。',
+        detail: String(err),
+        buttons: ['離開'],
+      })
+    }
+    return false
+  }
+}
+
+async function restartServer(reason: string): Promise<boolean> {
+  console.warn(`[Server] 準備重啟：${reason}`)
+  await stopServer()
+  const restarted = await startServer({ showFailureDialog: false })
+  if (!restarted) {
     await dialog.showMessageBox({
       type: 'error',
-      title: '啟動失敗',
-      message: '伺服器無法啟動，請聯絡系統管理員。',
-      detail: String(err),
-      buttons: ['離開'],
+      title: '服務異常',
+      message: '本機伺服器無法自動恢復，請重新啟動應用程式。',
+      detail: reason,
+      buttons: ['知道了'],
     })
     return false
   }
+
+  console.log('[Server] 自動重啟完成')
+  return true
 }
 
 // ── Tray ──────────────────────────────────────────────────────
@@ -480,7 +567,7 @@ function setupIPC() {
 
   // 隱藏維護功能：清除機器指紋（換電腦時用）
   ipcMain.handle('reset-fingerprint', (_: any, pwd: string) => {
-    if (pwd !== VENDOR_PASSWORD) return { ok: false }
+    if (!verifyVendorPassword(pwd, resolveVendorPassword())) return { ok: false }
     try {
       const { db } = require('../server/db/index') as typeof import('../server/db/index')
       db.prepare("DELETE FROM settings WHERE key='machine_fingerprint'").run()
@@ -521,7 +608,11 @@ app.whenReady().then(async () => {
     // 先執行 migration 初始化 DB（不啟動 HTTP server）
     // 讓授權驗證能讀取 settings 表，且 server 不會在驗證前就對外開放
     const { runMigrations } = require('../server/db/migrate') as typeof import('../server/db/migrate')
-    runMigrations()
+    await runMigrations()
+    const { startupRestoreApplied, startupRestoreResult } = require('../server/db/index') as typeof import('../server/db/index')
+    restoreAppliedOnStartup = startupRestoreApplied
+    startupRestoreFailureMessage = startupRestoreResult.error
+    startupRestoreFailedPath = startupRestoreResult.failedRestorePath
 
     // 授權驗證必須在 server 啟動前完成，避免 API 在解鎖期間對區網開放
     const licensed = await checkAndRegisterMachine()
@@ -540,6 +631,31 @@ app.whenReady().then(async () => {
 
   createTray()
   createWindow()
+  if (restoreAppliedOnStartup && mainWindow) {
+    mainWindow.once('ready-to-show', () => {
+      dialog.showMessageBox(mainWindow!, {
+        type: 'info',
+        title: '還原完成',
+        message: '系統已在啟動時套用待還原的資料庫。',
+        detail: '請登入後確認選民、陳情與操作紀錄是否符合預期，並保留 pre-restore 備份直到驗收完成。',
+        buttons: ['知道了'],
+      }).catch(() => {})
+    })
+  } else if (startupRestoreFailureMessage && mainWindow) {
+    mainWindow.once('ready-to-show', () => {
+      dialog.showMessageBox(mainWindow!, {
+        type: 'warning',
+        title: '還原未套用',
+        message: '待還原資料庫在啟動時未能成功套用，系統已回復到原本資料庫。',
+        detail: [
+          startupRestoreFailureMessage,
+          startupRestoreFailedPath ? `失敗還原檔：${startupRestoreFailedPath}` : '',
+          '請先確認目前資料正確，再決定是否重新執行還原。',
+        ].filter(Boolean).join('\n'),
+        buttons: ['知道了'],
+      }).catch(() => {})
+    })
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -548,6 +664,13 @@ app.whenReady().then(async () => {
 
 // 結束前關閉 SQLite 連線，避免 better-sqlite3 NAPI cleanup crash
 app.on('will-quit', () => {
+  stopServerWatchdog()
+  if (localServer) {
+    localServer.close().catch((error) => {
+      console.error('[Cleanup] server.close() failed:', error)
+    })
+    localServer = null
+  }
   if (!serverStarted) return
   try {
     const { db } = require('../server/db/index') as typeof import('../server/db/index')

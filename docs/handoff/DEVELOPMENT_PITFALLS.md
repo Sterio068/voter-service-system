@@ -319,7 +319,7 @@ CI Upload Artifact 步驟失敗：`Artifact storage quota has been hit`
 首次開啟應用卡 3-5 秒。
 
 ### 根因
-單一 bundle 2.9MB（fullcalendar、docx、xlsx 全打進 main）。
+單一 bundle 2.9MB（fullcalendar、docx、@e965/xlsx 全打進 main）。
 
 ### 修正
 `vite.config.ts` 切 manualChunks：
@@ -329,7 +329,7 @@ manualChunks: {
   'antd-vendor': ['antd', '@ant-design/icons'],
   'chart-vendor': ['recharts'],
   'calendar-vendor': ['@fullcalendar/react', ...],
-  'file-vendor': ['xlsx', 'docx'],
+  'file-vendor': ['@e965/xlsx', 'docx'],
   'util-vendor': ['dayjs', 'axios', 'zustand'],
 }
 ```
@@ -582,7 +582,9 @@ useDataSync((events) => {
 
 ## 25. CI 觸發規則
 
-`.github/workflows/release.yml` 只在 `push` 到 tag `v*` 時才會 build：
+`.github/workflows/ci.yml` 會在 PR 與 `main` push 時跑 typecheck、測試、build 與 production audit。
+
+`.github/workflows/release.yml` 只在 `push` 到 tag `v*` 時才會 build 安裝檔：
 
 ```yaml
 on:
@@ -596,6 +598,218 @@ on:
 git tag v1.0.9
 git push origin v1.0.9
 ```
+
+---
+
+## 26. Secret 加密 key 與還原
+
+`settings` 內的 `jwt_secret`、AI key、Google/LINE secret 與 Google token 會以 `enc:v1:` 形式加密。
+
+正式部署請固定設定：
+
+```bash
+VOTER_SERVICE_SETTINGS_KEY=一組長且隨機的部署密鑰
+```
+
+若未設定，系統會用機器資訊產生 fallback key。這能降低單機 DB 外流風險，但跨機還原備份時可能無法解密既有 secret。
+
+JWT secret 解密失敗時 server 會拒絕啟動，避免靜默重生 secret 造成 session 全失效且掩蓋資料毀損。
+
+---
+
+## 27. Rate limiting 版本相容性
+
+本專案目前是 Fastify 5，因此使用 `@fastify/rate-limit@10`。若未來降回 Fastify 4，需同步降到 `@fastify/rate-limit@9`，否則可能出現 plugin 相容性問題。
+
+---
+
+## 28. CSP 與 Ant Design CSS-in-JS
+
+全域 CSP 在 `server/utils/securityHeaders.ts`。目前 `script-src` 不允許 inline script，但 `style-src` 仍保留 `'unsafe-inline'`，原因是 Ant Design 5 會在 runtime 注入樣式。
+
+如果未來要移除 inline style，需要先設計 nonce/hash 或改造樣式注入策略。不要直接刪掉 `style-src 'unsafe-inline'`，否則 production UI 可能失去樣式。
+
+---
+
+## 29. 附件上傳不要信任副檔名
+
+附件副檔名由 `server/utils/fileSecurity.ts` 依 MIME 決定，不使用使用者原始檔名副檔名。上傳也會做 PDF/圖片基本 magic-byte 檢查。
+
+新增其他附件類型時，需同步更新：
+
+```typescript
+ATTACHMENT_MIME_EXTENSIONS
+isAllowedAttachmentContent()
+```
+
+不要只改前端 `accept`，因為瀏覽器與 multipart MIME 都可以被偽造。
+
+---
+
+## 30. 備份簽章與白名單
+
+本機備份會在 `.db` 旁建立 `.meta.json`，內容包含 SHA-256、schema version、Node version 與 HMAC-SHA256 簽章。
+
+簽章 key 來源優先序：
+
+```bash
+VOTER_SERVICE_BACKUP_SIGNING_KEY
+BACKUP_SIGNING_KEY
+VOTER_SERVICE_SETTINGS_KEY
+SETTINGS_ENCRYPTION_KEY
+```
+
+若未設定明確 signing key，會沿用 secrets encryption fallback key。這對單機防竄改足夠，但跨機驗證建議固定設定 `VOTER_SERVICE_BACKUP_SIGNING_KEY`。
+
+備份路徑白名單為 opt-in：
+
+```bash
+VOTER_SERVICE_BACKUP_ALLOWED_ROOTS="/secure/backups;/Volumes/EncryptedBackup"
+```
+
+啟用後，`POST /api/admin/backup/path` 只接受落在白名單根目錄內的路徑。不要在程式裡硬編碼使用者家目錄當白名單，部署環境應明確指定。
+
+---
+
+## 31. 選民匯出預設遮罩 PII
+
+`GET /api/voters/export` 預設會遮罩身份證號、手機、市話、LINE ID、Email、生日與詳細地址。前端選民列表的匯出按鈕固定送 `mask=1`，按鈕文案為「匯出 Excel（遮罩）」。
+
+完整個資匯出需同時符合：
+
+```text
+include_sensitive=1
+reason 至少 5 個字
+currentUser.role === 'admin'
+```
+
+完整匯出與遮罩匯出都會寫 audit log，detail 會包含 `masked`、`reason` 與 filter 摘要。不要新增繞過 `/api/voters/export` 的 Excel 下載路徑，否則會破壞稽核與遮罩策略。
+
+相關檔案：
+
+```text
+server/utils/piiMasking.ts
+server/routes/importExport.ts
+tests/server/piiMasking.test.ts
+tests/server/apiIntegration.test.ts
+```
+
+---
+
+## 32. 陳情新增不可寫入 NULL status
+
+`POST /api/petitions` 會在同一個 IMMEDIATE transaction 內建立選民、產生案號、建立陳情與第一筆處理紀錄。未提供 `status` / `urgency` 時，路由必須明確寫入：
+
+```text
+status = pending
+urgency = normal
+```
+
+不要依賴 DB default，因為 INSERT 若帶入 `NULL` 會覆蓋 default，導致狀態機無法從 `pending` 轉到 `processing`。這個情境已由 `tests/server/apiIntegration.test.ts` 的 petition lifecycle 測試覆蓋。
+
+---
+
+## 33. 行程查詢與衝突檢查要用 overlap 邏輯
+
+行程可能跨日，因此列表查詢不能只用：
+
+```sql
+start_time >= ? AND start_time <= ?
+```
+
+正確的區間重疊判斷是：
+
+```sql
+start_time < rangeEnd
+AND COALESCE(end_time, start_time) > rangeStart
+```
+
+更新行程也要排除自己，並用 `COALESCE(status, 'scheduled') != 'cancelled'`，避免舊資料 `status` 為 `NULL` 時漏掉衝突。
+
+這個情境已由 `tests/server/apiIntegration.test.ts` 的 schedule conflict / cross-day 測試覆蓋。新增日曆、諮詢或 Google Calendar sync 邏輯時，不要退回只比對 `start_time` 的查詢。
+
+---
+
+## 34. 資料保留不要硬刪選民主檔
+
+選民、陳情、聯絡紀錄、附件與 audit log 有大量關聯。如果資料保留 TTL 直接 `DELETE FROM voters`，很容易造成孤兒資料、報表破洞或稽核鏈斷裂。
+
+目前資料保留策略是：
+
+```text
+audit_logs          → 封存到 archive_audit_logs
+client_errors       → 超過 TTL 直接刪除
+soft-deleted voters → 去識別化，不硬刪主檔
+```
+
+執行 API 必須先啟用 `data_retention_enabled=1`，並在 `POST /api/admin/data-retention/run` 傳入：
+
+```text
+confirm=RUN_RETENTION
+```
+
+新增清理項目前，先補 `GET /api/admin/data-retention/preview` 預覽數量與 integration test，避免不可逆清理沒有 dry-run。
+
+---
+
+## 35. Playwright E2E 不要把登入 rate limit 打爆
+
+登入頁本身需要保留真實 UI smoke，但多個 E2E case 如果每條都重新走 `/api/auth/login` + UI login，很容易把 route-level login rate limit 當成測試瓶頸。
+
+建議做法：
+
+```typescript
+const session = await getAdminSession(request)
+await page.addInitScript(({ token, user }) => {
+  localStorage.setItem('auth-storage', JSON.stringify({
+    state: { token, user, isAuthenticated: true },
+    version: 0,
+  }))
+}, session)
+```
+
+保留一條測試覆蓋真實登入流程，其餘測試注入 Zustand persist 狀態即可。這樣既不弱化安全限制，也能讓 E2E 更穩。
+
+另外 Ant Design 按鈕文字在 accessible name 中可能被拆成空白，例如「送出」變成 `送 出`。Playwright selector 請用：
+
+```typescript
+page.getByRole('button', { name: /送\s*出/ })
+```
+
+不要硬比對沒有空白的字串，否則 UI 沒壞但測試會 flaky。
+
+---
+
+## 36. Dashboard / 快捷鍵 deep-link 必須由目標頁解析 URL
+
+Dashboard、快捷鍵與全域搜尋會把使用者帶到特定工作狀態，例如：
+
+```text
+/tasks?focus=today
+```
+
+目標頁不能只靠本地 state 切換 UI，否則使用者從 Dashboard、快捷鍵、重新整理或分享連結進入時會落回一般列表。
+
+正確做法：
+
+```typescript
+const [searchParams, setSearchParams] = useSearchParams()
+const [todayFocus, setTodayFocus] = useState(searchParams.get('focus') === 'today')
+
+useEffect(() => {
+  setTodayFocus(searchParams.get('focus') === 'today')
+}, [searchParams])
+```
+
+當使用者在頁面內切換焦點，也要同步更新 URL：
+
+```typescript
+const nextParams = new URLSearchParams(searchParams)
+nextParams.set('focus', 'today')
+setSearchParams(nextParams, { replace: true })
+```
+
+新增 Dashboard 卡片或快捷鍵 deep-link 時，請補 Playwright 測試確認 URL 與目標頁狀態一致。
 
 ---
 
