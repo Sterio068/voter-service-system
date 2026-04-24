@@ -66,6 +66,32 @@ export function multipartPayload(file: {
   }
 }
 
+function sleep(ms: number) {
+  const sab = new SharedArrayBuffer(4)
+  Atomics.wait(new Int32Array(sab), 0, 0, ms)
+}
+
+function removeDirectoryWithRetries(targetPath: string, maxRetries = 8) {
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      rmSync(targetPath, {
+        recursive: true,
+        force: true,
+        maxRetries: 4,
+        retryDelay: 100,
+      })
+      return
+    } catch (error: any) {
+      const code = error?.code
+      const isTransientWindowsLock = code === 'EBUSY' || code === 'EPERM' || code === 'ENOTEMPTY'
+      if (!isTransientWindowsLock || attempt === maxRetries) {
+        throw error
+      }
+      sleep(100 * (attempt + 1))
+    }
+  }
+}
+
 export async function createApiTestServer(): Promise<ApiTestContext> {
   const rootDir = mkdtempSync(path.join(os.tmpdir(), 'vss-api-test-'))
   const dataPath = path.join(rootDir, 'data')
@@ -98,8 +124,9 @@ export async function createApiTestServer(): Promise<ApiTestContext> {
     uploadsPath,
     close: async () => {
       await app.close()
+      try { db.pragma('wal_checkpoint(TRUNCATE)') } catch {}
       try { db.close() } catch {}
-      rmSync(rootDir, { recursive: true, force: true })
+      removeDirectoryWithRetries(rootDir)
     },
   }
 }
