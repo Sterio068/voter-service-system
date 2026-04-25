@@ -6,7 +6,7 @@ release/
 .tmp/
 test-results/
 playwright-report/
-data/
+/data/
 uploads/
 backups/
 *.db
