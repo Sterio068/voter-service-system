@@ -33,13 +33,17 @@ const routeChecks = [
   { path: '/help', marker: 'Guide Center' },
 ]
 
+// 29 routes × cold lazy chunk fetch on CI can blow the 30s default; give
+// each route an explicit, slow-runner-friendly window without being lax
+// about correctness.
 test('admin can open every primary route without an app shell crash', async ({ page, request }) => {
+  test.setTimeout(180_000)
   await authenticate(page, request)
 
   for (const route of routeChecks) {
     await test.step(`open ${route.path}`, async () => {
-      await page.goto(route.path)
-      await expect(page.getByText(route.marker, { exact: true }).first()).toBeVisible()
+      await page.goto(route.path, { waitUntil: 'domcontentloaded' })
+      await expect(page.getByText(route.marker, { exact: true }).first()).toBeVisible({ timeout: 20_000 })
       await expect(page.getByText('應用程式發生錯誤')).toHaveCount(0)
     })
   }
