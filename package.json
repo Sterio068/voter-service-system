@@ -1,6 +1,6 @@
 {
   "name": "voter-service-system",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "本地單機版選民服務管理系統",
   "main": "dist-electron/main.js",
   "homepage": "./",
@@ -87,6 +87,13 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Sterio068",
+        "repo": "voter-service-system"
+      }
+    ],
     "asar": true,
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*",

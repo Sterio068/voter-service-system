@@ -12,6 +12,7 @@ import {
 import api from '../../utils/api'
 import PageScaffold from '../../components/ui/PageScaffold'
 import MetricCard from '../../components/ui/MetricCard'
+import AppUpdater from '../../components/AppUpdater'
 import dayjs from 'dayjs'
 import QRCode from 'qrcode'
 import type { UploadFile } from 'antd/es/upload'
@@ -467,6 +468,11 @@ export default function SettingsPage() {
           </Col>
         </Row>
       )}
+
+      {/* 軟體更新 */}
+      <div style={{ marginBottom: 16 }}>
+        <AppUpdater />
+      </div>
 
       {/* 基本設定 */}
       <Card loading={loading} style={{ marginBottom: 16 }}>

@@ -163,8 +163,14 @@ export default function MainLayout() {
         const data = res.data?.data
         if (!data?.has_update || !data.latest) return
         if (sessionStorage.getItem(dismissedKey) === data.latest) return
-        // 動態 import notification 避免增加 bundle
-        const { notification } = await import('antd')
+        // 動態 import notification + Button，避免增加初始 bundle
+        const { notification, Button, Space } = await import('antd')
+        const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.update
+        const goToUpdater = () => {
+          notification.destroy('app-update-available')
+          // 跳到系統設定（軟體更新卡片在頂部）；瀏覽器版也會看到提示卡。
+          navigate('/admin/settings')
+        }
         notification.info({
           key: 'app-update-available',
           message: `偵測到新版 v${data.latest}`,
@@ -176,11 +182,16 @@ export default function MainLayout() {
                   發布於 {new Date(data.latest_published).toLocaleDateString('zh-TW')}
                 </div>
               )}
-              <div style={{ marginTop: 8 }}>
-                <a href={data.latest_url} target="_blank" rel="noopener noreferrer">
-                  前往 GitHub Release 下載 →
-                </a>
-              </div>
+              <Space style={{ marginTop: 10 }} size={8}>
+                <Button type="primary" size="small" onClick={goToUpdater}>
+                  {isElectron ? '立即更新' : '前往設定查看'}
+                </Button>
+                {data.latest_url && (
+                  <a href={data.latest_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
+                    Release 詳細
+                  </a>
+                )}
+              </Space>
             </div>
           ),
           duration: 0,
@@ -191,7 +202,7 @@ export default function MainLayout() {
       }
     }, 5000)
     return () => clearTimeout(t)
-  }, [user])
+  }, [user, navigate])
 
   const handleLogout = async () => {
     try { await api.post('/auth/logout') } catch {}

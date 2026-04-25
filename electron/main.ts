@@ -8,6 +8,7 @@ import {
   resolveVendorPassword,
   verifyVendorPassword,
 } from './security'
+import { initAutoUpdate } from './autoUpdate'
 
 // ── 解鎖視窗：指紋不符時要求輸入密碼 ─────────────────────────────
 function showUnlockWindow(vendorPassword: string): Promise<boolean> {
@@ -606,6 +607,7 @@ app.whenReady().then(async () => {
 
   createTray()
   createWindow()
+  if (mainWindow) initAutoUpdate(mainWindow)
   if (restoreAppliedOnStartup && mainWindow) {
     mainWindow.once('ready-to-show', () => {
       dialog.showMessageBox(mainWindow!, {

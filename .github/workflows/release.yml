@@ -63,19 +63,17 @@ jobs:
       - name: Build app
         run: npm run build
 
-      - name: Package macOS DMG
-        run: npx electron-builder --mac --publish never
+      # electron-builder uploads .dmg / .dmg.blockmap / latest-mac.yml /
+      # latest-mac-arm64.yml directly to the GitHub draft release. We skip
+      # the intermediate actions/upload-artifact step so we don't burn the
+      # account-level artifact storage quota.
+      - name: Package & publish macOS DMG
+        run: npx electron-builder --mac --publish always
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           CSC_LINK: ""
           CSC_KEY_PASSWORD: ""
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-mac
-          path: release/*.dmg
-          if-no-files-found: error
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-win:
     needs: verify
@@ -97,30 +95,27 @@ jobs:
       - name: Build app
         run: npm run build
 
-      - name: Package Windows
-        run: npx electron-builder --win --publish never
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-win
-          path: release/*.exe
-          if-no-files-found: error
+      - name: Package & publish Windows
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish:
-    needs: [verify, build-mac, build-win]
+    needs: [build-mac, build-win]
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-
-      - name: Publish draft release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          generate_release_notes: true
-          files: release-assets/*
+      # Promote the draft release that electron-builder created to a
+      # published release, so /api/system/version-check and electron-
+      # updater can see it. Best-effort; non-fatal if not found.
+      - name: Promote draft release to published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "Promoting tag: $TAG"
+          gh release edit "$TAG" \
+            --repo Sterio068/voter-service-system \
+            --draft=false \
+            --latest \
+            || echo "::warning::Release '$TAG' not found or already published."
