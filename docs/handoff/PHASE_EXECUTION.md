@@ -25,6 +25,10 @@
 - `npm run typecheck` 已納入 `typecheck:test`，測試碼也會進 TypeScript 品質門。
 - 新增 Playwright E2E smoke/navigation/role access，已覆蓋登入、Dashboard 今日工作台 deep-link、主要模組 compact page shell、全主要路由無 ErrorBoundary 崩潰、設定頁資料保留控制、UI 新增選民、UI 新增陳情、備份建立與完整個資匯出理由/下載，以及 assistant / supervisor / volunteer 前端權限矩陣、列印路由與頁內 CRUD 按鈕權限。
 - 已完成正式版隔離驗收：fresh install wizard、pending restore 重啟套用、`backup_path` 初始值與 12k/1.5k/300 大量資料 smoke。
+- 單筆匿名化與資料保留匿名化已統一成共用規則；`mode=full` 不再是空殼，會額外清 contact / petition / consultation / survey / ceremony 歷史快照。
+- 首次執行精靈已改為必須完成管理員密碼修改後才能結束，且 `/api/admin/settings` 會阻擋預設密碼仍為 `admin123` 時把 `first_run=false`。
+- `/api/client-errors` 已改為僅允許登入後 session 上報；前端全域錯誤上報沒有 JWT 時不會再送出。
+- 2026-04-25 已完成最新版正式包本機 smoke：`/Applications/選民服務系統.app` 可正常登入、選民列表可開啟，匿名 `POST /api/client-errors` 會回 `401`、登入後回 `200`，且 packaged runtime 的 `mode=full` 匿名化會實際清掉延伸欄位。
 
 下一步：
 - 備份 metadata 匯出/匯入 UX：讓下載備份可一併保存 sidecar 或改用 ZIP 封裝。
@@ -88,8 +92,8 @@
 |------|--------|------|
 | 資安 | 85% | secrets encryption、rate limiting、CSP、附件與備份驗證已到位；仍需 HTTPS/DB encryption 規劃 |
 | 個資保護 | 86% | 預設遮罩、完整匯出理由/audit、資料保留 TTL、runbook 已完成；仍需跨機加密部署規範 |
-| 測試/CI | 95% | typecheck/test/build/audit、54 個 Node tests、18 條 Playwright smoke/navigation/role-access 與正式版隔離驗收已建立；仍需 coverage 報表 |
-| 可靠性 | 95% | restore validation、startup rollback、signed backup、啟動時套用 pending restore、fresh install baseline settings、桌面本機 server watchdog、備份 E2E、正式版隔離驗收、runbooks 已到位；仍需 auto-update 收尾 |
+| 測試/CI | 96% | typecheck/test/build/audit、62 個 Node tests、18 條 Playwright smoke/navigation/role-access 與正式版隔離驗收已建立，且最新本機正式包 smoke 已驗證登入、client-errors 權限與匿名化行為；仍需 coverage 報表 |
+| 可靠性 | 96% | restore validation、startup rollback、signed backup、啟動時套用 pending restore、fresh install baseline settings、桌面本機 server watchdog、備份 E2E、正式版隔離驗收、最新版本機 packaged smoke 與 runbooks 已到位；仍需 auto-update 收尾 |
 | 效能 | 88% | WAL、索引、列表 virtual scroll、route-level lazy loading/code split、Dashboard derived chart memoization 已補，正式版 12k/1.5k/300 大量資料 smoke 通過；仍需匯入 bulk 化 |
 | UI/UX | 96% | 今日工作台、compact page shell、共用篩選工具列、空狀態、表單 footer、表單分段與批次選取列已覆蓋主要高頻/輔助流程，長表單 modal footer 也已收斂；下一步聚焦報表卡片與錯誤回饋 |
 | 可維護性 | 94% | handoff/API/DB/pitfalls/runbooks、全功能測試矩陣、Playwright config、測試碼 typecheck、E2E auth helper/session cache refresh、shared permission matrix、前端共用 permission map、UI primitives、共用頁面骨架/工具列/空狀態/表單 footer/表單分段已補；仍需 Service/Repository 分層 |

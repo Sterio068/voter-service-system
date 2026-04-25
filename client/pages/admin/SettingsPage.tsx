@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons'
 import api from '../../utils/api'
 import PageScaffold from '../../components/ui/PageScaffold'
+import MetricCard from '../../components/ui/MetricCard'
 import dayjs from 'dayjs'
 import QRCode from 'qrcode'
 import type { UploadFile } from 'antd/es/upload'
@@ -63,6 +64,7 @@ export default function SettingsPage() {
   const [retentionRunning, setRetentionRunning] = useState(false)
   const [retentionModalOpen, setRetentionModalOpen] = useState(false)
   const [retentionConfirmForm] = Form.useForm()
+  const [systemHealth, setSystemHealth] = useState<any>(null)
 
   useEffect(() => {
     loadSettings()
@@ -74,7 +76,17 @@ export default function SettingsPage() {
     loadTailscale()
     loadAIConfig()
     loadRetentionPreview()
+    loadSystemHealth()
   }, [])
+
+  const loadSystemHealth = async () => {
+    try {
+      const res = await api.get('/admin/system-health')
+      setSystemHealth(res.data?.data || res.data || null)
+    } catch {
+      // 部分角色可能 403，靜默忽略
+    }
+  }
 
   const loadSettings = async () => {
     setLoading(true)
@@ -413,6 +425,48 @@ export default function SettingsPage() {
       variant="compact"
       description="集中管理服務處資訊、備份還原、資安連線、資料品質與資料保留政策。"
     >
+
+      {/* System Health metric cards：DB 大小、最後備份、24h 錯誤、stage 警示 */}
+      {systemHealth && (
+        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+          <Col xs={24} sm={12} md={6}>
+            <MetricCard
+              label="資料庫大小"
+              value={`${systemHealth.db_size_mb ?? 0} MB`}
+              helper={systemHealth.schema_version ? `schema v${systemHealth.schema_version}` : 'WAL：' + (systemHealth.wal_present ? '啟用' : '未啟用')}
+              icon={<DatabaseOutlined />}
+              tone="blue"
+            />
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <MetricCard
+              label="最近一次備份"
+              value={systemHealth.last_backup ? dayjs(systemHealth.last_backup).format('MM/DD HH:mm') : '從未備份'}
+              helper={systemHealth.backup_count != null ? `共 ${systemHealth.backup_count} 份備份` : undefined}
+              icon={<DownloadOutlined />}
+              tone={systemHealth.last_backup ? 'green' : 'amber'}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <MetricCard
+              label="24h 錯誤次數"
+              value={systemHealth.error_count_24h ?? 0}
+              helper={systemHealth.last_error ? '最近錯誤已記錄稽核' : '無異常'}
+              icon={<InfoCircleOutlined />}
+              tone={(systemHealth.error_count_24h ?? 0) > 0 ? 'red' : 'slate'}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <MetricCard
+              label="主表筆數最高"
+              value={systemHealth.top_tables?.[0]?.rows ?? 0}
+              helper={systemHealth.top_tables?.[0]?.name ? `表：${systemHealth.top_tables[0].name}` : undefined}
+              icon={<DatabaseOutlined />}
+              tone="purple"
+            />
+          </Col>
+        </Row>
+      )}
 
       {/* 基本設定 */}
       <Card loading={loading} style={{ marginBottom: 16 }}>

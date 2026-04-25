@@ -16,7 +16,7 @@
 ## 2. 系統快照
 
 - 系統名稱：選民服務系統（Voter Service System）
-- 版本：`v1.0.8`
+- 版本：`v1.0.13`
 - 類型：Electron 桌面應用 + 本機 Fastify API + SQLite
 - 部署型態：單機本地端 / 區網共用後端
 - 前端：React 18 + TypeScript + Ant Design 5 + Vite 5

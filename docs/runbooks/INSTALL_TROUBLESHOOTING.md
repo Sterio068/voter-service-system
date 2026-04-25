@@ -55,5 +55,5 @@ VOTER_SERVICE_BACKUP_SIGNING_KEY=固定且高強度的備份簽章密鑰
 ## 發布前安裝 Smoke Test
 
 - macOS：安裝 DMG、首次啟動、授權、登入、新增選民、新增陳情、備份、重啟。
-- Windows：NSIS/MSI 安裝、資料目錄保留、備份、解除安裝與重新安裝。
+- Windows：NSIS 安裝版 / portable 免安裝版、資料目錄保留、備份、解除安裝與重新安裝。
 - 兩平台都要確認 `npm run verify` 已在打包前通過。

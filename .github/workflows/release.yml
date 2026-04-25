@@ -9,8 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  build-mac:
-    runs-on: macos-latest
+  verify:
+    runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,14 +22,38 @@ jobs:
 
       - run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Full verification
+        run: npm run verify
 
-      - name: Unit tests
-        run: npm test
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
 
-      - name: Production dependency audit
-        run: npm run audit:prod
+      - name: End-to-end tests
+        run: npm run test:e2e -- --project=chromium
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-playwright-report
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+
+  build-mac:
+    needs: verify
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
 
       - name: Build icons
         run: npm run build:icons
@@ -43,15 +68,17 @@ jobs:
           CSC_LINK: ""
           CSC_KEY_PASSWORD: ""
 
-      # 直接上傳到 Release（不用 artifact 中介，避免配額問題）
-      - name: Upload macOS to Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
         with:
-          files: release/*.dmg
-          generate_release_notes: true
+          name: release-mac
+          path: release/*.dmg
+          if-no-files-found: error
 
   build-win:
+    needs: verify
     runs-on: windows-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -62,15 +89,6 @@ jobs:
 
       - run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Unit tests
-        run: npm test
-
-      - name: Production dependency audit
-        run: npm run audit:prod
-
       - name: Build icons
         run: npm run build:icons
 
@@ -80,9 +98,27 @@ jobs:
       - name: Package Windows
         run: npx electron-builder --win --publish never
 
-      # 直接上傳到 Release（不用 artifact 中介，避免配額問題）
-      - name: Upload Windows to Release
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-win
+          path: release/*.exe
+          if-no-files-found: error
+
+  publish:
+    needs: [verify, build-mac, build-win]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish draft release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.exe
+          draft: true
           generate_release_notes: true
+          files: release-assets/*

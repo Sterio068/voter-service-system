@@ -35,6 +35,7 @@ import MetricCard from '../components/ui/MetricCard'
 import ActionQueue, { type ActionQueueItem } from '../components/ui/ActionQueue'
 import EmptyState from '../components/ui/EmptyState'
 import { canAccessFeature, canPerformAction } from '../utils/permissions'
+import { getPetitionSla } from '../utils/petitionSla'
 import dayjs from 'dayjs'
 
 const { Text } = Typography
@@ -235,15 +236,26 @@ export default function Dashboard() {
     onClick: () => navigate('/schedules'),
   }))
 
-  const petitionItems: ActionQueueItem[] = recentPetitions.map((petition: any) => ({
-    key: petition.id,
-    title: petition.case_number || `案件 #${petition.id}`,
-    description: petition.content,
-    meta: `${petition.voter_name || '匿名'} · ${formatDateTime(petition.created_at)}`,
-    tag: STATUS_LABELS[petition.status] || petition.status,
-    tone: petition.urgency === 'critical' ? 'red' as const : petition.urgency === 'urgent' ? 'amber' as const : 'slate' as const,
-    onClick: () => navigate(`/petitions/${petition.id}`),
-  }))
+  const petitionItems: ActionQueueItem[] = recentPetitions.map((petition: any) => {
+    const sla = getPetitionSla(petition.created_at, petition.status)
+    // SLA 的 tone 比 urgency 更直觀：closed → slate；overdue → red；critical → amber；warning → amber；fresh → slate
+    const slaTone = sla.level === 'overdue' ? 'red' as const
+      : sla.level === 'critical' ? 'amber' as const
+      : sla.level === 'warning' ? 'amber' as const
+      : sla.level === 'closed' ? 'slate' as const
+      : (petition.urgency === 'critical' ? 'red' as const : petition.urgency === 'urgent' ? 'amber' as const : 'slate' as const)
+    const slaSuffix = sla.level === 'overdue' || sla.level === 'critical'
+      ? ` · ${sla.label}` : ''
+    return {
+      key: petition.id,
+      title: petition.case_number || `案件 #${petition.id}`,
+      description: petition.content,
+      meta: `${petition.voter_name || '匿名'} · ${formatDateTime(petition.created_at)}${slaSuffix}`,
+      tag: STATUS_LABELS[petition.status] || petition.status,
+      tone: slaTone,
+      onClick: () => navigate(`/petitions/${petition.id}`),
+    }
+  })
 
   const healthItems: ActionQueueItem[] = [
     ...systemAlerts.map((alert, index) => ({

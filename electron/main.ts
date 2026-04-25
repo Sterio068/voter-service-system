@@ -144,11 +144,10 @@ async function initDataPath(): Promise<string> {
       : '歡迎使用選民服務系統！\n\n請選擇資料儲存位置：',
     detail: [
       '• 本機預設位置：儲存在此電腦的應用程式資料夾',
-      '• 自訂位置：可選擇本機其他資料夾、',
-      '  區域網路共享資料夾（\\\\NAS\\share）或 NAS',
+      '• 自訂位置：可選擇本機其他資料夾或外接磁碟',
       '',
-      '⚠️ 多台電腦共用同一 NAS 路徑可共享資料庫，',
-      '   但請確保網路連線穩定。',
+      '⚠️ 請避免直接使用 NAS / 網路共享資料夾作為正式資料目錄，',
+      '   以免造成 SQLite 鎖定、資料分流或還原困難。',
     ].join('\n'),
     buttons: ['使用本機預設位置', '選擇自訂位置...'],
     defaultId: 0,
@@ -163,7 +162,7 @@ async function initDataPath(): Promise<string> {
       title: '選擇資料儲存資料夾',
       defaultPath,
       properties: ['openDirectory', 'createDirectory'],
-      message: '可選擇本機資料夾或區域網路共享資料夾（NAS）',
+      message: '請選擇本機資料夾或外接磁碟資料夾',
       buttonLabel: '選擇此位置',
     })
 
@@ -200,7 +199,7 @@ async function initDataPath(): Promise<string> {
       type: 'info',
       title: '設定完成',
       message: '資料儲存位置已設定',
-      detail: `路徑：${dataPath}\n\n日後可在系統選單 → 變更資料位置 重新設定。`,
+      detail: `路徑：${dataPath}\n\n如需搬移資料，請改用「備份 → 還原」流程，避免直接切換到另一個空白資料目錄。`,
       buttons: ['開始使用'],
     })
   }
@@ -494,45 +493,21 @@ function setupMenu() {
           label: '變更資料位置...',
           click: async () => {
             const cfg = loadConfig()
-            const { response } = await dialog.showMessageBox({
-              type: 'question',
-              title: '變更資料儲存位置',
-              message: `目前資料位置：\n${cfg.dataPath || '（未設定）'}`,
-              detail: '變更後需重新啟動應用程式才會生效。',
-              buttons: ['選擇新位置...', '取消'],
-              defaultId: 0,
-              cancelId: 1,
-            })
-            if (response !== 0) return
-
-            const result = await dialog.showOpenDialog(mainWindow!, {
-              title: '選擇新的資料儲存資料夾',
-              defaultPath: cfg.dataPath || app.getPath('userData'),
-              properties: ['openDirectory', 'createDirectory'],
-              buttonLabel: '選擇此位置',
-            })
-            if (result.canceled || !result.filePaths[0]) return
-
-            const newPath = result.filePaths[0]
-            const testFile = path.join(newPath, '.voter-service-write-test')
-            try {
-              fs.writeFileSync(testFile, 'test')
-              fs.unlinkSync(testFile)
-            } catch {
-              await dialog.showErrorBox('無法寫入', `無法寫入所選資料夾，請確認存取權限。`)
-              return
-            }
-
-            saveConfig({ dataPath: newPath })
-            const { response: r2 } = await dialog.showMessageBox({
+            const { response } = await dialog.showMessageBox(mainWindow!, {
               type: 'info',
-              title: '設定已儲存',
-              message: '資料位置已更新，需重新啟動才會生效。',
-              detail: `新路徑：${newPath}`,
-              buttons: ['立即重新啟動', '稍後重新啟動'],
+              title: '資料位置搬移說明',
+              message: '目前版本不支援直接切換既有資料位置。',
+              detail: [
+                `目前資料位置：${cfg.dataPath || app.getPath('userData')}`,
+                '',
+                '直接改路徑會讓系統切到另一套資料目錄，造成看起來像資料遺失。',
+                '若需搬移資料，請先執行手動備份，再在新位置初始化後做還原。',
+              ].join('\n'),
+              buttons: ['知道了', '開啟目前資料夾'],
               defaultId: 0,
+              cancelId: 0,
             })
-            if (r2 === 0) { app.relaunch(); app.quit() }
+            if (response === 1) shell.openPath(cfg.dataPath || app.getPath('userData'))
           },
         },
         { type: 'separator' },

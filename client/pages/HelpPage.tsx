@@ -164,8 +164,8 @@ export default function HelpPage() {
           </SubSection>
           <SubSection title="匯入/匯出">
             <Paragraph>
-              支援從選民列表頁批次匯出 CSV，可用 Excel 開啟並修改後重新匯入。
-              匯入格式請參考下載的範本。
+              支援從選民列表頁批次匯出 Excel（`.xlsx`），可用 Excel 開啟並修改後重新匯入。
+              匯入格式請參考下載的範本與欄位說明工作表。
             </Paragraph>
           </SubSection>
           <SubSection title="選民詳細頁">
@@ -244,7 +244,7 @@ export default function HelpPage() {
           </SubSection>
           <SubSection title="匯出正式公文（Word）">
             <Paragraph>
-              點選公文列表右側「Word 圖示」按鈕，即可下載符合政府公文格式的 .doc 檔案。
+              開啟公文詳情後，點選右上角「匯出 Word」，即可下載符合政府公文格式的 `.doc` 檔案。
               格式結構如下：
             </Paragraph>
             <div style={{ background: '#f9f9f9', border: '1px solid #e0e0e0', borderRadius: 8, padding: '12px 20px', fontFamily: 'serif', lineHeight: 2.2, fontSize: 13 }}>
@@ -1072,7 +1072,7 @@ export default function HelpPage() {
             「員工交接」功能適用於人員異動時，將某人負責的所有陳情、公文、待辦批次轉移給另一位員工。
           </Paragraph>
           <StepCard steps={[
-            { title: '進入「員工交接」頁面（需主管以上權限）' },
+            { title: '進入「員工交接」頁面（僅管理員可操作）' },
             { title: '選擇「移出人員」（離職或轉調的員工）' },
             { title: '選擇「接手人員」（接收工作的員工）' },
             { title: '確認轉移項目後點選「執行交接」' },

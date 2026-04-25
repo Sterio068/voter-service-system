@@ -9,6 +9,8 @@ import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
 import EmptyState from '../../components/ui/EmptyState'
 import FormFooter from '../../components/ui/FormFooter'
 import FormSection from '../../components/ui/FormSection'
+import { useAuthStore } from '../../stores/authStore'
+import { hasModulePermission } from '../../utils/permissions'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 
@@ -246,6 +248,11 @@ ${doc.content_summary ? `
 }
 
 function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
+  const { user } = useAuthStore()
+  const canCreateDocument = hasModulePermission(user?.role, 'documents', 'create')
+  const canEditDocument = hasModulePermission(user?.role, 'documents', 'edit')
+  const canDeleteDocument = hasModulePermission(user?.role, 'documents', 'delete')
+  const canExportDocument = hasModulePermission(user?.role, 'documents', 'export')
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<any[]>([])
   const [total, setTotal] = useState(0)
@@ -288,6 +295,19 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
   }
 
   useEffect(() => { fetchDocs() }, [page, filterStatus, search])
+
+  useEffect(() => {
+    if (!detailDrawerOpen || !selectedDoc) {
+      transferForm.resetFields()
+      return
+    }
+
+    transferForm.setFieldsValue({
+      transfer_to: selectedDoc.transfer_to,
+      transfer_date: selectedDoc.transfer_date ? dayjs(selectedDoc.transfer_date) : undefined,
+      transfer_note: selectedDoc.transfer_note,
+    })
+  }, [detailDrawerOpen, selectedDoc, transferForm])
 
   const fetchDocs = async () => {
     setLoading(true)
@@ -378,11 +398,11 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
         title={docType === 'incoming' ? '收文篩選' : '發文篩選'}
         description="搜尋主旨或依處理狀態縮小公文工作清單。"
         meta={<Text type="secondary">共 {total} 筆</Text>}
-        actions={(
+        actions={canCreateDocument ? (
           <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setDrawerOpen(true) }}>
             新增{docType === 'incoming' ? '收文' : '發文'}
           </Button>
-        )}
+        ) : undefined}
       >
         <Space wrap>
           <Input.Search
@@ -493,32 +513,38 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
         open={detailDrawerOpen}
         onClose={() => { setDetailDrawerOpen(false); transferForm.resetFields() }}
         width={600}
-        extra={
+        extra={(canExportDocument || canDeleteDocument) ? (
           <Space>
-            <Button
-              icon={<PrinterOutlined />}
-              onClick={() => selectedDoc && printDocument(selectedDoc, officeName)}
-            >
-              列印
-            </Button>
-            <Button
-              icon={<FileWordOutlined />}
-              onClick={() => selectedDoc && exportDocumentWord(selectedDoc, officeName, officeInfo)}
-            >
-              匯出 Word
-            </Button>
-            <Popconfirm
-              title="確定刪除此公文？"
-              description="刪除後將無法復原。"
-              onConfirm={() => selectedDoc && handleDelete(selectedDoc.id)}
-              okText="確定刪除"
-              cancelText="取消"
-              okButtonProps={{ danger: true }}
-            >
-              <Button danger icon={<DeleteOutlined />}>刪除</Button>
-            </Popconfirm>
+            {canExportDocument && (
+              <>
+                <Button
+                  icon={<PrinterOutlined />}
+                  onClick={() => selectedDoc && printDocument(selectedDoc, officeName)}
+                >
+                  列印
+                </Button>
+                <Button
+                  icon={<FileWordOutlined />}
+                  onClick={() => selectedDoc && exportDocumentWord(selectedDoc, officeName, officeInfo)}
+                >
+                  匯出 Word
+                </Button>
+              </>
+            )}
+            {canDeleteDocument && (
+              <Popconfirm
+                title="確定刪除此公文？"
+                description="刪除後將無法復原。"
+                onConfirm={() => selectedDoc && handleDelete(selectedDoc.id)}
+                okText="確定刪除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+              >
+                <Button danger icon={<DeleteOutlined />}>刪除</Button>
+              </Popconfirm>
+            )}
           </Space>
-        }
+        ) : undefined}
       >
         {selectedDoc && (
           <>
@@ -568,37 +594,45 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
 
           {/* 移轉資訊 */}
           <Divider>移轉資訊</Divider>
-          <Form form={transferForm} layout="vertical" onFinish={async (vals) => {
-            try {
-              await api.put(`/documents/${selectedDoc.id}`, {
-                transfer_to: vals.transfer_to,
-                transfer_date: vals.transfer_date ? dayjs(vals.transfer_date).format('YYYY-MM-DD') : undefined,
-                transfer_note: vals.transfer_note,
-                status: 'processing',
-              })
-              message.success('移轉資訊已更新')
-              fetchDocs()
-            } catch { message.error('更新失敗') }
-          }}>
-            <Row gutter={12}>
-              <Col span={12}>
-                <Form.Item name="transfer_to" label="移轉至" initialValue={selectedDoc?.transfer_to}>
-                  <Input placeholder="機關/單位名稱" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="transfer_date" label="移轉日期">
-                  <DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" defaultValue={selectedDoc?.transfer_date ? dayjs(selectedDoc.transfer_date) : undefined} />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Form.Item name="transfer_note" label="移轉說明" initialValue={selectedDoc?.transfer_note}>
-              <Input.TextArea rows={2} />
-            </Form.Item>
-            <Button type="primary" htmlType="submit" size="small">儲存移轉資訊</Button>
-          </Form>
+          {canEditDocument ? (
+            <Form form={transferForm} layout="vertical" onFinish={async (vals) => {
+              try {
+                await api.put(`/documents/${selectedDoc.id}`, {
+                  transfer_to: vals.transfer_to,
+                  transfer_date: vals.transfer_date ? dayjs(vals.transfer_date).format('YYYY-MM-DD') : undefined,
+                  transfer_note: vals.transfer_note,
+                  status: 'processing',
+                })
+                message.success('移轉資訊已更新')
+                fetchDocs()
+              } catch { message.error('更新失敗') }
+            }}>
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item name="transfer_to" label="移轉至">
+                    <Input placeholder="機關/單位名稱" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="transfer_date" label="移轉日期">
+                    <DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Form.Item name="transfer_note" label="移轉說明">
+                <Input.TextArea rows={2} />
+              </Form.Item>
+              <Button type="primary" htmlType="submit" size="small">儲存移轉資訊</Button>
+            </Form>
+          ) : (
+            <Descriptions bordered column={1} size="small">
+              <Descriptions.Item label="移轉至">{selectedDoc.transfer_to || '—'}</Descriptions.Item>
+              <Descriptions.Item label="移轉日期">{selectedDoc.transfer_date ? toROC(selectedDoc.transfer_date) : '—'}</Descriptions.Item>
+              <Descriptions.Item label="移轉說明">{selectedDoc.transfer_note || '—'}</Descriptions.Item>
+            </Descriptions>
+          )}
           <Divider>附件</Divider>
-          <AttachmentUpload refType="document" refId={selectedDoc.id} />
+          <AttachmentUpload refType="document" refId={selectedDoc.id} readonly={!canEditDocument} />
           </>
         )}
       </Drawer>

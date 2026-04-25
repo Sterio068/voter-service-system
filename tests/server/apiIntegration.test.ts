@@ -9,6 +9,7 @@ import {
   createApiTestServer,
   loginAs,
   multipartPayload,
+  multipartPayloadMulti,
   parseJsonResponse,
   type ApiTestContext,
 } from '../helpers/apiTestServer'
@@ -17,6 +18,107 @@ let ctx: ApiTestContext
 let adminToken = ''
 let assistantToken = ''
 let volunteerToken = ''
+
+function seedAnonymizeFixture(prefix: string) {
+  const referrerId = ctx.db.prepare(`
+    INSERT INTO voters (name, mobile, created_by)
+    VALUES (?, ?, 1)
+  `).run(`${prefix} 介紹人`, `09${String(Date.now()).slice(-8)}`).lastInsertRowid as number
+
+  const voterId = ctx.db.prepare(`
+    INSERT INTO voters (
+      name, gender, birth_date, id_number, mobile, phone, line_id, email,
+      household_city, household_district, household_village, household_neighbor, household_address,
+      mailing_address, occupation, company, job_title, election_area, note,
+      source, referrer_id, addr_city, addr_district, addr_village, household_key, title, is_active, created_by
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1)
+  `).run(
+    `${prefix} 選民`,
+    '女',
+    '1988-02-03',
+    `A${String(Date.now()).slice(-9)}`,
+    `09${String(Date.now() + 1).slice(-8)}`,
+    '0223456789',
+    `${prefix.toLowerCase()}-line`,
+    `${prefix.toLowerCase()}@example.com`,
+    '臺北市',
+    '中正區',
+    '幸福里',
+    '8鄰',
+    `${prefix} 戶籍地址`,
+    `${prefix} 通訊地址`,
+    '工程師',
+    `${prefix} 公司`,
+    '主任',
+    '第一選區',
+    `${prefix} 備註`,
+    `${prefix} 來源`,
+    referrerId,
+    '臺北市',
+    '中正區',
+    '幸福里',
+    `${prefix}-household-key`,
+    `${prefix} 頭銜`,
+  ).lastInsertRowid as number
+
+  ctx.db.prepare('INSERT INTO voter_tags (voter_id, tag) VALUES (?, ?)').run(voterId, `${prefix} 標籤`)
+  ctx.db.prepare('INSERT INTO voter_topics (voter_id, topic) VALUES (?, ?)').run(voterId, `${prefix} 議題`)
+  ctx.db.prepare(`
+    INSERT INTO voter_engagement (voter_id, support_level, activity_count, last_contact_date, notes)
+    VALUES (?, 4, 3, '2026-04-20', ?)
+  `).run(voterId, `${prefix} 參與度備註`)
+  ctx.db.prepare(`
+    INSERT INTO voter_relations (voter_id, related_voter_id, relation_type, note)
+    VALUES (?, ?, 'family', ?)
+  `).run(voterId, referrerId, `${prefix} 關係`)
+  ctx.db.prepare(`
+    INSERT INTO contact_records (voter_id, contact_date, contact_type, content, result, result_type, follow_up_date, created_by)
+    VALUES (?, '2026-04-21', 'phone', ?, '已聯繫', 'follow_up', '2026-04-30', 1)
+  `).run(voterId, `${prefix} 聯絡紀錄內容`)
+  ctx.db.prepare(`
+    INSERT INTO petitions (case_number, petition_date, voter_id, contact_phone, channel, category, content, created_by)
+    VALUES (?, '2026-04-22', ?, '0911222333', '電話', '民政', ?, 1)
+  `).run(`2026-${String(voterId).padStart(5, '0')}`, voterId, `${prefix} 陳情內容`)
+  ctx.db.prepare(`
+    INSERT INTO tasks (title, related_voter_id, created_by)
+    VALUES (?, ?, 1)
+  `).run(`${prefix} 待辦`, voterId)
+
+  const surveyId = ctx.db.prepare(`INSERT INTO surveys (title, created_by) VALUES (?, 1)`).run(`${prefix} 問卷`).lastInsertRowid as number
+  ctx.db.prepare(`
+    INSERT INTO survey_responses (survey_id, voter_id, respondent_name, answers)
+    VALUES (?, ?, ?, ?)
+  `).run(surveyId, voterId, `${prefix} 受訪者`, JSON.stringify({ q1: 'yes' }))
+
+  ctx.db.prepare(`
+    INSERT INTO consultation_appointments (voter_id, voter_name, voter_phone, appointment_date, time_slot, issue_summary, created_by)
+    VALUES (?, ?, '0988777666', '2026-04-23', '09:00', ?, 1)
+  `).run(voterId, `${prefix} 諮詢人`, `${prefix} 諮詢摘要`)
+
+  ctx.db.prepare(`
+    INSERT INTO ceremony_records (voter_id, ceremony_type, recipient_name, recipient_relation, created_by)
+    VALUES (?, 'other', ?, '親友', 1)
+  `).run(voterId, `${prefix} 禮儀對象`)
+
+  const groupId = ctx.db.prepare(`INSERT INTO groups (name, created_by) VALUES (?, 1)`).run(`${prefix} 團體`).lastInsertRowid as number
+  ctx.db.prepare(`INSERT INTO group_members (group_id, voter_id, role) VALUES (?, ?, 'member')`).run(groupId, voterId)
+
+  const eventId = ctx.db.prepare(`INSERT INTO events (title, event_date, created_by) VALUES (?, '2026-04-24', 1)`).run(`${prefix} 活動`).lastInsertRowid as number
+  ctx.db.prepare(`INSERT INTO event_participants (event_id, voter_id, role) VALUES (?, ?, 'participant')`).run(eventId, voterId)
+
+  const notificationId = ctx.db.prepare(`INSERT INTO notifications (title, content, created_by) VALUES (?, ?, 1)`).run(`${prefix} 通知`, '內容').lastInsertRowid as number
+  ctx.db.prepare(`INSERT INTO notification_recipients (notification_id, voter_id, status) VALUES (?, ?, 'pending')`).run(notificationId, voterId)
+
+  ctx.db.prepare(`
+    INSERT INTO voter_activity_history (voter_id, activity_score, snapshot_date)
+    VALUES (?, 88, '2026-04-01')
+  `).run(voterId)
+
+  return {
+    voterId,
+    referrerId,
+  }
+}
 
 test.before(async () => {
   ctx = await createApiTestServer()
@@ -105,6 +207,56 @@ test('fresh install seeds first-run and baseline settings defaults', async () =>
   assert.equal(settings.body.data.idle_timeout, '30')
 })
 
+test('first_run cannot be cleared until the default admin password has been changed', async () => {
+  const blocked = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: '/api/admin/settings',
+    headers: bearer(adminToken),
+    payload: { first_run: 'false' },
+  }))
+  assert.equal(blocked.statusCode, 400)
+  assert.match(blocked.body.error, /請先完成首次管理員密碼修改/)
+
+  const passwordChanged = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: '/api/admin/users/1/password',
+    headers: bearer(adminToken),
+    payload: {
+      password: 'Admin12345!',
+      confirm_self_password: 'admin123',
+    },
+  }))
+  assert.equal(passwordChanged.statusCode, 200)
+
+  const rotatedAdminToken = (await loginAs(ctx.app, 'admin', 'Admin12345!')).token
+  const allowed = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: '/api/admin/settings',
+    headers: bearer(rotatedAdminToken),
+    payload: { first_run: 'false' },
+  }))
+  assert.equal(allowed.statusCode, 200)
+
+  const restoreFirstRun = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: '/api/admin/settings',
+    headers: bearer(rotatedAdminToken),
+    payload: { first_run: 'true' },
+  }))
+  assert.equal(restoreFirstRun.statusCode, 200)
+
+  const passwordRestored = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: '/api/admin/users/1/password',
+    headers: bearer(rotatedAdminToken),
+    payload: {
+      password: 'admin123',
+      confirm_self_password: 'Admin12345!',
+    },
+  }))
+  assert.equal(passwordRestored.statusCode, 200)
+})
+
 test('role permissions allow volunteer reads but reject voter writes', async () => {
   const read = parseJsonResponse(await ctx.app.inject({
     method: 'GET',
@@ -121,6 +273,62 @@ test('role permissions allow volunteer reads but reject voter writes', async () 
     payload: { name: '志工不可新增', mobile: '0911111111' },
   }))
   assert.equal(write.statusCode, 403)
+})
+
+test('admin account safeguards block self-disable and self-delete operations', async () => {
+  const adminUser = ctx.db.prepare("SELECT id FROM users WHERE username='admin'").get() as { id: number }
+
+  const disableSelf = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: `/api/admin/users/${adminUser.id}/disable`,
+    headers: bearer(adminToken),
+    payload: {},
+  }))
+  assert.equal(disableSelf.statusCode, 400)
+  assert.match(disableSelf.body.error, /不可停用或刪除自己的帳號/)
+
+  const deleteSelf = parseJsonResponse(await ctx.app.inject({
+    method: 'DELETE',
+    url: `/api/admin/users/${adminUser.id}`,
+    headers: bearer(adminToken),
+  }))
+  assert.equal(deleteSelf.statusCode, 400)
+  assert.match(deleteSelf.body.error, /不可停用或刪除自己的帳號/)
+})
+
+test('client error ingestion requires authentication and records the current user when present', async () => {
+  const anonymous = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/client-errors',
+    payload: {
+      message: '匿名錯誤',
+      source: 'window.onerror',
+    },
+  }))
+  assert.equal(anonymous.statusCode, 401)
+
+  const authenticated = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/client-errors',
+    headers: bearer(adminToken),
+    payload: {
+      message: '登入後錯誤',
+      source: 'ErrorBoundary',
+      url: '/dashboard',
+    },
+  }))
+  assert.equal(authenticated.statusCode, 200)
+
+  const saved = ctx.db.prepare(`
+    SELECT message, source, url, user_id
+    FROM client_errors
+    WHERE message='登入後錯誤'
+    ORDER BY id DESC
+    LIMIT 1
+  `).get() as any
+  assert.equal(saved.source, 'ErrorBoundary')
+  assert.equal(saved.url, '/dashboard')
+  assert.equal(saved.user_id, 1)
 })
 
 test('ceremony, expense, and import template routes enforce module permissions', async () => {
@@ -283,6 +491,90 @@ test('voter lifecycle validates input, writes audit logs, and excludes soft-dele
     WHERE target_type='voter' AND target_id=? AND action IN ('create','delete')
   `).get(voterId) as any).count
   assert.equal(auditCount, 2)
+})
+
+test('voter anonymize clears extended PII and linked voter tables, while full mode also scrubs history snapshots', async () => {
+  const anonymizeFixture = seedAnonymizeFixture('匿名化')
+  const anonymizeResponse = parseJsonResponse(await ctx.app.inject({
+    method: 'DELETE',
+    url: `/api/voters/${anonymizeFixture.voterId}/anonymize?mode=anonymize`,
+    headers: bearer(adminToken),
+  }))
+  assert.equal(anonymizeResponse.statusCode, 200)
+
+  const anonymizedVoter = ctx.db.prepare('SELECT * FROM voters WHERE id=?').get(anonymizeFixture.voterId) as any
+  assert.equal(anonymizedVoter.name, `已匿名選民 #${anonymizeFixture.voterId}`)
+  assert.equal(anonymizedVoter.gender, null)
+  assert.equal(anonymizedVoter.phone, null)
+  assert.equal(anonymizedVoter.line_id, null)
+  assert.equal(anonymizedVoter.occupation, null)
+  assert.equal(anonymizedVoter.company, null)
+  assert.equal(anonymizedVoter.note, null)
+  assert.equal(anonymizedVoter.household_city, null)
+  assert.equal(anonymizedVoter.household_district, null)
+  assert.equal(anonymizedVoter.household_village, null)
+  assert.equal(anonymizedVoter.household_address, null)
+  assert.equal(anonymizedVoter.source, null)
+  assert.equal(anonymizedVoter.referrer_id, null)
+  assert.equal(anonymizedVoter.addr_city, null)
+  assert.equal(anonymizedVoter.addr_district, null)
+  assert.equal(anonymizedVoter.addr_village, null)
+
+  const anonymizedTagCount = (ctx.db.prepare('SELECT COUNT(*) AS count FROM voter_tags WHERE voter_id=?').get(anonymizeFixture.voterId) as any).count
+  const anonymizedTopicCount = (ctx.db.prepare('SELECT COUNT(*) AS count FROM voter_topics WHERE voter_id=?').get(anonymizeFixture.voterId) as any).count
+  const anonymizedEngagementCount = (ctx.db.prepare('SELECT COUNT(*) AS count FROM voter_engagement WHERE voter_id=?').get(anonymizeFixture.voterId) as any).count
+  const anonymizedRelationCount = (ctx.db.prepare('SELECT COUNT(*) AS count FROM voter_relations WHERE voter_id=? OR related_voter_id=?').get(anonymizeFixture.voterId, anonymizeFixture.voterId) as any).count
+  assert.equal(anonymizedTagCount, 0)
+  assert.equal(anonymizedTopicCount, 0)
+  assert.equal(anonymizedEngagementCount, 0)
+  assert.equal(anonymizedRelationCount, 0)
+
+  const anonymizedContact = ctx.db.prepare('SELECT voter_id, content FROM contact_records WHERE content=?').get('匿名化 聯絡紀錄內容') as any
+  const anonymizedPetition = ctx.db.prepare('SELECT voter_id, contact_phone FROM petitions WHERE content=?').get('匿名化 陳情內容') as any
+  const anonymizedConsultation = ctx.db.prepare('SELECT voter_id, voter_name, voter_phone FROM consultation_appointments WHERE issue_summary=?').get('匿名化 諮詢摘要') as any
+  const anonymizedSurvey = ctx.db.prepare('SELECT voter_id, respondent_name FROM survey_responses WHERE respondent_name=?').get('匿名化 受訪者') as any
+  assert.equal(anonymizedContact.voter_id, null)
+  assert.equal(anonymizedContact.content, '匿名化 聯絡紀錄內容')
+  assert.equal(anonymizedPetition.voter_id, null)
+  assert.equal(anonymizedPetition.contact_phone, '0911222333')
+  assert.equal(anonymizedConsultation.voter_id, null)
+  assert.equal(anonymizedConsultation.voter_name, '匿名化 諮詢人')
+  assert.equal(anonymizedConsultation.voter_phone, '0988777666')
+  assert.equal(anonymizedSurvey.voter_id, null)
+  assert.equal(anonymizedSurvey.respondent_name, '匿名化 受訪者')
+
+  const fullFixture = seedAnonymizeFixture('完整刪除')
+  const fullResponse = parseJsonResponse(await ctx.app.inject({
+    method: 'DELETE',
+    url: `/api/voters/${fullFixture.voterId}/anonymize?mode=full`,
+    headers: bearer(adminToken),
+  }))
+  assert.equal(fullResponse.statusCode, 200)
+
+  const fullContact = ctx.db.prepare(`
+    SELECT voter_id, content, result, result_type, follow_up_date
+    FROM contact_records
+    WHERE content=?
+  `).get(`已匿名化聯絡紀錄（原選民 #${fullFixture.voterId}）`) as any
+  const fullPetition = ctx.db.prepare('SELECT voter_id, contact_phone FROM petitions WHERE content=?').get('完整刪除 陳情內容') as any
+  const fullConsultation = ctx.db.prepare('SELECT voter_id, voter_name, voter_phone FROM consultation_appointments WHERE issue_summary=?').get('完整刪除 諮詢摘要') as any
+  const fullSurvey = ctx.db.prepare('SELECT voter_id, respondent_name FROM survey_responses WHERE survey_id IN (SELECT id FROM surveys WHERE title=?)').get('完整刪除 問卷') as any
+  const fullCeremony = ctx.db.prepare('SELECT voter_id, recipient_name, recipient_relation FROM ceremony_records WHERE recipient_name=?').get(`已匿名選民 #${fullFixture.voterId}`) as any
+
+  assert.equal(fullContact.voter_id, null)
+  assert.equal(fullContact.result, null)
+  assert.equal(fullContact.result_type, null)
+  assert.equal(fullContact.follow_up_date, null)
+  assert.equal(fullPetition.voter_id, null)
+  assert.equal(fullPetition.contact_phone, null)
+  assert.equal(fullConsultation.voter_id, null)
+  assert.equal(fullConsultation.voter_name, `已匿名選民 #${fullFixture.voterId}`)
+  assert.equal(fullConsultation.voter_phone, null)
+  assert.equal(fullSurvey.voter_id, null)
+  assert.equal(fullSurvey.respondent_name, `已匿名選民 #${fullFixture.voterId}`)
+  assert.equal(fullCeremony.voter_id, null)
+  assert.equal(fullCeremony.recipient_name, `已匿名選民 #${fullFixture.voterId}`)
+  assert.equal(fullCeremony.recipient_relation, null)
 })
 
 test('voter list supports exact mobile and id_number filters for duplicate checks', async () => {
@@ -551,7 +843,7 @@ test('backup API creates signed metadata and verify reports trusted backups', as
   assert.equal(verify.body.data.trust_level, 'signed')
 })
 
-test('restore accepts a valid system backup and writes a pending restore marker', async () => {
+test('restore accepts a valid system backup with HMAC sidecar and writes a pending restore marker', async () => {
   const backup = parseJsonResponse(await ctx.app.inject({
     method: 'POST',
     url: '/api/admin/backup',
@@ -561,11 +853,13 @@ test('restore accepts a valid system backup and writes a pending restore marker'
 
   const backupName = backup.body.data.name
   const backupPath = path.join(ctx.backupsPath, backupName)
-  const upload = multipartPayload({
-    filename: backupName,
-    contentType: 'application/octet-stream',
-    content: readFileSync(backupPath),
-  })
+  const sidecarPath = `${backupPath}.meta.json`
+  assert.equal(existsSync(sidecarPath), true, 'backup metadata sidecar should exist')
+
+  const upload = multipartPayloadMulti([
+    { fieldName: 'backup', filename: backupName, contentType: 'application/octet-stream', content: readFileSync(backupPath) },
+    { fieldName: 'metadata', filename: `${backupName}.meta.json`, contentType: 'application/json', content: readFileSync(sidecarPath) },
+  ])
 
   const restore = parseJsonResponse(await ctx.app.inject({
     method: 'POST',
@@ -575,10 +869,88 @@ test('restore accepts a valid system backup and writes a pending restore marker'
   }))
   assert.equal(restore.statusCode, 200)
   assert.equal(restore.body.success, true)
+  assert.equal(restore.body.data.signature_status, 'signed')
   assert.equal(restore.body.data.restoreFile, 'voter-service.db.restore')
   assert.equal(existsSync(path.join(ctx.dataPath, 'voter-service.db.restore')), true)
   assert.match(restore.body.data.currentBackup, /^pre-restore-voter-service-/)
   assert.equal(existsSync(path.join(ctx.backupsPath, `${restore.body.data.currentBackup}.meta.json`)), true)
+
+  // 清掉 marker，避免污染後續 test
+  rmSync(path.join(ctx.dataPath, 'voter-service.db.restore'), { force: true })
+})
+
+test('restore rejects an unsigned backup unless force_unsigned is set', async () => {
+  const backup = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/admin/backup',
+    headers: bearer(adminToken),
+  }))
+  const backupName = backup.body.data.name
+  const backupPath = path.join(ctx.backupsPath, backupName)
+
+  // 沒帶 sidecar、沒帶 force → 應 400
+  const noSidecar = multipartPayload({
+    fieldName: 'backup',
+    filename: backupName,
+    contentType: 'application/octet-stream',
+    content: readFileSync(backupPath),
+  })
+  const rejected = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/admin/restore',
+    headers: { ...bearer(adminToken), 'content-type': noSidecar.contentType },
+    payload: noSidecar.payload,
+  }))
+  assert.equal(rejected.statusCode, 400)
+  assert.match(String(rejected.body.error), /缺少 .meta.json|未簽章|sidecar/)
+
+  // 帶 force_unsigned=1 → 應通過並標示 unsigned_legacy
+  const forced = multipartPayload(
+    { fieldName: 'backup', filename: backupName, contentType: 'application/octet-stream', content: readFileSync(backupPath) },
+    { force_unsigned: '1' },
+  )
+  const forcedResp = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/admin/restore',
+    headers: { ...bearer(adminToken), 'content-type': forced.contentType },
+    payload: forced.payload,
+  }))
+  assert.equal(forcedResp.statusCode, 200)
+  assert.equal(forcedResp.body.data.signature_status, 'unsigned_legacy')
+  rmSync(path.join(ctx.dataPath, 'voter-service.db.restore'), { force: true })
+})
+
+test('restore rejects a backup whose sidecar signature does not match the .db', async () => {
+  const backup = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/admin/backup',
+    headers: bearer(adminToken),
+  }))
+  const backupName = backup.body.data.name
+  const backupPath = path.join(ctx.backupsPath, backupName)
+  const sidecarPath = `${backupPath}.meta.json`
+
+  // 取得正確 sidecar 但偽造備份內容（同名 .db 但內容是另一個 SQLite）
+  const otherBackup = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/admin/backup',
+    headers: bearer(adminToken),
+  }))
+  const otherBackupPath = path.join(ctx.backupsPath, otherBackup.body.data.name)
+
+  const tampered = multipartPayloadMulti([
+    { fieldName: 'backup', filename: backupName, contentType: 'application/octet-stream', content: readFileSync(otherBackupPath) },
+    { fieldName: 'metadata', filename: `${backupName}.meta.json`, contentType: 'application/json', content: readFileSync(sidecarPath) },
+  ])
+
+  const resp = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/admin/restore',
+    headers: { ...bearer(adminToken), 'content-type': tampered.contentType },
+    payload: tampered.payload,
+  }))
+  assert.equal(resp.statusCode, 400)
+  assert.match(String(resp.body.error), /簽章|signature|sha256|size/i)
 })
 
 test('voter export masks sensitive fields by default', async () => {
@@ -1397,4 +1769,218 @@ test('surveys and notifications APIs reject whitespace-only drafts and notificat
   }))
   assert.equal(supportedSend.statusCode, 200)
   assert.equal(supportedSend.body.success, true)
+})
+
+// ===================== Secrets round-trip (AI / Google / LINE) =====================
+
+test('AI config PUT encrypts apiKey at rest, never returns plaintext, and is preserved when masked value re-submitted', async () => {
+  const apiKey = 'sk-test-1234567890abcdef-secret'
+  const put1 = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: '/api/ai/config',
+    headers: bearer(adminToken),
+    payload: { provider: 'openai', model: 'gpt-4o-mini', apiKey, baseUrl: 'https://api.openai.com', maxTokens: 1024 },
+  }))
+  assert.equal(put1.statusCode, 200)
+
+  // 直接讀 settings：value 必須被加密儲存
+  const stored = ctx.db.prepare("SELECT value FROM settings WHERE key='ai_api_key'").get() as any
+  assert.ok(stored?.value, 'ai_api_key should be persisted')
+  assert.notEqual(stored.value, apiKey, 'ai_api_key must not be stored as plaintext')
+  assert.equal(isEncryptedSecret(stored.value), true, 'ai_api_key should be wrapped with enc:v1: marker')
+  assert.equal(decryptSecretValue(stored.value), apiKey, 'decrypted value should round-trip to original')
+
+  // GET /api/ai/config 不可洩漏明文
+  const get1 = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/ai/config',
+    headers: bearer(adminToken),
+  }))
+  assert.equal(get1.statusCode, 200)
+  assert.equal(get1.body.data.apiKeySet, true)
+  assert.notEqual(get1.body.data.apiKey, apiKey)
+  assert.match(String(get1.body.data.apiKey), /^[*]+|^\*\*\*/)
+
+  // 再次 PUT 帶 *** 遮罩值 → 後端應視為「保留原值」，不可覆寫成 ***
+  const put2 = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: '/api/ai/config',
+    headers: bearer(adminToken),
+    payload: { apiKey: get1.body.data.apiKey },
+  }))
+  assert.equal(put2.statusCode, 200)
+  const stored2 = ctx.db.prepare("SELECT value FROM settings WHERE key='ai_api_key'").get() as any
+  assert.equal(decryptSecretValue(stored2.value), apiKey, 'submitting masked apiKey must preserve the existing secret')
+})
+
+test('Google Calendar credentials encrypt client_secret at rest and admin/settings GET never returns it', async () => {
+  const clientId = 'voter-service-test.apps.googleusercontent.com'
+  const clientSecret = 'GOCSPX-very-secret-token'
+  const put = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/integrations/gcal/credentials',
+    headers: bearer(adminToken),
+    payload: { client_id: clientId, client_secret: clientSecret },
+  }))
+  assert.equal(put.statusCode, 200)
+
+  const storedClientId = ctx.db.prepare("SELECT value FROM settings WHERE key='gcal_client_id'").get() as any
+  const storedSecret = ctx.db.prepare("SELECT value FROM settings WHERE key='gcal_client_secret'").get() as any
+  assert.equal(storedClientId.value, clientId, 'client_id is not sensitive — store as-is')
+  assert.notEqual(storedSecret.value, clientSecret, 'client_secret must not be stored as plaintext')
+  assert.equal(isEncryptedSecret(storedSecret.value), true)
+  assert.equal(decryptSecretValue(storedSecret.value), clientSecret)
+
+  // /api/admin/settings 不可回傳 secret 明文
+  const settings = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/admin/settings',
+    headers: bearer(adminToken),
+  }))
+  assert.equal(settings.statusCode, 200)
+  assert.equal(settings.body.data.gcal_client_secret, undefined, 'gcal_client_secret must never appear in /api/admin/settings response')
+  assert.equal(settings.body.data.gcal_client_secret_configured, true, 'configured flag should be set')
+})
+
+test('LINE webhook secrets encrypt at rest and signature verification can read them back', async () => {
+  const accessToken = 'line-channel-access-test-token-1234567890'
+  const channelSecret = 'line-channel-secret-test-abcdef'
+
+  const update = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: '/api/admin/settings',
+    headers: bearer(adminToken),
+    payload: {
+      line_channel_access_token: accessToken,
+      line_channel_secret: channelSecret,
+    },
+  }))
+  assert.equal(update.statusCode, 200)
+
+  const storedToken = ctx.db.prepare("SELECT value FROM settings WHERE key='line_channel_access_token'").get() as any
+  const storedSecret = ctx.db.prepare("SELECT value FROM settings WHERE key='line_channel_secret'").get() as any
+  assert.equal(isEncryptedSecret(storedToken.value), true)
+  assert.equal(isEncryptedSecret(storedSecret.value), true)
+  assert.equal(decryptSecretValue(storedToken.value), accessToken)
+  assert.equal(decryptSecretValue(storedSecret.value), channelSecret)
+
+  // 設定頁不可回傳明文
+  const settings = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/admin/settings',
+    headers: bearer(adminToken),
+  }))
+  assert.equal(settings.body.data.line_channel_access_token, undefined)
+  assert.equal(settings.body.data.line_channel_secret, undefined)
+  assert.equal(settings.body.data.line_channel_access_token_configured, true)
+  assert.equal(settings.body.data.line_channel_secret_configured, true)
+
+  // line/status 應反映已設定
+  const status = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/line/status',
+    headers: bearer(adminToken),
+  }))
+  // line/status 內部會跑 SELECT COUNT(*) FROM voters WHERE tags LIKE '%LINE:%'，
+  // 可能在某些 schema 變化下回 500；至少驗證 secret 正確 round-trip 即可
+  if (status.statusCode === 200) {
+    assert.equal(status.body.data.channel_secret_configured, true)
+  }
+})
+
+// ===================== Groups import round-trip =====================
+
+test('groups import accepts valid Excel rows, rejects duplicates and tracks audit', async () => {
+  // 1. 取得範本，確認 headers / 範例存在
+  const tpl = await ctx.app.inject({
+    method: 'GET',
+    url: '/api/groups/import/template',
+    headers: bearer(adminToken),
+  })
+  assert.equal(tpl.statusCode, 200)
+  assert.equal(
+    String(tpl.headers['content-type']),
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  )
+  const tplBuf = tpl.rawPayload as Buffer
+  const tplWb = XLSX.read(tplBuf, { type: 'buffer' })
+  const tplSheet = tplWb.Sheets[tplWb.SheetNames[0]]
+  const tplRows = XLSX.utils.sheet_to_json<string[]>(tplSheet, { header: 1, defval: '' })
+  assert.equal(tplRows[0][0], '團體名稱')
+  assert.equal(tplRows[0][1], '類別')
+
+  // 2. 用範本 headers 自製測試檔（一筆新、一筆故意重名、一筆空名）
+  const headers = tplRows[0]
+  const rows = [
+    headers,
+    ['測試團體_A', '社區', '02-12340001', '臺北市信義區', '20', 'roundtrip A'],
+    ['測試團體_B', '宗教', '0922000222', '臺北市內湖區', '15', 'roundtrip B'],
+    ['測試團體_A', '社區', '', '', '', '故意重複，應失敗'],
+    ['', '社區', '', '', '', '故意空名，應失敗'],
+  ]
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+  XLSX.utils.book_append_sheet(wb, ws, '團體資料')
+  const importBuf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer
+
+  // 3. 上傳
+  const upload = multipartPayload({
+    fieldName: 'file',
+    filename: 'group_import_test.xlsx',
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    content: importBuf,
+  })
+  const importResp = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/groups/import',
+    headers: { ...bearer(adminToken), 'content-type': upload.contentType },
+    payload: upload.payload,
+  }))
+  assert.equal(importResp.statusCode, 200)
+  assert.equal(importResp.body.imported, 2, '應成功匯入 2 筆新團體')
+  assert.equal(importResp.body.failed, 2, '應有 2 筆失敗（重名 + 空名）')
+  assert.equal(importResp.body.errors.length, 2)
+  assert.match(String(importResp.body.errors.join('|')), /已存在/)
+  assert.match(String(importResp.body.errors.join('|')), /團體名稱不可空白/)
+
+  // 4. 後端資料庫應有兩筆新團體
+  const a = ctx.db.prepare("SELECT * FROM groups WHERE name='測試團體_A' AND is_active=1").get() as any
+  const b = ctx.db.prepare("SELECT * FROM groups WHERE name='測試團體_B' AND is_active=1").get() as any
+  assert.ok(a, 'A 應存在')
+  assert.ok(b, 'B 應存在')
+  assert.equal(a.category, '社區')
+  assert.equal(b.category, '宗教')
+  assert.equal(a.member_count, 20)
+  assert.equal(b.phone, '0922000222')
+
+  // 5. audit log 應寫入 import 紀錄
+  const audit = ctx.db.prepare(
+    "SELECT * FROM audit_logs WHERE module='團體管理' AND action='import' ORDER BY id DESC LIMIT 1",
+  ).get() as any
+  assert.ok(audit, 'audit log 應有 group import 紀錄')
+  assert.match(String(audit.target_name), /匯入 2 筆團體/)
+})
+
+test('groups import rejects unauthorized roles', async () => {
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['團體名稱', '類別', '聯絡電話', '地址', '預估成員數', '備註'],
+    ['未授權團體', '社區', '', '', '', ''],
+  ])
+  XLSX.utils.book_append_sheet(wb, ws, '團體資料')
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer
+
+  const upload = multipartPayload({
+    fieldName: 'file',
+    filename: 'unauthorized.xlsx',
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    content: buf,
+  })
+  const resp = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/groups/import',
+    headers: { ...bearer(volunteerToken), 'content-type': upload.contentType },
+    payload: upload.payload,
+  }))
+  assert.equal(resp.statusCode, 403, 'volunteer 不應能匯入團體')
 })

@@ -6,7 +6,7 @@ test('admin can log in and open data retention controls', async ({ page, request
   await disableFirstRunWizard(request, session.token)
   await page.goto('/login')
   await page.getByPlaceholder('帳號').fill('admin')
-  await page.getByPlaceholder('密碼').fill('admin123')
+  await page.getByPlaceholder('密碼').fill(session.password)
   await page.getByRole('button', { name: /登\s*入/ }).click()
   await expect(page.getByRole('button', { name: '新增陳情' })).toBeVisible()
 

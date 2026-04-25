@@ -5,7 +5,7 @@ import {
 } from 'antd'
 import {
   PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, EyeOutlined,
-  DownloadOutlined, UploadOutlined, FileExcelOutlined, FilterOutlined, TagsOutlined, StarOutlined
+  DownloadOutlined, UploadOutlined, FileExcelOutlined, FilterOutlined, TagsOutlined, StarOutlined, PrinterOutlined
 } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
@@ -20,7 +20,7 @@ import FormSection from '../../components/ui/FormSection'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import type { UploadFile } from 'antd/es/upload'
-import { hasModulePermission } from '../../utils/permissions'
+import { canAccessFeature, hasModulePermission } from '../../utils/permissions'
 
 const { Text } = Typography
 const { Option } = Select
@@ -37,6 +37,8 @@ export default function VoterListPage() {
   const canEditVoter = hasModulePermission(user?.role, 'voters', 'edit')
   const canDeleteVoter = hasModulePermission(user?.role, 'voters', 'delete')
   const canExportVoter = hasModulePermission(user?.role, 'voters', 'export')
+  const canPrintVoters = canAccessFeature(user?.role, 'printVoters')
+  const canPrintLabels = canAccessFeature(user?.role, 'printLabels')
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<any[]>([])
   const [total, setTotal] = useState(0)
@@ -346,6 +348,26 @@ export default function VoterListPage() {
     }
   }
 
+  // 匯入錯誤訊息匯出成 CSV，方便使用者離線修正後重傳
+  const downloadErrorsAsCsv = (rows: string[], baseName: string) => {
+    if (!rows || rows.length === 0) return
+    const header = '錯誤訊息\n'
+    // CSV 欄位若含逗號或引號需用引號包並把內部引號轉義
+    const escape = (s: string) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    const body = rows.map(r => escape(String(r))).join('\n')
+    // 加 BOM 讓 Excel 正確認 UTF-8
+    const blob = new Blob(['﻿' + header + body], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const stamp = dayjs().format('YYYYMMDD_HHmmss')
+    a.href = url
+    a.download = `${baseName}_${stamp}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   const handleExport = async (options: { includeSensitive?: boolean; reason?: string } = {}) => {
     setExporting(true)
     try {
@@ -532,6 +554,16 @@ export default function VoterListPage() {
       description="集中管理名冊、標籤、匯入匯出與個資保護作業。"
       actions={
         <>
+          {canPrintVoters && (
+            <Button icon={<PrinterOutlined />} onClick={() => navigate('/print/voters')}>
+              列印名冊
+            </Button>
+          )}
+          {canPrintLabels && (
+            <Button icon={<TagsOutlined />} onClick={() => navigate('/print/labels')}>
+              地址標籤
+            </Button>
+          )}
           {canExportVoter && (
             <>
               <Button icon={<DownloadOutlined />} onClick={() => handleExport()} loading={exporting}>匯出 Excel（遮罩）</Button>
@@ -679,13 +711,40 @@ export default function VoterListPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <Alert
                 type={preCheckResult.error_count > 0 ? 'warning' : 'success'}
-                message={`預檢結果：${preCheckResult.valid_count} 筆可匯入，${preCheckResult.error_count} 筆有錯誤`}
+                message={
+                  <Space size={12} wrap>
+                    <span>預檢結果：</span>
+                    <Tag color="green">可匯入 {preCheckResult.valid_count}</Tag>
+                    {preCheckResult.insert_count != null && (
+                      <Tag color="blue">新增 {preCheckResult.insert_count}</Tag>
+                    )}
+                    {preCheckResult.update_count != null && (
+                      <Tag color="gold">更新既有 {preCheckResult.update_count}</Tag>
+                    )}
+                    <Tag color={preCheckResult.error_count > 0 ? 'red' : 'default'}>
+                      錯誤 {preCheckResult.error_count}
+                    </Tag>
+                    {preCheckResult.match_field && (
+                      <Tag>比對欄位：{preCheckResult.match_field === 'mobile' ? '手機' : '身分證'}</Tag>
+                    )}
+                  </Space>
+                }
                 description={preCheckResult.errors?.length > 0 && (
-                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12 }}>
-                    {preCheckResult.errors.map((e: string, i: number) => (
-                      <li key={i}>{e}</li>
-                    ))}
-                  </ul>
+                  <>
+                    <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12 }}>
+                      {preCheckResult.errors.map((e: string, i: number) => (
+                        <li key={i}>{e}</li>
+                      ))}
+                    </ul>
+                    <Button
+                      size="small"
+                      style={{ marginTop: 8 }}
+                      icon={<DownloadOutlined />}
+                      onClick={() => downloadErrorsAsCsv(preCheckResult.errors, 'voter_import_errors')}
+                    >
+                      下載錯誤報告 (CSV)
+                    </Button>
+                  </>
                 )}
               />
               {preCheckResult.address_preview?.length > 0 && (
@@ -731,11 +790,24 @@ export default function VoterListPage() {
                   type="warning"
                   message={`錯誤明細（最多顯示 ${importResult.errors.length} 筆）`}
                   description={
-                    <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12 }}>
-                      {importResult.errors.map((e: any, i: number) => (
-                        <li key={i}>第 {e.row} 列：{e.error}</li>
-                      ))}
-                    </ul>
+                    <>
+                      <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12 }}>
+                        {importResult.errors.map((e: any, i: number) => (
+                          <li key={i}>第 {e.row} 列：{e.error}</li>
+                        ))}
+                      </ul>
+                      <Button
+                        size="small"
+                        style={{ marginTop: 8 }}
+                        icon={<DownloadOutlined />}
+                        onClick={() => downloadErrorsAsCsv(
+                          importResult.errors.map((e: any) => `第 ${e.row} 列：${e.error}`),
+                          'voter_import_failures',
+                        )}
+                      >
+                        下載失敗報告 (CSV)
+                      </Button>
+                    </>
                   }
                 />
               )}

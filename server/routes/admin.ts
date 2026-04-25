@@ -10,6 +10,32 @@ import { isSecretSettingKey } from '../utils/secrets'
 import { applyDataRetention, getDataRetentionPolicy, previewDataRetention } from '../utils/dataRetention'
 
 export default async function adminRoutes(fastify: FastifyInstance) {
+  const countRemainingActiveAdmins = (excludedUserId: number) =>
+    (db.prepare("SELECT COUNT(*) as c FROM users WHERE role='admin' AND is_active=1 AND id != ?").get(excludedUserId) as any).c
+
+  const hasDefaultAdminPassword = async () => {
+    const adminUser = db.prepare("SELECT password FROM users WHERE username='admin' AND role='admin' AND is_active=1 LIMIT 1").get() as any
+    if (!adminUser?.password) return false
+    return bcrypt.compare('admin123', adminUser.password)
+  }
+
+  const guardProtectedUserDisable = (
+    reply: FastifyReply,
+    currentUserId: number,
+    targetUser: any,
+    targetUserId: number
+  ) => {
+    if (targetUserId === currentUserId) {
+      return reply.code(400).send({ success: false, error: '不可停用或刪除自己的帳號，請由其他管理員操作' })
+    }
+
+    if (targetUser.role === 'admin' && Number(targetUser.is_active) === 1 && countRemainingActiveAdmins(targetUserId) < 1) {
+      return reply.code(400).send({ success: false, error: '系統至少需保留一位有效的管理員' })
+    }
+
+    return null
+  }
+
   // ===== 使用者名單（所有已登入者可取得，僅供承辦下拉選單用）=====
   fastify.get('/api/users/list', { preHandler: [authenticate] }, async (_, reply) => {
     const users = db.prepare('SELECT id, name, role FROM users WHERE is_active = 1 ORDER BY name').all()
@@ -53,7 +79,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     const demotingAdmin = user.role === 'admin' && role !== undefined && role !== 'admin'
     const deactivatingAdmin = user.role === 'admin' && is_active !== undefined && Number(is_active) === 0
     if (demotingAdmin || deactivatingAdmin) {
-      const remainingAdmins = (db.prepare("SELECT COUNT(*) as c FROM users WHERE role='admin' AND is_active=1 AND id != ?").get(Number(id)) as any).c
+      const remainingAdmins = countRemainingActiveAdmins(Number(id))
       if (remainingAdmins < 1) {
         return reply.code(400).send({ success: false, error: '系統至少需保留一位有效的管理員' })
       }
@@ -89,6 +115,8 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     const { id } = request.params as any
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id)) as any
     if (!user) return reply.code(404).send({ success: false, error: '使用者不存在' })
+    const protectedResponse = guardProtectedUserDisable(reply, cu.id, user, Number(id))
+    if (protectedResponse) return protectedResponse
     const activePetitions = db.prepare(
       "SELECT COUNT(*) as count FROM petitions WHERE assignee_id=? AND status NOT IN ('closed','cancelled')"
     ).get(Number(id)) as any
@@ -215,6 +243,9 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     if (illegal.length > 0) {
       return reply.code(400).send({ success: false, error: `不允許修改的設定項目：${illegal.join(', ')}` })
     }
+    if (updates.first_run === 'false' && await hasDefaultAdminPassword()) {
+      return reply.code(400).send({ success: false, error: '請先完成首次管理員密碼修改，才能結束首次執行精靈' })
+    }
     db.exec('BEGIN')
     try {
       for (const [k, v] of Object.entries(updates)) setSetting(k as any, v as any)
@@ -264,6 +295,8 @@ export default async function adminRoutes(fastify: FastifyInstance) {
 
     const user = db.prepare('SELECT * FROM users WHERE id=?').get(Number(userId)) as any
     if (!user) return reply.code(404).send({ success: false, error: '使用者不存在' })
+    const protectedResponse = guardProtectedUserDisable(reply, cu.id, user, Number(userId))
+    if (protectedResponse) return protectedResponse
 
     const openPetitions = (db.prepare(`SELECT COUNT(*) as c FROM petitions WHERE assignee_id=? AND status NOT IN ('closed','cancelled')`).get(Number(userId)) as any).c
     const openTasks = (db.prepare(`SELECT COUNT(*) as c FROM tasks WHERE assignee_id=? AND status NOT IN ('done','cancelled')`).get(Number(userId)) as any).c
@@ -500,7 +533,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   // ===== F-3: Frontend Error Collection =====
   // POST /api/client-errors — IP-based rate limit: max 20 req / 10 min
   const clientErrorCounts = new Map<string, { count: number; resetAt: number }>()
-  fastify.post('/api/client-errors', async (request, reply) => {
+  fastify.post('/api/client-errors', { preHandler: [authenticate] }, async (request, reply) => {
     const ip = request.ip || 'unknown'
     const now = Date.now()
     const windowMs = 10 * 60 * 1000
@@ -545,4 +578,57 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     `).all(since)
     return reply.send({ success: true, data: changes, server_time: new Date().toISOString() })
   })
+
+  // ===== App 版本檢查（半自動 auto-update）=====
+  // 緩存 1 小時避免 GitHub API rate limit
+  let versionCheckCache: { fetchedAt: number; data: any } | null = null
+  const VERSION_CHECK_TTL = 60 * 60 * 1000 // 1h
+  fastify.get('/api/system/version-check', { preHandler: [authenticate] }, async (_request, reply) => {
+    const currentVersion = String(process.env.npm_package_version || require('../../package.json').version || '0.0.0')
+
+    // 從快取取
+    if (versionCheckCache && Date.now() - versionCheckCache.fetchedAt < VERSION_CHECK_TTL) {
+      return reply.send({ success: true, data: { current: currentVersion, ...versionCheckCache.data, cached: true } })
+    }
+
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 4000)
+      const resp = await fetch('https://api.github.com/repos/Sterio068/voter-service-system/releases/latest', {
+        headers: { 'User-Agent': 'voter-service-system' },
+        signal: ctrl.signal,
+      }).catch(() => null)
+      clearTimeout(timer)
+      if (!resp || !resp.ok) {
+        return reply.send({ success: true, data: { current: currentVersion, latest: null, has_update: false, reason: 'github_unreachable' } })
+      }
+      const json = await resp.json() as { tag_name?: string; html_url?: string; published_at?: string; body?: string }
+      const latestTag = String(json.tag_name || '').replace(/^v/, '')
+      const has_update = !!latestTag && cmpVersion(latestTag, currentVersion) > 0
+      const data = {
+        latest: latestTag,
+        latest_url: json.html_url,
+        latest_published: json.published_at,
+        latest_notes: String(json.body || '').slice(0, 1000),
+        has_update,
+      }
+      versionCheckCache = { fetchedAt: Date.now(), data }
+      return reply.send({ success: true, data: { current: currentVersion, ...data, cached: false } })
+    } catch (e) {
+      return reply.send({ success: true, data: { current: currentVersion, latest: null, has_update: false, reason: 'check_failed' } })
+    }
+  })
+}
+
+// semver 簡化比較：只比 major.minor.patch，回 -1 / 0 / 1
+function cmpVersion(a: string, b: string): number {
+  const pa = a.split('.').map(n => parseInt(n, 10) || 0)
+  const pb = b.split('.').map(n => parseInt(n, 10) || 0)
+  for (let i = 0; i < 3; i++) {
+    const x = pa[i] ?? 0
+    const y = pb[i] ?? 0
+    if (x > y) return 1
+    if (x < y) return -1
+  }
+  return 0
 }

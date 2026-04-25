@@ -6,7 +6,7 @@ import { applyPendingRestore } from './restoreOnStartup'
 let dbPath: string
 
 if (process.env.DATA_PATH) {
-  // 由 Electron main process 設定（支援 NAS / 自訂路徑）
+  // 由 Electron main process 設定（支援自訂本機資料路徑）
   fs.mkdirSync(process.env.DATA_PATH, { recursive: true })
   dbPath = path.join(process.env.DATA_PATH, 'voter-service.db')
 } else {

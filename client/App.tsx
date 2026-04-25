@@ -40,31 +40,47 @@ const VendorPage = React.lazy(() => import('./pages/ceremonies/VendorPage'))
 const ExpensePage = React.lazy(() => import('./pages/ceremonies/ExpensePage'))
 const ProposalsPage = React.lazy(() => import('./pages/proposals/ProposalsPage'))
 
-// Global error reporting
-window.onerror = (message, source, lineno, colno, error) => {
+function reportClientError(payload: Record<string, unknown>) {
+  const token = useAuthStore.getState().token
+  if (!token) return
+
   fetch('/api/client-errors', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: String(message), source: String(source), stack: error?.stack?.slice(0, 1000), url: window.location.pathname })
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
   }).catch(() => {})
 }
+
+// Global error reporting
+window.onerror = (message, source, lineno, colno, error) => {
+  reportClientError({
+    message: String(message),
+    source: String(source),
+    stack: error?.stack?.slice(0, 1000),
+    url: window.location.pathname,
+  })
+}
 window.onunhandledrejection = (event) => {
-  fetch('/api/client-errors', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: String(event.reason), source: 'unhandledRejection', url: window.location.pathname })
-  }).catch(() => {})
+  reportClientError({
+    message: String(event.reason),
+    source: 'unhandledRejection',
+    url: window.location.pathname,
+  })
 }
 
 class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: Error }> {
   constructor(props: any) { super(props); this.state = { hasError: false } }
   static getDerivedStateFromError(error: Error) { return { hasError: true, error } }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    fetch('/api/client-errors', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: error.message, stack: error.stack?.slice(0, 1000), source: 'ErrorBoundary', url: window.location.pathname })
-    }).catch(() => {})
+    reportClientError({
+      message: error.message,
+      stack: error.stack?.slice(0, 1000),
+      source: 'ErrorBoundary',
+      url: window.location.pathname,
+    })
   }
   render() {
     if (this.state.hasError) {

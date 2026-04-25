@@ -1,4 +1,8 @@
 import type { Database } from 'better-sqlite3'
+import {
+  anonymizeVoter,
+  buildInactiveVoterAnonymizePreviewWhereClause,
+} from './voterAnonymization'
 
 export type DataRetentionPolicy = {
   enabled: boolean
@@ -66,20 +70,7 @@ export function previewDataRetention(database: Database, policy = getDataRetenti
   const inactiveVoters = database.prepare(`
     SELECT COUNT(*) AS count
     FROM voters
-    WHERE is_active=0
-      AND updated_at < datetime('now','localtime', ?)
-      AND (
-        name NOT LIKE '已匿名選民 #%'
-        OR birth_date IS NOT NULL
-        OR id_number IS NOT NULL
-        OR mobile IS NOT NULL
-        OR phone IS NOT NULL
-        OR line_id IS NOT NULL
-        OR email IS NOT NULL
-        OR household_address IS NOT NULL
-        OR mailing_address IS NOT NULL
-        OR note IS NOT NULL
-      )
+    WHERE ${buildInactiveVoterAnonymizePreviewWhereClause()}
   `).get(olderThanModifier(policy.softDeletedVoterAnonymizeDays)) as any
 
   return {
@@ -116,52 +107,18 @@ export function applyDataRetention(database: Database, policy = getDataRetention
     `).run(olderThanModifier(policy.clientErrorRetentionDays))
     clientErrorsDeleted = Number(clientErrorsResult.changes || 0)
 
-    const votersResult = database.prepare(`
-      UPDATE voters
-      SET
-        name = '已匿名選民 #' || id,
-        gender = NULL,
-        birth_date = NULL,
-        id_number = NULL,
-        mobile = NULL,
-        phone = NULL,
-        line_id = NULL,
-        email = NULL,
-        household_city = NULL,
-        household_district = NULL,
-        household_village = NULL,
-        household_neighbor = NULL,
-        household_address = NULL,
-        mailing_address = NULL,
-        occupation = NULL,
-        company = NULL,
-        job_title = NULL,
-        election_area = NULL,
-        note = NULL,
-        updated_at = datetime('now','localtime')
-      WHERE is_active=0
-        AND updated_at < datetime('now','localtime', ?)
-        AND (
-          name NOT LIKE '已匿名選民 #%'
-          OR birth_date IS NOT NULL
-          OR id_number IS NOT NULL
-          OR mobile IS NOT NULL
-          OR phone IS NOT NULL
-          OR line_id IS NOT NULL
-          OR email IS NOT NULL
-          OR household_address IS NOT NULL
-          OR mailing_address IS NOT NULL
-          OR note IS NOT NULL
-        )
-    `).run(olderThanModifier(policy.softDeletedVoterAnonymizeDays))
-    inactiveVotersAnonymized = Number(votersResult.changes || 0)
+    const inactiveVoterIds = (
+      database.prepare(`
+        SELECT id
+        FROM voters
+        WHERE ${buildInactiveVoterAnonymizePreviewWhereClause()}
+      `).all(olderThanModifier(policy.softDeletedVoterAnonymizeDays)) as Array<{ id: number }>
+    ).map((row) => Number(row.id))
 
-    database.prepare(`
-      DELETE FROM voter_tags
-      WHERE voter_id IN (
-        SELECT id FROM voters WHERE is_active=0 AND name LIKE '已匿名選民 #%'
-      )
-    `).run()
+    for (const voterId of inactiveVoterIds) {
+      anonymizeVoter(database, voterId, 'anonymize')
+    }
+    inactiveVotersAnonymized = inactiveVoterIds.length
 
     database.prepare(`
       INSERT INTO settings(key,value,updated_at)

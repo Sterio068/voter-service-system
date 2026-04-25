@@ -17,19 +17,12 @@ import FormSection from '../../components/ui/FormSection'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import { hasModulePermission } from '../../utils/permissions'
+// SLA 顏色判斷已抽到 client/utils/petitionSla.ts
+import { getPetitionSlaColor as getSLAColor } from '../../utils/petitionSla'
 
 const { Text } = Typography
 const { Option } = Select
 const { TextArea } = Input
-
-function getSLAColor(created_at: string, status: string): string {
-  if (status === 'closed' || status === 'cancelled') return 'transparent'
-  const days = (Date.now() - new Date(created_at).getTime()) / 86400000
-  if (days < 3) return '#52c41a'
-  if (days < 7) return '#faad14'
-  if (days < 14) return '#fa8c16'
-  return '#ff4d4f'
-}
 
 const STATUS_COLORS: Record<string, string> = {
   pending: 'orange',

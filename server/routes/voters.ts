@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission, authenticate } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+import { anonymizeVoter } from '../utils/voterAnonymization'
 
 function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
@@ -726,21 +727,22 @@ export default async function voterRoutes(fastify: FastifyInstance) {
       return reply.code(403).send({ success: false, error: '完整刪除模式需要管理員權限' })
     }
 
-    const timestamp = Date.now()
-    db.prepare(`UPDATE voters SET
-      name=?,
-      id_number=NULL,
-      mobile=NULL,
-      email=NULL,
-      birth_date=NULL,
-      household_address=NULL,
-      addr_address=NULL,
-      household_key=NULL,
-      is_active=0,
-      updated_at=datetime('now','localtime')
-      WHERE id=?`).run(`[已匿名化_${timestamp}]`, Number(id))
+    db.exec('BEGIN')
+    try {
+      anonymizeVoter(db, Number(id), mode === 'full' ? 'full' : 'anonymize')
+      db.exec('COMMIT')
+    } catch (error) {
+      try { db.exec('ROLLBACK') } catch {}
+      throw error
+    }
+
     createAuditLog(request, cu.id, { action: 'delete', module: '選民管理', target_type: 'voter', target_id: Number(id), target_name: mode === 'full' ? `PDPA完整刪除` : `PDPA匿名化` })
-    return reply.send({ success: true, message: '選民資料已依個資法匿名化處理' })
+    return reply.send({
+      success: true,
+      message: mode === 'full'
+        ? '選民資料已完成完整匿名化與歷史快照去識別'
+        : '選民資料已完成匿名化與關聯清理',
+    })
   })
 
   // GET /api/voters/:id/contacts

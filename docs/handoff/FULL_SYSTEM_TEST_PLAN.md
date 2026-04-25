@@ -52,8 +52,8 @@
 | 團體 | 新增、編輯、成員管理、匯入 | 同左 | 依權限確認 | 唯讀 | 成員關聯錯誤 |
 | 陳情 | 新增、編輯、刪除、匯入、匯出、快速立案 | 同左 | 新增、編輯 | 唯讀 | SLA、案號、audit |
 | 陳情詳情 | 處理紀錄、轉派、建立待辦、狀態變更、附件 | 同左 | 同左 | 唯讀 | 權限與紀錄不完整 |
-| 公文 | 收文、發文、新增、編輯、歸檔、列印、Word 匯出 | 同左 | 同左 | 不可操作 | 條件欄位資料遺失 |
-| 行程 | 新增、跨日、衝突、列印、法律諮詢、公祭/禮儀 | 同左 | 同左 | 唯讀 | 衝突漏判、Google sync 阻斷 |
+| 公文 | 收文、發文、新增、編輯、歸檔、列印、Word 匯出、附件維護 | 同左 | 新增、編輯、移轉資訊、附件維護；不可列印 / Word 匯出 / 刪除 | 唯讀 | 條件欄位資料遺失 |
+| 行程 | 新增、跨日、衝突、列印、法律諮詢、公祭/禮儀、諮詢時段管理 | 同左 | 新增、編輯、今日諮詢；不可列印、不可管理諮詢時段、不可做禮儀 CRUD | 唯讀 | 衝突漏判、Google sync 阻斷 |
 | 禮儀 | 新增、編輯、品項、廠商、付款狀態 | 同左 | 唯讀（不可編輯/刪除） | 唯讀（不顯示收支卡） | 支出與行程不同步 |
 | 廠商 | 新增、編輯、停用、詳情對帳 | 同左 | 同左 | 唯讀 | 停用仍可被誤用 |
 | 收支 | 統計、篩選、預算設定 | 同左 | 統計、篩選、預算唯讀 | 不可進入 | 金額彙總錯誤 |
@@ -67,8 +67,8 @@
 | 操作紀錄 | 查詢、篩選、匯出前後紀錄 | 查詢、篩選 | 不可進入 | 不可進入 | 稽核不足 |
 | 類別 | 新增、編輯、保護類型不可刪 | 唯讀 | 唯讀 | 不可進入 | 動態類別空值 |
 | 系統設定 | 備份、還原、資料保留、AI/LINE/Google、網路資訊 | 同左但無帳號管理 | 不可進入 | 不可進入 | 還原與 secret 外洩 |
-| 員工交接 | 預覽、轉移、確認提示 | 同左 | 不可進入 | 不可進入 | 批量轉移錯誤 |
-| 每日日誌 | 建立、編輯、刪除、彙整 | 同左 | 視權限 | 不可進入 | 交接資訊遺漏 |
+| 員工交接 | 預覽、轉移、確認提示 | 不可進入 | 不可進入 | 不可進入 | 批量轉移錯誤 |
+| 每日日誌 | 建立、編輯、刪除、彙整 | 不可進入 | 不可進入 | 不可進入 | 交接資訊遺漏 |
 | 使用說明 | 內容可讀、搜尋可定位、連結正確 | 同左 | 同左 | 同左 | 文件過期 |
 
 ## 3. 橫向測試場景
@@ -92,11 +92,15 @@
 - 還原前必須有明確警示與完整性檢查結果。
 - 還原後重新啟動時，若存在 pending restore，正式版應在啟動後顯示「還原完成」，且資料應切換到備份內容。
 - 自動備份失敗需在設定頁顯示最後錯誤。
+- fresh install 時首次執行精靈必須完成管理員密碼修改後才能結束；不得再出現可略過或失敗後直接完成的路徑。
+- 正式版應由 `http://127.0.0.1:8080` 提供 built assets；首頁、登入、主要列表頁不可再依賴 `file://` 模式假設。
 
 整合：
 - Google Calendar 同步失敗不可阻擋行程新增。
 - LINE webhook 或通知設定未完成時，不可影響核心 CRUD。
 - AI provider 未設定或失敗時，AI 按鈕需顯示錯誤但不可清空表單。
+- `client-errors` 僅允許已登入 session 上報；登入前頁面錯誤不應再匿名寫入資料庫。
+- 單筆匿名化需確認 `anonymize` 與 `full` 兩種模式都有明確差異，且 tags/topics/relations/engagement/contacts 等關聯同步清理。
 
 ## 4. 自動化測試對照
 
@@ -108,11 +112,12 @@
 - `git diff --check`
 
 已覆蓋：
-- API integration：auth、permissions、voters、petitions、import/export、attachments、schedules、consultations、backup/restore、data retention、secrets round-trip。
+- API integration：auth、permissions、first-run guard、client-errors auth、voters、voter anonymize/full mode、petitions、import/export、attachments、schedules、consultations、backup/restore、data retention、secrets round-trip。
 - E2E smoke：登入、Dashboard deep-link、主要模組 shell、UI 新增選民、UI 新增陳情、備份建立、完整匯出理由與下載。
 - E2E navigation：admin 可開啟所有主要路由，且不出現 ErrorBoundary 崩潰頁。
 - E2E role access：assistant、supervisor、volunteer 的導覽、受限路由、快捷鍵、Dashboard 入口、列印頁、禮儀/收支 read-only 管控與頁內 create/edit/delete 按鈕不會暴露超出角色矩陣的功能。
 - 正式版隔離驗收：fresh install wizard、pending restore 重啟套用、`backup_path` 初始值，以及 12,000 選民 / 1,500 陳情 / 300 行程的 packaged load smoke。
+- 正式版本機 smoke：`/Applications/選民服務系統.app` 啟動、`/api/health` 正常、admin 登入、選民列表載入、匿名 `client-errors` 被拒絕、登入後可上報，以及 `mode=full` 匿名化實際清空延伸欄位。
 
 下一批自動化建議：
 - Google Calendar 失敗不阻擋行程新增。

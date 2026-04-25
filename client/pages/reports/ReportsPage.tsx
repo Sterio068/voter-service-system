@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Tabs, Select, Button, Alert, Modal, Form, Input, message } from 'antd'
+import { Card, Tabs, Select, Button, Alert, Modal, Form, Input, message, Row, Col } from 'antd'
+import { FileTextOutlined, AlertOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
 import { useThemeStore } from '../../stores/themeStore'
 import { usePersistedState, exportToPDF } from './utils'
 import PageScaffold from '../../components/ui/PageScaffold'
+import MetricCard from '../../components/ui/MetricCard'
 import { useAuthStore } from '../../stores/authStore'
 import { hasModulePermission } from '../../utils/permissions'
 
@@ -34,6 +36,7 @@ export default function ReportsPage() {
   const currentYear = new Date().getFullYear().toString()
   const { user } = useAuthStore()
   const canExportReports = hasModulePermission(user?.role, 'reports', 'export')
+  const navigate = useNavigate()
   const [year, setYear] = usePersistedState('monthly_year', currentYear)
   const years = [String(new Date().getFullYear()), String(new Date().getFullYear()-1), String(new Date().getFullYear()-2)]
   const [activeTab, setActiveTab] = useState('home')
@@ -48,6 +51,9 @@ export default function ReportsPage() {
   // C-4: system alerts
   const [systemAlerts, setSystemAlerts] = useState<string[]>([])
 
+  // 報表 headline metrics：年度案件總量、結案率、逾期、滿意度
+  const [reportHeadline, setReportHeadline] = useState<any>(null)
+
   useEffect(() => {
     api.get('/admin/alerts').then(r => {
       if (r.data.success && r.data.data?.length > 0) {
@@ -59,6 +65,29 @@ export default function ReportsPage() {
       }
     }).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    Promise.allSettled([
+      api.get(`/petitions/stats?year=${year}`),
+      api.get('/petitions/overdue-count'),
+      api.get('/petitions/satisfaction-stats'),
+    ]).then(results => {
+      const [statsR, overdueR, satR] = results.map(r => r.status === 'fulfilled' ? r.value.data : null)
+      const byStatus = statsR?.data?.byStatus || []
+      const totalCases = byStatus.reduce((s: number, b: any) => s + (b.count || 0), 0)
+      const closed = byStatus
+        .filter((b: any) => b.status === 'closed' || b.status === 'replied')
+        .reduce((s: number, b: any) => s + (b.count || 0), 0)
+      setReportHeadline({
+        totalCases,
+        closed,
+        closeRate: totalCases > 0 ? Math.round((closed / totalCases) * 100) : 0,
+        overdue: overdueR?.data?.count ?? 0,
+        avgRating: satR?.data?.avg_rating ?? null,
+        collectionRate: satR?.data?.collection_rate ?? null,
+      })
+    })
+  }, [year])
 
   const handleExportPDF = async (narrativeText: string = '') => {
     try {
@@ -212,6 +241,49 @@ ${eData.map((r: any) => `<tr><td>${r.category || '未分類'}</td><td>${r.total_
         </>
       }
     >
+      {/* 年度 headline metrics — 推到報表頁，讓主管一眼看清今年量能 */}
+      {reportHeadline && (
+        <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+          <Col xs={24} sm={12} md={6}>
+            <MetricCard
+              label={`${year} 年陳情總量`}
+              value={reportHeadline.totalCases}
+              helper={`已結 ${reportHeadline.closed} 件`}
+              icon={<FileTextOutlined />}
+              tone="blue"
+              onClick={() => navigate('/petitions')}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <MetricCard
+              label="結案率"
+              value={`${reportHeadline.closeRate}%`}
+              helper={reportHeadline.closeRate >= 80 ? '達標' : reportHeadline.closeRate >= 60 ? '可改進' : '需關注'}
+              icon={<CheckCircleOutlined />}
+              tone={reportHeadline.closeRate >= 80 ? 'green' : reportHeadline.closeRate >= 60 ? 'amber' : 'red'}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <MetricCard
+              label="逾期案件"
+              value={reportHeadline.overdue}
+              helper={reportHeadline.overdue > 0 ? '需立即處理' : '無逾期'}
+              icon={<AlertOutlined />}
+              tone={reportHeadline.overdue > 0 ? 'red' : 'green'}
+              onClick={() => navigate('/petitions?status=overdue')}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <MetricCard
+              label="滿意度回收率"
+              value={reportHeadline.collectionRate != null ? `${reportHeadline.collectionRate}%` : '—'}
+              helper={reportHeadline.avgRating != null ? `平均 ${reportHeadline.avgRating} / 5` : '尚無評分'}
+              icon={<ClockCircleOutlined />}
+              tone={(reportHeadline.collectionRate ?? 0) >= 50 ? 'green' : 'amber'}
+            />
+          </Col>
+        </Row>
+      )}
       <Card>
         <Tabs items={tabItems} activeKey={activeTab} onChange={setActiveTab} defaultActiveKey="home" />
       </Card>

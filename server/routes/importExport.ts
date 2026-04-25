@@ -6,6 +6,7 @@ import * as XLSX from '@e965/xlsx'
 import bcrypt from 'bcrypt'
 import { parseAddressFields, looksLikeFullAddress } from '../utils/parseAddress'
 import { maskVoterExportRecord } from '../utils/piiMasking'
+import { safeRow } from '../utils/excelSafe'
 
 function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
@@ -127,7 +128,16 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
       return reply.code(403).send({ success: false, error: '唯讀帳號無法匯出資料' })
     }
 
-    const voters = db.prepare(`SELECT * FROM voters v ${where} ORDER BY v.id LIMIT 10000`).all(...params) as any[]
+    // 匯出上限：50k 是設計目標，但單次 Excel 載 5000 筆已可控；超過要拆分
+    const VOTER_EXPORT_HARD_LIMIT = Number.parseInt(process.env.VOTER_EXPORT_LIMIT || '5000', 10)
+    const totalCount = (db.prepare(`SELECT COUNT(*) AS c FROM voters v ${where}`).get(...params) as any)?.c ?? 0
+    if (totalCount > VOTER_EXPORT_HARD_LIMIT) {
+      return reply.code(413).send({
+        success: false,
+        error: `本次匯出條件命中 ${totalCount} 筆選民，超過單次匯出上限 ${VOTER_EXPORT_HARD_LIMIT} 筆。請先用條件（縣市/區/標籤/搜尋）縮小範圍，或調整 VOTER_EXPORT_LIMIT。`,
+      })
+    }
+    const voters = db.prepare(`SELECT * FROM voters v ${where} ORDER BY v.id LIMIT ?`).all(...params, VOTER_EXPORT_HARD_LIMIT) as any[]
     const ids = voters.map((v: any) => v.id)
     let tagMap: Record<number, string[]> = {}
     if (ids.length) {
@@ -163,7 +173,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
       _exported_at: timestamp,
     }))
 
-    const rows = markedData.map((v: any) => [
+    const rows = markedData.map((v: any) => safeRow([
       v.name, v.gender, v.birth_date, v.id_number,
       v.mobile, v.phone, v.line_id, v.email,
       v.household_city, v.household_district, v.household_village,
@@ -171,7 +181,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
       v.occupation, v.company, v.job_title,
       (tagMap[v.id] || []).join(','), v.note,
       v._exported_by, v._exported_at,
-    ])
+    ]))
 
     const exportHeaders = [...VOTER_TEMPLATE_HEADERS, '匯出人', '匯出時間']
     const wb = XLSX.utils.book_new()
@@ -469,13 +479,23 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
       replied: '已回覆', closed: '已結案', archived: '已歸檔',
     }
 
+    const PETITION_EXPORT_HARD_LIMIT = Number.parseInt(process.env.PETITION_EXPORT_LIMIT || '5000', 10)
+    const petitionTotal = (db.prepare(
+      `SELECT COUNT(*) AS c FROM petitions p LEFT JOIN voters v ON p.voter_id=v.id LEFT JOIN users u ON p.assignee_id=u.id ${where}`
+    ).get(...params) as any)?.c ?? 0
+    if (petitionTotal > PETITION_EXPORT_HARD_LIMIT) {
+      return reply.code(413).send({
+        success: false,
+        error: `本次匯出條件命中 ${petitionTotal} 筆陳情，超過單次匯出上限 ${PETITION_EXPORT_HARD_LIMIT} 筆。請改加日期或狀態篩選。`,
+      })
+    }
     const petitions = db.prepare(`
       SELECT p.*, v.name as voter_name, u.name as assignee_name
       FROM petitions p LEFT JOIN voters v ON p.voter_id=v.id LEFT JOIN users u ON p.assignee_id=u.id
-      ${where} ORDER BY p.petition_date DESC LIMIT 10000
-    `).all(...params) as any[]
+      ${where} ORDER BY p.petition_date DESC LIMIT ?
+    `).all(...params, PETITION_EXPORT_HARD_LIMIT) as any[]
 
-    const rows = petitions.map((p: any) => [
+    const rows = petitions.map((p: any) => safeRow([
       p.case_number, p.petition_date, p.voter_name || '',
       p.channel || '', p.category || '', p.subcategory || '',
       URGENCY_LABELS[p.urgency] || p.urgency,
@@ -483,7 +503,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
       p.assignee_name || '', p.content,
       p.area_city || '', p.area_district || '', p.area_village || '', p.area_address || '',
       p.created_at,
-    ])
+    ]))
 
     const wb = XLSX.utils.book_new()
     const ws = XLSX.utils.aoa_to_sheet([PETITION_EXPORT_HEADERS, ...rows])

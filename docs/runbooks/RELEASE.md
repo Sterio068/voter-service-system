@@ -16,6 +16,12 @@ git diff --check
 - production build
 - production audit
 
+tag release 另外會在 GitHub Actions 補跑：
+
+- Playwright Chromium E2E（navigation / smoke / role-access）
+- macOS / Windows 打包
+- 兩平台都成功後才建立 draft release
+
 ## 版本流程
 
 1. 更新版本號與 release notes。
@@ -30,12 +36,12 @@ git tag v1.0.x
 git push origin v1.0.x
 ```
 
-4. Release workflow 會在 tag `v*` 時打包 macOS / Windows。
+4. Release workflow 會在 tag `v*` 時先跑 verify + E2E，再打包 macOS / Windows，最後才建立 draft release。
 
 ## 安裝檔檢查
 
 - macOS：確認 DMG 可安裝、首次啟動可建立資料庫與 `first_run` 預設設定、Gatekeeper 行為符合預期。
-- Windows：確認 NSIS/MSI 可安裝、資料保留、解除安裝不誤刪資料。
+- Windows：確認 NSIS 安裝版 / portable 免安裝版可啟動、資料保留、解除安裝不誤刪資料。
 - 兩平台都需測試：登入、新增選民、新增陳情、備份、還原後重啟套用、重啟後資料仍在。
 - 發版前至少做一次隔離資料路徑驗收：首次執行精靈、`backup_path` 預設值、pending restore 重啟套用。
 - 若本次變更碰到列表或查詢效能，至少做一次大量資料 smoke：選民 10k+、陳情 1k+。

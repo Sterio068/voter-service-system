@@ -38,12 +38,18 @@ export function bearer(token: string): Record<string, string> {
   return { authorization: `Bearer ${token}` }
 }
 
-export function multipartPayload(file: {
+export type MultipartFile = {
   fieldName?: string
   filename: string
   contentType: string
   content: Buffer | string
-}, fields: Record<string, string> = {}): { payload: Buffer; contentType: string } {
+}
+
+export function multipartPayload(file: MultipartFile, fields: Record<string, string> = {}): { payload: Buffer; contentType: string } {
+  return multipartPayloadMulti([file], fields)
+}
+
+export function multipartPayloadMulti(files: MultipartFile[], fields: Record<string, string> = {}): { payload: Buffer; contentType: string } {
   const boundary = `----vss-test-${randomBytes(8).toString('hex')}`
   const chunks: Buffer[] = []
   const push = (value: string | Buffer) => chunks.push(Buffer.isBuffer(value) ? value : Buffer.from(value))
@@ -54,11 +60,14 @@ export function multipartPayload(file: {
     push(`${value}\r\n`)
   }
 
-  push(`--${boundary}\r\n`)
-  push(`Content-Disposition: form-data; name="${file.fieldName || 'file'}"; filename="${file.filename}"\r\n`)
-  push(`Content-Type: ${file.contentType}\r\n\r\n`)
-  push(file.content)
-  push(`\r\n--${boundary}--\r\n`)
+  for (const file of files) {
+    push(`--${boundary}\r\n`)
+    push(`Content-Disposition: form-data; name="${file.fieldName || 'file'}"; filename="${file.filename}"\r\n`)
+    push(`Content-Type: ${file.contentType}\r\n\r\n`)
+    push(file.content)
+    push(`\r\n`)
+  }
+  push(`--${boundary}--\r\n`)
 
   return {
     payload: Buffer.concat(chunks),

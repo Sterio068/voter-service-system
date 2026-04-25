@@ -28,7 +28,7 @@
 | GET | `/api/voters/:id` | voters.view | 詳情 + tags + relations |
 | PUT | `/api/voters/:id` | voters.edit | 更新 + tags(transaction) |
 | DELETE | `/api/voters/:id` | voters.delete | 軟刪除 |
-| DELETE | `/api/voters/:id/anonymize` | voters.delete | GDPR 匿名化（硬清 PII） |
+| DELETE | `/api/voters/:id/anonymize` | voters.delete | 匿名化選民；`mode=anonymize` 會清主檔與關聯，`mode=full` 另去識別歷史快照（限 admin） |
 | POST | `/api/voters/:id/merge` | voters.edit | 合併選民 |
 | GET | `/api/voters/search` | voters.view | 快速搜尋（姓名/手機/身分證） |
 | GET | `/api/voters/duplicates` | voters.view | 找重複（電話/身分證） |
@@ -427,7 +427,7 @@
 
 | Method | Path | 權限 | 說明 |
 |--------|------|------|------|
-| POST | `/api/client-errors` | [PUBLIC] | 前端錯誤回報（window.onerror） |
+| POST | `/api/client-errors` | authenticated | 前端錯誤回報；僅登入後客戶端可上傳 |
 | GET | `/api/client-errors` | admin.view | 查看前端錯誤清單 |
 
 ---

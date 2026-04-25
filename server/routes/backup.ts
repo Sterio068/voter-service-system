@@ -222,39 +222,62 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     })
   })
 
-  // ===== 還原備份 — 上傳 .db 檔案 =====
+  // ===== 還原備份 — 上傳 .db 檔案（可選同時上傳 .meta.json sidecar 或填 metadata field） =====
+  // 測試環境放寬 rate limit；正式環境保留嚴格限制
+  const restoreRate = process.env.NODE_ENV === 'test'
+    ? { max: 100, timeWindow: '1 minute' }
+    : { max: 3, timeWindow: '1 hour' }
   fastify.post('/api/admin/restore', {
     preHandler: [requirePermission('system', 'edit')],
-    config: { rateLimit: { max: 3, timeWindow: '1 hour' } },
+    config: { rateLimit: restoreRate },
   }, async (request, reply) => {
     const cu = (request as any).currentUser
-    const data = await request.file()
-    if (!data) return reply.code(400).send({ success: false, error: '請選擇備份檔案' })
-    if (!path.basename(data.filename).toLowerCase().endsWith('.db')) {
-      return reply.code(400).send({ success: false, error: '只接受 .db 格式的備份檔案' })
-    }
 
-    let buf: Buffer
+    // 收集 multipart：可帶 backup (.db) + 可選 metadata (.meta.json) + 可選 force flag
+    let backupBuf: Buffer | null = null
+    let backupName = ''
+    let metadataJson: string | null = null
+    let forceUnsigned = false
+
     try {
-      buf = await data.toBuffer()
+      const parts = request.parts()
+      for await (const part of parts) {
+        if (part.type === 'file') {
+          const filename = path.basename(part.filename || '').toLowerCase()
+          if (filename.endsWith('.meta.json')) {
+            metadataJson = (await part.toBuffer()).toString('utf8')
+          } else if (filename.endsWith('.db')) {
+            backupBuf = await part.toBuffer()
+            backupName = part.filename
+          } else {
+            return reply.code(400).send({ success: false, error: `不支援的檔案：${part.filename}` })
+          }
+        } else if (part.type === 'field') {
+          if (part.fieldname === 'force_unsigned' && (part.value === '1' || part.value === 'true')) {
+            forceUnsigned = true
+          } else if (part.fieldname === 'metadata' && typeof part.value === 'string') {
+            metadataJson = part.value
+          }
+        }
+      }
     } catch (e) {
-      console.warn('[Restore] Upload read failed:', e)
+      console.warn('[Restore] Multipart read failed:', e)
       return reply.code(413).send({ success: false, error: '備份檔案過大或讀取失敗' })
     }
-    if (buf.length === 0) {
-      return reply.code(400).send({ success: false, error: '備份檔案不可為空' })
-    }
+
+    if (!backupBuf) return reply.code(400).send({ success: false, error: '請選擇備份檔案 (.db)' })
+    if (backupBuf.length === 0) return reply.code(400).send({ success: false, error: '備份檔案不可為空' })
 
     // Step 1: Write to temp path first
     const tempPath = `${dbPath}.${Date.now()}-${crypto.randomBytes(6).toString('hex')}.tmp.db`
     try {
-      fs.writeFileSync(tempPath, buf)
+      fs.writeFileSync(tempPath, backupBuf)
     } catch (e) {
       console.warn('[Restore] Temp write failed:', e)
       return reply.code(500).send({ success: false, error: '無法寫入暫存檔案' })
     }
 
-    // Step 2: Verify the temp copy with PRAGMA integrity_check
+    // Step 2: Verify the temp copy with PRAGMA integrity_check + schema
     try {
       const integrity = runIntegrityCheck(tempPath)
       if (!integrity.ok) {
@@ -274,6 +297,51 @@ export default async function backupRoutes(fastify: FastifyInstance) {
         console.warn('[Restore] Integrity check failed:', e instanceof Error ? e.message : e)
       }
       return reply.code(400).send({ success: false, error: '無法驗證備份檔案完整性' })
+    }
+
+    // Step 2.5: HMAC 簽章驗證（B-3）
+    let signatureStatus: 'signed' | 'unsigned_legacy' | 'failed' = 'unsigned_legacy'
+    let signatureReason: string | undefined
+    if (metadataJson) {
+      try {
+        const sidecarPath = getBackupMetadataPath(tempPath)
+        fs.writeFileSync(sidecarPath, metadataJson, { mode: 0o600 })
+        const verification = await verifyBackupMetadata(tempPath)
+        try { fs.unlinkSync(sidecarPath) } catch {}
+        if (verification.ok) {
+          signatureStatus = 'signed'
+        } else {
+          signatureStatus = 'failed'
+          signatureReason = verification.reason
+          fs.unlinkSync(tempPath)
+          createAuditLog(request, cu.id, {
+            action: 'check', module: '系統還原', target_name: backupName,
+            detail: { stage: 'signature_verify', signature_status: 'failed', reason: verification.reason },
+          })
+          return reply.code(400).send({ success: false, error: `備份簽章驗證失敗（${verification.reason}），請改傳對應的 .meta.json 或確認備份未被竄改` })
+        }
+      } catch (e) {
+        try { fs.unlinkSync(getBackupMetadataPath(tempPath)) } catch {}
+        try { fs.unlinkSync(tempPath) } catch {}
+        return reply.code(400).send({ success: false, error: 'metadata sidecar 解析失敗，請確認上傳的是對應 .meta.json 檔案' })
+      }
+    } else if (!forceUnsigned) {
+      // 無 sidecar 且未傳 force_unsigned → 拒絕，避免靜默接受偽造備份
+      fs.unlinkSync(tempPath)
+      createAuditLog(request, cu.id, {
+        action: 'check', module: '系統還原', target_name: backupName,
+        detail: { stage: 'signature_verify', signature_status: 'missing_metadata' },
+      })
+      return reply.code(400).send({
+        success: false,
+        error: '此備份缺少 .meta.json 簽章。請一併上傳對應 sidecar；若確認備份來源安全，可重新上傳並勾選「強制接受未簽章備份」(force_unsigned=1)，操作會寫入稽核紀錄。',
+      })
+    } else {
+      // force_unsigned: 仍寫稽核
+      createAuditLog(request, cu.id, {
+        action: 'check', module: '系統還原', target_name: backupName,
+        detail: { stage: 'signature_verify', signature_status: 'unsigned_legacy', forced: true },
+      })
     }
 
     // Step 3: Backup current database before replacing
@@ -305,11 +373,18 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       }
     }
 
-    createAuditLog(request, cu.id, { action: 'update', module: '系統還原', target_name: data.filename })
+    createAuditLog(request, cu.id, {
+      action: 'update', module: '系統還原', target_name: backupName,
+      detail: { signature_status: signatureStatus, signature_reason: signatureReason ?? null },
+    })
     return reply.send({
       success: true,
       message: '還原檔案已驗證並上傳，請重新啟動系統以完成還原',
-      data: { restoreFile: path.basename(restorePath), currentBackup: path.basename(currentBackup) },
+      data: {
+        restoreFile: path.basename(restorePath),
+        currentBackup: path.basename(currentBackup),
+        signature_status: signatureStatus,
+      },
     })
   })
 

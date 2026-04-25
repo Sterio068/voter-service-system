@@ -1,13 +1,13 @@
 # 選民服務系統 — 接續開發 Roadmap
 
-**基準版本**：v1.0.8（2026-04-23）  
+**基準版本**：v1.0.13（2026-04-25）
 **定位**：Electron 本地桌面端選民／陳情／公文／禮儀管理系統。核心資料在單機 SQLite，外部整合包含 Google Calendar、LINE、AI provider。
 
-本 Roadmap 依目前交接文件整理，目標是讓下一位開發者先補齊安全與品質基線，再擴充高價值工作流。優先順序：**P0 穩定與資安 → P1 核心體驗與流程完整度 → P2 維運與進階能力**。
+本 Roadmap 依目前交接文件整理，目標是讓下一位開發者先補齊交付、穩定與品質基線，再擴充高價值工作流。優先順序：**P0 交付阻斷與穩定 → P1 核心體驗與流程完整度 → P2 維運與進階能力**。
 
 ---
 
-## P0：必做穩定化與資安基線
+## P0：必做交付與穩定基線
 
 ### 1. 建立自動化測試骨架
 
@@ -111,6 +111,9 @@
 
 ### 3. 發佈與安裝體驗
 
+- Release CI 跑順序固定為 `verify`（typecheck + test + build + production audit）→ Playwright E2E（chromium）→ Mac/Windows 兩平台 build → 全部成功才開 draft Release，避免半套產物先公開。
+- 正式包啟動時會由 Electron main 拉起 Fastify 在 `http://127.0.0.1:8080` 提供 `dist/` built assets 與 `/api/*`；驗收 release 時需以 `127.0.0.1:8080` 為準，不要再以 `file://` 模式假設路徑。
+- 本機 packaged smoke 至少要驗 `/api/health=ok`、admin 登入、選民列表載入、匿名 `client-errors` 被擋、`mode=full` 匿名化會實際清欄位（v1.0.13 已驗，下版需照樣補）。
 - 長期規劃 Apple Developer 簽署與 notarize，降低 macOS Gatekeeper 阻擋。
 - Windows 版維持由 GitHub Actions `windows-latest` build，不從 macOS cross-compile。
 - Release 前檢查 tag、版本號、Mac/Windows 安裝檔、portable 版與 release notes。
@@ -182,7 +185,8 @@
 - [ ] 新增、更新、刪除、匯出、匯入、合併、匿名化都有稽核紀錄。
 - [ ] 軟刪資料不出現在一般列表與搜尋結果。
 - [ ] 備份檔可通過完整性檢查；還原前有清楚確認與錯誤提示。
-- [ ] Electron production `file://` 模式下資源、路由與附件下載正常。
+- [ ] Electron production 由 Fastify 在 `http://127.0.0.1:8080` 提供 built assets：首頁、SPA 路由刷新、附件下載、`/api/health` 都應走同一 origin（不再是 `file://`）。
+- [ ] 正式包本機 smoke：`/api/health=ok`、admin 登入、選民列表、匿名 `client-errors` 401、登入後 200、`mode=full` 匿名化清欄位都通過。
 
 ### Release 前
 
@@ -191,6 +195,8 @@
 - [ ] Windows 安裝檔由 CI 或 Windows 環境產出，不在 macOS cross-compile。
 - [ ] Release notes 包含新功能、修正、已知限制、資料庫 migration 注意事項。
 - [ ] 已確認安裝版資料庫路徑、備份路徑、log 路徑符合文件。
+- [ ] CI release workflow：verify → Playwright E2E → Mac/Win build → draft release 全鏈通過，沒有單一平台先公開的情況。
+- [ ] 至少在一台 macOS 與一台 Windows 完成本機 packaged smoke：`http://127.0.0.1:8080` 可載入主介面、`/api/health=ok`、admin 登入、選民列表、`mode=full` 匿名化都正常。
 
 ---
 

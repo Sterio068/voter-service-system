@@ -1,6 +1,6 @@
 # 選民服務系統 — 完整交接文件
 
-**版本**：v1.0.8（2026-04-25）
+**版本**：v1.0.13（2026-04-25）
 **授權**：私有專案
 **Repo**：https://github.com/Sterio068/voter-service-system
 
@@ -14,7 +14,7 @@
 
 **架構類型**：Electron 桌面應用（單一 exe/dmg 安裝檔）
 - 後端：Fastify + SQLite（better-sqlite3）跑在 localhost:8080
-- 前端：React 18 + Vite + Ant Design 5 跑在 file://（production）或 localhost:5173（dev）
+- 前端：React 18 + Vite + Ant Design 5；dev 模式跑在 localhost:5173，production 由 Fastify 在 localhost:8080 提供 built assets
 - 資料庫：單一 .db 檔（SQLite WAL 模式）放使用者目錄
 
 **不是 web 服務**：沒有多使用者共享伺服器，每台電腦獨立安裝、獨立資料庫。但透過 LAN IP 可讓同辦公室多人連同一後端。
@@ -23,6 +23,7 @@
 - restore-on-startup 已有 rollback 保護：pending restore 套用失敗時，系統會回復原主 DB，並保留 `*.restore.failed-*` 供排查。
 - `POST /api/voters/:id/merge` 已補 `voter_activity_history`、`voter_engagement` 與 duplicate membership 處理，實務上較不容易在髒資料下 rollback。
 - Electron main process 已補本機 Fastify watchdog，連續 health check 失敗時會嘗試自動重啟；server scheduler 已做 idempotent 保護。
+- 2026-04-25 已完成最新版正式包本機 smoke：`/Applications/選民服務系統.app` 可正常啟動與登入，`/api/health` 回 `ok`，匿名 `POST /api/client-errors` 會被拒絕、登入後可成功上報，且 packaged runtime 的 `mode=full` 匿名化會實際清掉延伸欄位。
 
 ---
 
@@ -153,8 +154,8 @@ voter-service-system/
 │   ├── handoff/               # ← 你正在看的交接文件
 │   └── runbooks/              # 備份還原、資料保護、資料品質、發布、安裝、事故處理
 │
-├── .github/workflows/ci.yml        # PR / main: typecheck + test + build + production audit
-├── .github/workflows/release.yml   # tag v* 時自動 build Mac+Win 並發佈 Release
+├── .github/workflows/ci.yml        # PR / main: typecheck + test + build + production audit + E2E
+├── .github/workflows/release.yml   # tag v*：verify + E2E + Mac/Win build，成功後建立 draft Release
 ├── package.json
 ├── vite.config.ts             # 前端 build 設定（含 chunk split）
 ├── tsconfig.json              # 前端 TS 設定
@@ -229,7 +230,8 @@ npm rebuild better-sqlite3
 3. GitHub Actions 會：
    - 在 `macos-latest` build Mac DMG（Intel + Apple Silicon）
    - 在 `windows-latest` build Windows EXE（NSIS 安裝版 + portable 免安裝版）
-   - 直接上傳到 Release（跳過 artifact 步驟，避免配額問題）
+   - 先跑 verify + Playwright E2E
+   - 兩平台都成功後再建立 draft Release（避免半套產物先公開）
 
 ### 手動本機 build
 
@@ -245,8 +247,27 @@ Windows 無法從 macOS cross-compile（native modules 問題），只能從 CI 
 ### 從 CI Release 下載安裝檔
 
 ```bash
-gh release download v1.0.8 --repo Sterio068/voter-service-system --dir release
+gh release download v1.0.x --repo Sterio068/voter-service-system --dir release
 ```
+
+### Production 前端伺服方式
+
+正式包啟動後 **不是** 用 `file://` 載入 React，而是由 Electron main 啟動的 Fastify 在 `http://127.0.0.1:8080` 上同時提供 `/api/*` 與 `dist/` built assets：
+
+- `BrowserWindow.loadURL('http://127.0.0.1:8080')`
+- 路由刷新、附件下載、`/api/health` 健康檢查、SPA 路由都走同一個 origin
+- CSP / cookie / referer 行為與一般 web app 一致，不需特例處理 `file://`
+- 寫測試或 smoke 時請以 `http://127.0.0.1:8080` 為準，不要假設 `file://` 路徑
+
+> ⚠️ `docs/handoff/DEVELOPMENT_PITFALLS.md` §22「production 是 `file://`」是舊描述，已過時 — 現在 production 是 `http://127.0.0.1:8080`。`vite.config.ts` 的 `base` 與 `package.json` 的 `homepage` 維持相對路徑仍是對的（避免之後重新切回 file:// 模式時破版）。
+
+### 最新本機正式包 smoke（v1.0.13，2026-04-25）
+
+`/Applications/選民服務系統.app` 啟動後驗證：
+- `/api/health` 回 `ok`
+- admin 登入成功，選民列表可載入
+- 匿名 `POST /api/client-errors` 回 `401`，登入後回 `200`
+- 建立臨時選民後執行 `DELETE /api/voters/:id/anonymize?mode=full`，`mobile / phone / line_id / company / note / household_*` 等延伸欄位確實清空
 
 ---
 
@@ -626,7 +647,7 @@ const FORM_INITIAL = { channel: '電話' }
 
 ## 12. 最近的除錯歷程（重要）
 
-### v1.0.5 → v1.0.8 修了這些
+### v1.0.5 → v1.0.13 修了這些
 
 **v1.0.5**：
 - macOS Gatekeeper 阻擋 → 加 `gatekeeperAssess: false`、`hardenedRuntime: false`
@@ -641,7 +662,7 @@ const FORM_INITIAL = { channel: '電話' }
 - Zod schema `z.number().optional()` 拒絕 null → 前端送 `voter_id: null` 導致 400，但 catch 只顯示「立案失敗」看不出原因
 - 全部改 `.nullable().optional()`，前端過濾 null
 
-**v1.0.8**：
+**v1.0.13**：
 - voters schema 同樣問題修掉（20+ 欄位）
 - 陳情類別空 Select 改 AutoComplete
 - voters PUT 的 tags 更新納入同一 transaction
@@ -659,7 +680,7 @@ const FORM_INITIAL = { channel: '電話' }
 
 ## 13. 測試策略（剛建立基線）
 
-**現狀**：已有 `npm test`，使用 Node 內建 test runner + `tsx` 執行 TypeScript 測試；目前覆蓋 vendor 授權密碼、secret 加密工具、安全標頭、附件檔案安全、備份 metadata、PII 遮罩工具，以及 Fastify + 暫存 SQLite 的 API integration tests（auth、fresh install 預設設定、permissions、voters、petitions、petition import/export、attachments、schedules、consultations、backup/restore、voter import/export、data retention、secrets round-trip、ceremonies/expenses/template RBAC），並新增 `restoreOnStartup` 測試驗證待還原資料庫會在啟動前真正套用到主 DB。CI 已新增 `typecheck client/server/electron/test`、`npm test`、`npm run build`、`npm audit --omit=dev`。Playwright E2E smoke/navigation/role-access 已可跑 `npm run test:e2e`，目前覆蓋登入、Dashboard 今日工作台 deep-link、主要模組 compact page shell 與共用篩選工具列、全主要路由無 ErrorBoundary 崩潰、設定頁資料保留控制、UI 新增選民、UI 新增陳情、備份建立、完整匯出理由 Modal 與下載，以及 assistant / supervisor / volunteer 的受限路由、列印頁、導覽、快捷鍵、Dashboard 入口、禮儀/收支 read-only 管控與頁內 CRUD 按鈕巡檢，smoke/navigation/role-access 共 18 條已可通過。UI primitives 已包含 `PageScaffold`、`WorkspaceToolbar`、`EmptyState`、`FormFooter`、`FormSection`、`SelectionActionBar`、`MetricCard`、`ActionQueue`，前端主路由、側邊欄與快捷鍵也已統一走共用 permission map；另外已新增 `shared/permissions.ts` 作為前後端共用 RBAC 基線，並把 reports / audit logs / categories / ceremonies / expenses 收斂成 read-only / manage 分層頁面。2026-04-25 另補上 `VendorPage`、`ProposalsPage` 長表單 Modal 的 scrollable body + 可見 footer，修正正式版 1280×768 視窗下 primary action 掉出畫面的 UX 缺陷；同日也補上 fresh install `settings` baseline seed、`backup_path` 跟隨 `BACKUPS_PATH`、正式版隔離 restore-on-restart 驗收與 12k/1.5k/300 packaged load smoke，最新版安裝包已完成 source 與 packaged app 雙驗證。
+**現狀**：已有 `npm test`，使用 Node 內建 test runner + `tsx` 執行 TypeScript 測試；目前共 62 個 Node tests，覆蓋 vendor 授權密碼、secret 加密工具、安全標頭、附件檔案安全、備份 metadata、PII 遮罩工具，以及 Fastify + 暫存 SQLite 的 API integration tests（auth、fresh install 預設設定、first-run guard、client-errors auth、permissions、voters、voter anonymize/full mode、petitions、petition import/export、attachments、schedules、consultations、backup/restore、voter import/export、data retention、secrets round-trip、ceremonies/expenses/template RBAC），並新增 `restoreOnStartup` 測試驗證待還原資料庫會在啟動前真正套用到主 DB。CI 已新增 `typecheck client/server/electron/test`、`npm test`、`npm run build`、`npm audit --omit=dev`。Playwright E2E smoke/navigation/role-access 已可跑 `npm run test:e2e`，目前覆蓋登入、Dashboard 今日工作台 deep-link、主要模組 compact page shell 與共用篩選工具列、全主要路由無 ErrorBoundary 崩潰、設定頁資料保留控制、UI 新增選民、UI 新增陳情、備份建立、完整匯出理由 Modal 與下載，以及 assistant / supervisor / volunteer 的受限路由、列印頁、導覽、快捷鍵、Dashboard 入口、禮儀/收支 read-only 管控與頁內 CRUD 按鈕巡檢，smoke/navigation/role-access 共 18 條已可通過。UI primitives 已包含 `PageScaffold`、`WorkspaceToolbar`、`EmptyState`、`FormFooter`、`FormSection`、`SelectionActionBar`、`MetricCard`、`ActionQueue`，前端主路由、側邊欄與快捷鍵也已統一走共用 permission map；另外已新增 `shared/permissions.ts` 作為前後端共用 RBAC 基線，並把 reports / audit logs / categories / ceremonies / expenses 收斂成 read-only / manage 分層頁面。2026-04-25 另補上 `VendorPage`、`ProposalsPage` 長表單 Modal 的 scrollable body + 可見 footer，修正正式版 1280×768 視窗下 primary action 掉出畫面的 UX 缺陷；同日也補上 fresh install `settings` baseline seed、`backup_path` 跟隨 `BACKUPS_PATH`、正式版隔離 restore-on-restart 驗收與 12k/1.5k/300 packaged load smoke，並進一步收斂首次執行精靈不可再略過管理員密碼修改、`/api/client-errors` 僅允許登入後 session 上報，以及單筆匿名化與資料保留匿名化規則統一。最新版安裝包已完成 source 與 packaged app 雙驗證，且本機正式包 smoke 已再次確認登入、選民列表、`client-errors` 權限與 `full` 匿名化行為皆正常。
 
 **建議下一步**：
 - 後端：沿用 `tests/helpers/apiTestServer.ts` 的暫存 SQLite harness，繼續補 petition export/import、schedule conflict、consultation capacity、secrets round-trip 等 integration tests
@@ -718,7 +739,8 @@ SELECT * FROM settings;
 ## 16. 緊急聯絡 / 下一步
 
 **repo owner**：https://github.com/Sterio068  
-**最後交接提交**：commit `dabe83f`（v1.0.8，2026-04-23）
+**最後已發佈 tag**：`v1.0.12`（2026-04-25）
+**最後本機正式包驗證**：`v1.0.13`，`/Applications/選民服務系統.app`（2026-04-25 15:00 安裝），來源 `release/選民服務系統-1.0.13-arm64.dmg`
 
 **建議下個 AI / 開發者優先做**：
 1. 補 Google Calendar、LINE、AI 設定路由的 secrets 儲存/遮罩/讀取整合測試

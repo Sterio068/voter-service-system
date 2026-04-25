@@ -34,6 +34,16 @@ function runIntegrityCheck(filePath: string): string | null {
   }
 }
 
+function checkpointDatabaseToMainFile(filePath: string): void {
+  let db: Database.Database | null = null
+  try {
+    db = new Database(filePath)
+    db.pragma('wal_checkpoint(TRUNCATE)')
+  } finally {
+    try { db?.close() } catch {}
+  }
+}
+
 export type ApplyPendingRestoreResult = {
   applied: boolean
   rolledBack: boolean
@@ -64,6 +74,7 @@ export function applyPendingRestore(dbPath: string): ApplyPendingRestoreResult {
 
   try {
     if (hadExistingDatabase) {
+      checkpointDatabaseToMainFile(dbPath)
       fs.copyFileSync(dbPath, rollbackPath)
     }
 

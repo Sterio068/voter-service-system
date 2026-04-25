@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Modal, Steps, Form, Input, Button, Result, Typography, Space, Alert, message } from 'antd'
+import { Modal, Steps, Form, Input, Button, Result, Typography, Alert, message } from 'antd'
 import { CheckCircleOutlined, LockOutlined, HomeOutlined } from '@ant-design/icons'
 import api from '../utils/api'
 
@@ -28,7 +28,9 @@ export default function FirstRunWizard({ open, onFinish }: Props) {
     try {
       await api.put('/admin/settings', { office_name: values.office_name })
       setCurrent(1)
-    } catch { }
+    } catch (err: any) {
+      message.error(err?.response?.data?.error || '服務處設定儲存失敗，請重試')
+    }
     finally { setSaving(false) }
   }
 
@@ -36,16 +38,16 @@ export default function FirstRunWizard({ open, onFinish }: Props) {
     const values = await pwdForm.validateFields()
     setSaving(true)
     try {
-      // Change admin password (id=1 is the default admin)
-      await api.put('/admin/users/1/password', { password: values.password })
+      await api.put('/admin/users/1/password', {
+        password: values.password,
+        confirm_self_password: values.current_password,
+      })
+      message.success('管理員密碼已更新')
       setCurrent(2)
     } catch (err: any) {
-      // If user is not admin/can't reset, skip
-      setCurrent(2)
+      message.error(err?.response?.data?.error || '密碼修改失敗，請確認目前密碼後再試')
     } finally { setSaving(false) }
   }
-
-  const handleSkipPwd = () => setCurrent(2)
 
   const handleDone = async () => {
     setSaving(true)
@@ -56,9 +58,8 @@ export default function FirstRunWizard({ open, onFinish }: Props) {
       } else {
         message.error('儲存設定失敗，請重試')
       }
-    } catch {
-      // 網路失敗時仍允許繼續使用，避免卡住
-      onFinish()
+    } catch (err: any) {
+      message.error(err?.response?.data?.error || '首次設定尚未完成，請先修改管理員密碼')
     } finally {
       setSaving(false)
     }
@@ -110,12 +111,20 @@ export default function FirstRunWizard({ open, onFinish }: Props) {
           <div>
             <Alert
               type="warning"
-              message="建議修改預設密碼"
-              description={<>系統預設管理員密碼為 <Text code>admin123</Text>，建議立即修改以保護系統安全。</>}
+              message="必須完成管理員密碼修改"
+              description={<>系統預設管理員密碼為 <Text code>admin123</Text>，請先輸入目前密碼並完成修改後，才能結束首次執行精靈。</>}
               showIcon
               style={{ marginBottom: 24 }}
             />
             <Form form={pwdForm} layout="vertical">
+              <Form.Item
+                name="current_password"
+                label="目前密碼"
+                rules={[{ required: true, message: '請輸入目前密碼' }]}
+                initialValue="admin123"
+              >
+                <Input.Password size="large" placeholder="請輸入目前密碼" />
+              </Form.Item>
               <Form.Item
                 name="password"
                 label="新密碼"
@@ -143,8 +152,7 @@ export default function FirstRunWizard({ open, onFinish }: Props) {
                 <Input.Password size="large" placeholder="再次輸入密碼" />
               </Form.Item>
             </Form>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
-              <Button onClick={handleSkipPwd}>略過此步驟</Button>
+            <div style={{ textAlign: 'right', marginTop: 16 }}>
               <Button type="primary" size="large" loading={saving} onClick={handleStep1}>
                 修改密碼 →
               </Button>

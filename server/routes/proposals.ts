@@ -3,6 +3,7 @@ import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
 import * as XLSX from '@e965/xlsx'
+import { safeRow } from '../utils/excelSafe'
 
 function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
@@ -56,6 +57,7 @@ export default async function proposalRoutes(fastify: FastifyInstance) {
       FROM proposals p
       LEFT JOIN users u ON p.created_by=u.id
       ${where} ORDER BY p.proposal_date DESC, p.id DESC LIMIT 5000
+      -- 提案匯出維持 5000 筆上限；超過請以年度/狀態縮小範圍
     `).all(...params) as any[]
 
     const STATUS_MAP: Record<string, string> = {
@@ -64,14 +66,14 @@ export default async function proposalRoutes(fastify: FastifyInstance) {
     }
     const timestamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
     const headers = ['提案編號', '提案日期', '主旨', '類別', '提案類型', '屆次', '會議', '提案人', '連署人', '狀態', '審議結果', '來源網址', '追蹤備註', '建立人', '匯出人', '匯出時間']
-    const data = rows.map(r => [
+    const data = rows.map(r => safeRow([
       r.proposal_number ?? '', r.proposal_date ?? '', r.title ?? '',
       r.category ?? '', r.proposal_type ?? '', r.session ?? '', r.meeting ?? '',
       r.proposer ?? '', r.co_signers ?? '',
       STATUS_MAP[r.status] || r.status || '',
       r.result ?? '', r.source_url ?? '', r.track_note ?? '',
       r.created_by_name ?? '', cu.name, timestamp,
-    ])
+    ]))
 
     createAuditLog(req, cu.id, { action: 'export', module: '提案追蹤', target_type: 'proposal_export', target_id: 0, target_name: `匯出 ${rows.length} 筆提案` })
 

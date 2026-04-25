@@ -153,6 +153,46 @@ export default function MainLayout() {
     })
   }, [])
 
+  // 半自動 auto-update：登入 5 秒後檢查 GitHub Release，有新版用 notification 顯示一次
+  useEffect(() => {
+    if (!user) return
+    const dismissedKey = 'voter-update-dismissed-version'
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.get('/system/version-check')
+        const data = res.data?.data
+        if (!data?.has_update || !data.latest) return
+        if (sessionStorage.getItem(dismissedKey) === data.latest) return
+        // 動態 import notification 避免增加 bundle
+        const { notification } = await import('antd')
+        notification.info({
+          key: 'app-update-available',
+          message: `偵測到新版 v${data.latest}`,
+          description: (
+            <div>
+              <div>目前版本：v{data.current}</div>
+              {data.latest_published && (
+                <div style={{ fontSize: 12, color: '#888' }}>
+                  發布於 {new Date(data.latest_published).toLocaleDateString('zh-TW')}
+                </div>
+              )}
+              <div style={{ marginTop: 8 }}>
+                <a href={data.latest_url} target="_blank" rel="noopener noreferrer">
+                  前往 GitHub Release 下載 →
+                </a>
+              </div>
+            </div>
+          ),
+          duration: 0,
+          onClose: () => sessionStorage.setItem(dismissedKey, data.latest),
+        })
+      } catch {
+        // 靜默：版本檢查不可阻擋主要使用流程
+      }
+    }, 5000)
+    return () => clearTimeout(t)
+  }, [user])
+
   const handleLogout = async () => {
     try { await api.post('/auth/logout') } catch {}
     logout()

@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Card, Button, Space, Typography, Modal, Form, Input, DatePicker,
   Select, message, Tag, Drawer, Row, Col, InputNumber, Table,
-  Divider, Tabs, Statistic, Popconfirm, Alert, Checkbox, TimePicker
+  Divider, Tabs, Popconfirm, Alert, Checkbox, TimePicker
 } from 'antd'
 import { PlusOutlined, PrinterOutlined, FileWordOutlined, GiftOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
-import { Document, Packer, Paragraph, Table as DocxTable, TableRow, TableCell, TextRun, HeadingLevel, AlignmentType, WidthType, ShadingType, BorderStyle, PageNumber, Footer, Header, convertInchesToTwip } from 'docx'
+import { Document, Packer, Paragraph, Table as DocxTable, TableRow, TableCell, TextRun, AlignmentType, WidthType, ShadingType, BorderStyle, PageNumber, Footer, Header, convertInchesToTwip } from 'docx'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
@@ -16,17 +16,31 @@ import { useDataSync } from '../../hooks/useDataSync'
 import { SCHEDULE_TYPE_COLORS as TYPE_COLORS, SCHEDULE_TYPE_LABELS as TYPE_LABELS, CEREMONY_SCHEDULE_TYPES, CEREMONY_TYPE_LABELS } from '../../utils/constants'
 import dayjs from 'dayjs'
 import { useThemeStore } from '../../stores/themeStore'
+import { useAuthStore } from '../../stores/authStore'
 import PageScaffold from '../../components/ui/PageScaffold'
 import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
 import FormFooter from '../../components/ui/FormFooter'
 import EmptyState from '../../components/ui/EmptyState'
 import FormSection from '../../components/ui/FormSection'
+import { hasModulePermission } from '../../utils/permissions'
 
 const { Text } = Typography
 const { Option } = Select
 const { RangePicker } = DatePicker
 
 export default function SchedulePage() {
+  const { user } = useAuthStore()
+  const canCreateSchedule = hasModulePermission(user?.role, 'schedules', 'create')
+  const canEditSchedule = hasModulePermission(user?.role, 'schedules', 'edit')
+  const canDeleteSchedule = hasModulePermission(user?.role, 'schedules', 'delete')
+  const canExportSchedule = hasModulePermission(user?.role, 'schedules', 'export')
+  const canCreatePetition = hasModulePermission(user?.role, 'petitions', 'create')
+  const canViewCeremonies = hasModulePermission(user?.role, 'ceremonies', 'view')
+  const canCreateCeremony = hasModulePermission(user?.role, 'ceremonies', 'create')
+  const canEditCeremony = hasModulePermission(user?.role, 'ceremonies', 'edit')
+  const canDeleteCeremony = hasModulePermission(user?.role, 'ceremonies', 'delete')
+  const canManageConsultationSlots =
+    hasModulePermission(user?.role, 'admin', 'view') || hasModulePermission(user?.role, 'admin', 'edit')
   const [schedules, setSchedules] = useState<any[]>([])
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [form] = Form.useForm()
@@ -47,6 +61,7 @@ export default function SchedulePage() {
   const [slotForm] = Form.useForm()
   const [addingSlot, setAddingSlot] = useState(false)
   const { isDark } = useThemeStore()
+  const canCreateScheduleCeremony = canCreateSchedule && canCreateCeremony && !editingScheduleId
 
   // 團體相關 state
   const [groupList, setGroupList] = useState<any[]>([])
@@ -134,6 +149,10 @@ export default function SchedulePage() {
   }
 
   const handleAddSlot = async (values: any) => {
+    if (!canManageConsultationSlots) {
+      message.error('目前角色無法管理諮詢時段')
+      return
+    }
     setAddingSlot(true)
     try {
       await api.post('/consultations/slots', { slot_date: slotDate, slot_time: values.slot_time, max_capacity: values.max_capacity ?? 3, note: values.note })
@@ -145,6 +164,10 @@ export default function SchedulePage() {
   }
 
   const handleDeleteSlot = async (id: number) => {
+    if (!canManageConsultationSlots) {
+      message.error('目前角色無法管理諮詢時段')
+      return
+    }
     try {
       await api.delete(`/consultations/slots/${id}`)
       message.success('時段已刪除')
@@ -153,6 +176,10 @@ export default function SchedulePage() {
   }
 
   const openEditDrawer = (schedule: any) => {
+    if (!canEditSchedule) {
+      message.info('目前角色僅能查看行程，無法編輯')
+      return
+    }
     setDetailOpen(false)
     setEditingScheduleId(schedule.id)
     let relatedGroupIds: number[] = []
@@ -177,6 +204,14 @@ export default function SchedulePage() {
   }
 
   const handleSave = async (values: any) => {
+    if (editingScheduleId && !canEditSchedule) {
+      message.error('目前角色無法編輯行程')
+      return
+    }
+    if (!editingScheduleId && !canCreateSchedule) {
+      message.error('目前角色無法新增行程')
+      return
+    }
     try {
       const [start, end] = values.time_range
       const funeralInfo = values.schedule_type === 'public_memorial' ? JSON.stringify({
@@ -204,7 +239,12 @@ export default function SchedulePage() {
         // 新增模式
         const res = await api.post('/schedules', { ...payload, status: 'scheduled' })
         const newScheduleId = res.data?.id || res.data?.data?.id
-        if (CEREMONY_SCHEDULE_TYPES.includes(values.schedule_type) && values.recipient_name?.trim() && newScheduleId) {
+        if (
+          canCreateScheduleCeremony &&
+          CEREMONY_SCHEDULE_TYPES.includes(values.schedule_type) &&
+          values.recipient_name?.trim() &&
+          newScheduleId
+        ) {
           await api.post('/ceremonies', {
             schedule_id: newScheduleId,
             ceremony_type: values.ceremony_type || values.schedule_type,
@@ -236,12 +276,15 @@ export default function SchedulePage() {
     setSelectedEvent(schedule)
     setDetailCeremonies([])
     setDetailOpen(true)
-    api.get(`/ceremonies/by-schedule/${info.event.id}`)
-      .then(r => setDetailCeremonies(r.data.data || []))
-      .catch(() => {})
+    if (canViewCeremonies) {
+      api.get(`/ceremonies/by-schedule/${info.event.id}`)
+        .then(r => setDetailCeremonies(r.data.data || []))
+        .catch(() => {})
+    }
   }
 
   const handleDateSelect = (info: any) => {
+    if (!canCreateSchedule) return
     form.setFieldsValue({
       time_range: [dayjs(info.start), dayjs(info.end)]
     })
@@ -249,6 +292,10 @@ export default function SchedulePage() {
   }
 
   const handleCreatePetitionFromConsultation = async (consult: any) => {
+    if (!canCreatePetition) {
+      message.info('目前角色無法從諮詢立案')
+      return
+    }
     try {
       await api.post('/petitions', {
         voter_id: consult.voter_id || undefined,
@@ -264,6 +311,10 @@ export default function SchedulePage() {
 
   const handleDeleteSchedule = async () => {
     if (!selectedEvent) return
+    if (!canDeleteSchedule) {
+      message.error('目前角色無法刪除行程')
+      return
+    }
     try {
       await api.delete(`/schedules/${selectedEvent.id}`)
       message.success('行程已刪除')
@@ -273,6 +324,10 @@ export default function SchedulePage() {
   }
 
   const handlePrint = () => {
+    if (!canExportSchedule) {
+      message.info('目前角色無法列印行程')
+      return
+    }
     const startDate = printStartDate.startOf('day')
     const endDate = startDate.add(printDays - 1, 'day').endOf('day')
 
@@ -356,6 +411,10 @@ export default function SchedulePage() {
   }
 
   const handleExportWord = async () => {
+    if (!canExportSchedule) {
+      message.info('目前角色無法匯出行程')
+      return
+    }
     const startDate = printStartDate.startOf('day')
     const endDate = startDate.add(printDays - 1, 'day').endOf('day')
 
@@ -615,9 +674,15 @@ export default function SchedulePage() {
       actions={
         <>
           <Button onClick={() => setConsultOpen(true)}>今日諮詢</Button>
-          <Button onClick={() => { setSlotDate(dayjs().format('YYYY-MM-DD')); fetchSlots(dayjs().format('YYYY-MM-DD')); setSlotMgrOpen(true) }}>諮詢時段</Button>
-          <Button icon={<PrinterOutlined />} onClick={() => { setPrintStartDate(dayjs()); setPrintModalOpen(true) }}>列印行程</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setDrawerOpen(true) }}>新增行程</Button>
+          {canManageConsultationSlots && (
+            <Button onClick={() => { setSlotDate(dayjs().format('YYYY-MM-DD')); fetchSlots(dayjs().format('YYYY-MM-DD')); setSlotMgrOpen(true) }}>諮詢時段</Button>
+          )}
+          {canExportSchedule && (
+            <Button icon={<PrinterOutlined />} onClick={() => { setPrintStartDate(dayjs()); setPrintModalOpen(true) }}>列印行程</Button>
+          )}
+          {canCreateSchedule && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setDrawerOpen(true) }}>新增行程</Button>
+          )}
         </>
       }
     >
@@ -669,7 +734,7 @@ export default function SchedulePage() {
           initialView="dayGridMonth"
           locale={zhTW}
           events={calendarEvents}
-          selectable={true}
+          selectable={canCreateSchedule}
           select={handleDateSelect}
           eventClick={handleEventClick}
           headerToolbar={{
@@ -690,8 +755,10 @@ export default function SchedulePage() {
         onCancel={() => { setPrintModalOpen(false); setPrintStartDate(dayjs()); setPrintDays(7) }}
         footer={[
           <Button key="cancel" onClick={() => { setPrintModalOpen(false); setPrintStartDate(dayjs()); setPrintDays(7) }}>取消</Button>,
-          <Button key="word" icon={<FileWordOutlined />} onClick={handleExportWord}>匯出 Word</Button>,
-          <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={handlePrint}>列印</Button>,
+          ...(canExportSchedule ? [
+            <Button key="word" icon={<FileWordOutlined />} onClick={handleExportWord}>匯出 Word</Button>,
+            <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={handlePrint}>列印</Button>,
+          ] : []),
         ]}
         width={400}
       >
@@ -810,7 +877,7 @@ export default function SchedulePage() {
           )}
 
           {/* 禮儀子表單 */}
-          {isCeremonyType && (
+          {isCeremonyType && canCreateScheduleCeremony && (
             <FormSection title="禮儀資訊" description="禮儀性質、受贈人與品項會同步形成支出紀錄。">
               <Row gutter={12}>
                 <Col span={12}>
@@ -965,9 +1032,11 @@ export default function SchedulePage() {
               { title: '標題', dataIndex: 'title' },
               { title: '地點', dataIndex: 'location', render: (v: string) => v || '—' },
               { title: '備註', dataIndex: 'note', render: (v: string) => v || '—' },
-              { title: '', width: 60, render: (_: any, r: any) => (
-                <Button size="small" type="link" onClick={() => handleCreatePetitionFromConsultation(r)}>立案</Button>
-              )},
+              ...(canCreatePetition ? [{
+                title: '', width: 60, render: (_: any, r: any) => (
+                  <Button size="small" type="link" onClick={() => handleCreatePetitionFromConsultation(r)}>立案</Button>
+                ),
+              }] : []),
             ]}
           />
         )}
@@ -1001,39 +1070,43 @@ export default function SchedulePage() {
             { title: '時段', dataIndex: 'slot_time', width: 80 },
             { title: '容量', dataIndex: 'max_capacity', width: 60 },
             { title: '備註', dataIndex: 'note', render: (v: string) => v || '—' },
-            {
+            ...(canManageConsultationSlots ? [{
               title: '刪除', width: 60,
               render: (_: any, r: any) => (
                 <Popconfirm title="確定刪除此時段？" onConfirm={() => handleDeleteSlot(r.id)}>
                   <Button size="small" danger icon={<DeleteOutlined />} />
                 </Popconfirm>
               ),
-            },
+            }] : []),
           ]}
         />
         <Divider />
-        <Form form={slotForm} layout="inline" onFinish={handleAddSlot}>
-          <Form.Item name="slot_time" rules={[{ required: true, message: '必填' }]}>
-            <TimePicker format="HH:mm" placeholder="時間" minuteStep={15} />
-          </Form.Item>
-          <Form.Item name="max_capacity">
-            <InputNumber min={1} max={20} placeholder="容量" style={{ width: 70 }} />
-          </Form.Item>
-          <Form.Item name="note">
-            <Input placeholder="備註" style={{ width: 100 }} />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={addingSlot} icon={<PlusOutlined />}>新增</Button>
-          </Form.Item>
-        </Form>
+        {canManageConsultationSlots ? (
+          <Form form={slotForm} layout="inline" onFinish={handleAddSlot}>
+            <Form.Item name="slot_time" rules={[{ required: true, message: '必填' }]}>
+              <TimePicker format="HH:mm" placeholder="時間" minuteStep={15} />
+            </Form.Item>
+            <Form.Item name="max_capacity">
+              <InputNumber min={1} max={20} placeholder="容量" style={{ width: 70 }} />
+            </Form.Item>
+            <Form.Item name="note">
+              <Input placeholder="備註" style={{ width: 100 }} />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit" loading={addingSlot} icon={<PlusOutlined />}>新增</Button>
+            </Form.Item>
+          </Form>
+        ) : (
+          <Alert type="info" showIcon message="目前角色可查看時段，但無法新增或刪除。" />
+        )}
       </Modal>
 
       {/* 行程詳情 */}
       <Modal title="行程詳情" open={detailOpen} onCancel={() => { setDetailOpen(false); setSelectedEvent(null) }}
         width={600}
         footer={[
-          <Button key="delete" danger onClick={handleDeleteSchedule}>刪除行程</Button>,
-          <Button key="edit" icon={<EditOutlined />} onClick={() => selectedEvent && openEditDrawer(selectedEvent)}>編輯行程</Button>,
+          ...(canDeleteSchedule ? [<Button key="delete" danger onClick={handleDeleteSchedule}>刪除行程</Button>] : []),
+          ...(canEditSchedule ? [<Button key="edit" icon={<EditOutlined />} onClick={() => selectedEvent && openEditDrawer(selectedEvent)}>編輯行程</Button>] : []),
           <Button key="close" onClick={() => { setDetailOpen(false); setSelectedEvent(null) }}>關閉</Button>,
         ]}>
         {selectedEvent && (
@@ -1066,7 +1139,7 @@ export default function SchedulePage() {
                 </div>
               )
             },
-            {
+            ...(canViewCeremonies ? [{
               key: 'ceremony',
               label: (
                 <Space>
@@ -1077,21 +1150,23 @@ export default function SchedulePage() {
               ),
               children: (
                 <div style={{ paddingTop: 8 }}>
-                  <div style={{ textAlign: 'right', marginBottom: 12 }}>
-                    <Button size="small" type="primary" icon={<PlusOutlined />}
-                      onClick={() => {
-                        setEditingCeremony(null)
-                        setEditingCeremonyItems([])
-                        ceremonyForm.resetFields()
-                        ceremonyForm.setFieldsValue({
-                          event_date: dayjs(selectedEvent.start_time),
-                          event_location: selectedEvent.location,
-                          is_joint: false,
-                          status: 'planned',
-                        })
-                        setCeremonyModalOpen(true)
-                      }}>新增禮儀記錄</Button>
-                  </div>
+                  {canCreateCeremony && (
+                    <div style={{ textAlign: 'right', marginBottom: 12 }}>
+                      <Button size="small" type="primary" icon={<PlusOutlined />}
+                        onClick={() => {
+                          setEditingCeremony(null)
+                          setEditingCeremonyItems([])
+                          ceremonyForm.resetFields()
+                          ceremonyForm.setFieldsValue({
+                            event_date: dayjs(selectedEvent.start_time),
+                            event_location: selectedEvent.location,
+                            is_joint: false,
+                            status: 'planned',
+                          })
+                          setCeremonyModalOpen(true)
+                        }}>新增禮儀記錄</Button>
+                    </div>
+                  )}
                   {detailCeremonies.length === 0
                     ? <EmptyState title="尚無禮儀記錄" description="新增後可在行程詳情中追蹤品項、廠商與付款。" />
                     : detailCeremonies.map((c: any) => (
@@ -1108,31 +1183,35 @@ export default function SchedulePage() {
                             <Tag color={c.status === 'paid' ? 'success' : c.status === 'cancelled' ? 'default' : 'warning'}>
                               {c.status === 'paid' ? '已付款' : c.status === 'cancelled' ? '已取消' : '計畫中'}
                             </Tag>
-                            <Button size="small" icon={<EditOutlined />} onClick={() => {
-                              setEditingCeremony(c)
-                              setEditingCeremonyItems(c.items || [])
-                              ceremonyForm.setFieldsValue({
-                                ceremony_type: c.ceremony_type,
-                                recipient_name: c.recipient_name,
-                                recipient_relation: c.recipient_relation,
-                                event_date: c.event_date ? dayjs(c.event_date) : null,
-                                event_location: c.event_location,
-                                is_joint: !!c.is_joint,
-                                joint_note: c.joint_note,
-                                status: c.status,
-                                note: c.note,
-                              })
-                              setCeremonyModalOpen(true)
-                            }} />
-                            <Popconfirm title="確定刪除此禮儀記錄？" onConfirm={async () => {
-                              try {
-                                await api.delete(`/ceremonies/${c.id}`)
-                                const r = await api.get(`/ceremonies/by-schedule/${selectedEvent.id}`)
-                                setDetailCeremonies(r.data.data || [])
-                              } catch { message.error('刪除失敗') }
-                            }}>
-                              <Button size="small" danger icon={<DeleteOutlined />} />
-                            </Popconfirm>
+                            {canEditCeremony && (
+                              <Button size="small" icon={<EditOutlined />} onClick={() => {
+                                setEditingCeremony(c)
+                                setEditingCeremonyItems(c.items || [])
+                                ceremonyForm.setFieldsValue({
+                                  ceremony_type: c.ceremony_type,
+                                  recipient_name: c.recipient_name,
+                                  recipient_relation: c.recipient_relation,
+                                  event_date: c.event_date ? dayjs(c.event_date) : null,
+                                  event_location: c.event_location,
+                                  is_joint: !!c.is_joint,
+                                  joint_note: c.joint_note,
+                                  status: c.status,
+                                  note: c.note,
+                                })
+                                setCeremonyModalOpen(true)
+                              }} />
+                            )}
+                            {canDeleteCeremony && (
+                              <Popconfirm title="確定刪除此禮儀記錄？" onConfirm={async () => {
+                                try {
+                                  await api.delete(`/ceremonies/${c.id}`)
+                                  const r = await api.get(`/ceremonies/by-schedule/${selectedEvent.id}`)
+                                  setDetailCeremonies(r.data.data || [])
+                                } catch { message.error('刪除失敗') }
+                              }}>
+                                <Button size="small" danger icon={<DeleteOutlined />} />
+                              </Popconfirm>
+                            )}
                           </Space>
                         }
                       >
@@ -1168,7 +1247,7 @@ export default function SchedulePage() {
                   }
                 </div>
               )
-            }
+            }] : [])
           ]} />
         )}
       </Modal>
@@ -1178,12 +1257,21 @@ export default function SchedulePage() {
         title={editingCeremony ? '編輯禮儀記錄' : '新增禮儀記錄'}
         open={ceremonyModalOpen}
         onCancel={() => { setCeremonyModalOpen(false); ceremonyForm.resetFields(); setEditingCeremony(null); setEditingCeremonyItems([]) }}
-        onOk={() => ceremonyForm.submit()}
+        onOk={() => {
+          if ((editingCeremony && canEditCeremony) || (!editingCeremony && canCreateCeremony)) {
+            ceremonyForm.submit()
+          }
+        }}
         okText="儲存"
+        okButtonProps={{ disabled: editingCeremony ? !canEditCeremony : !canCreateCeremony }}
         width={600}
         destroyOnClose
       >
         <Form form={ceremonyForm} layout="vertical" onFinish={async (values) => {
+          if ((editingCeremony && !canEditCeremony) || (!editingCeremony && !canCreateCeremony)) {
+            message.error('目前角色無法儲存禮儀記錄')
+            return
+          }
           try {
             const payload = {
               schedule_id: selectedEvent?.id,
