@@ -14,11 +14,12 @@ export default defineConfig({
   build: {
     outDir: '../dist',
     emptyOutDir: true,
-    chunkSizeWarningLimit: 1200,
+    chunkSizeWarningLimit: 1700, // antd-vendor is ~1.5MB; rest are well under.
     rollupOptions: {
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'antd-vendor': ['antd', '@ant-design/icons'],
           'chart-vendor': ['recharts'],
           'calendar-vendor': [
             '@fullcalendar/react',
@@ -28,7 +29,7 @@ export default defineConfig({
             '@fullcalendar/interaction',
           ],
           'file-vendor': ['@e965/xlsx', 'docx'],
-          'util-vendor': ['dayjs', 'axios', 'zustand'],
+          'util-vendor': ['dayjs', 'axios', 'zustand', 'qrcode'],
         },
       },
     },
