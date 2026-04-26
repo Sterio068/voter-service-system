@@ -9,6 +9,11 @@
 
 ## [Unreleased]
 
+## [1.0.22] - 2026-04-27
+
+### Added
+- **陳情批次操作**：清單可勾選多筆陳情，一次「批次轉派 / 批次結案 / 批次設定優先級」（新端點 `POST /api/petitions/bulk-update`，Zod 驗證、單一 transaction、1000 筆上限、完整稽核）。`status='closed'` 自動寫入 `closed_at`。
+
 ## [1.0.21] - 2026-04-26
 
 ### Added
