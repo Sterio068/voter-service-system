@@ -123,6 +123,23 @@ test('voter LIKE search is bounded (< 3s) even on full table scan', async () => 
   console.log(`[large-scale] voter LIKE search: ${resp.body.total} matched in ${dt}ms`)
 })
 
+test('voter timeline endpoint stays well under 100ms even on a 50k voter dataset', async () => {
+  // Voter id 1 owns ~5000/50000 = 0 (mod 50000) but iteration is i % VOTER_COUNT + 1
+  // so voter id 1 owns indices i=0,50000,... → exactly 1 petition with 50k voters & 5k petitions.
+  // Even so the worst case is the schedules JSON LIKE scan (no rows inserted here).
+  const t0 = Date.now()
+  const resp = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/voters/1/timeline',
+    headers: bearer(adminToken),
+  }))
+  const dt = Date.now() - t0
+  assert.equal(resp.statusCode, 200)
+  assert.ok(Array.isArray(resp.body.data))
+  assert.ok(dt < 100, `voter timeline took ${dt}ms (expected < 100ms)`)
+  console.log(`[large-scale] voter timeline (50k voters / 5k petitions): ${dt}ms`)
+})
+
 test('petition list query stays under 1s with large dataset', async () => {
   const t0 = Date.now()
   const resp = parseJsonResponse(await ctx.app.inject({

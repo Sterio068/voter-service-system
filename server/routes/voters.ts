@@ -697,6 +697,223 @@ export default async function voterRoutes(fastify: FastifyInstance) {
     })
   })
 
+  // GET /api/voters/:id/timeline — unified chronological activity timeline
+  fastify.get('/api/voters/:id/timeline', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
+    const { id } = request.params as any
+    const voterId = Number(id)
+    if (!Number.isInteger(voterId) || voterId <= 0) {
+      return reply.code(400).send({ success: false, error: '無效的選民編號' })
+    }
+    const voter = db.prepare('SELECT id FROM voters WHERE id = ?').get(voterId)
+    if (!voter) return reply.code(404).send({ success: false, error: '選民不存在' })
+    // Optional cap; default 200, max 500
+    const _q = request.query as any
+    const requestedLimit = Number(_q?.limit)
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(500, Math.floor(requestedLimit))
+      : 200
+    // Per-source caps to avoid one source crowding others before global sort
+    const SOURCE_CAP = limit
+
+    // Each query: indexed by voter_id where possible. Schedules uses a JSON
+    // text column (related_voter_ids) — match by serialized id token via LIKE
+    // bound parameters; SQLite still scans schedules but is_active filter +
+    // limit keeps it bounded. Result: id-bound params only, no string concat.
+    const events: Array<{
+      type: string
+      date: string
+      title: string
+      description: string | null
+      status: string | null
+      icon: string | null
+      link: string | null
+      reference_id: number
+    }> = []
+
+    // 1. Petitions
+    try {
+      const rows = db.prepare(`
+        SELECT id, case_number, content, petition_date, created_at, status, category, urgency
+        FROM petitions
+        WHERE voter_id = ? AND COALESCE(is_active, 1) = 1
+        ORDER BY COALESCE(petition_date, created_at) DESC
+        LIMIT ?
+      `).all(voterId, SOURCE_CAP) as any[]
+      for (const r of rows) {
+        events.push({
+          type: 'petition',
+          date: String(r.petition_date || r.created_at || ''),
+          title: `陳情 ${r.case_number || `#${r.id}`}`,
+          description: typeof r.content === 'string' ? r.content.slice(0, 200) : null,
+          status: r.status ?? null,
+          icon: r.urgency === 'critical' ? 'alert' : 'file',
+          link: `/petitions/${r.id}`,
+          reference_id: Number(r.id),
+        })
+      }
+    } catch (e) {
+      console.error('[timeline] petitions query failed:', (e as Error)?.message)
+    }
+
+    // 2. Contact records
+    try {
+      const rows = db.prepare(`
+        SELECT id, contact_date, contact_type, content, result, result_type, created_at
+        FROM contact_records
+        WHERE voter_id = ?
+        ORDER BY contact_date DESC, created_at DESC
+        LIMIT ?
+      `).all(voterId, SOURCE_CAP) as any[]
+      for (const r of rows) {
+        const method = r.contact_type ? `（${r.contact_type}）` : ''
+        events.push({
+          type: 'contact',
+          date: String(r.contact_date || r.created_at || ''),
+          title: `聯絡紀錄${method}`,
+          description: typeof r.content === 'string' ? r.content.slice(0, 200) : null,
+          status: r.result_type || r.result || null,
+          icon: 'phone',
+          link: null,
+          reference_id: Number(r.id),
+        })
+      }
+    } catch (e) {
+      console.error('[timeline] contacts query failed:', (e as Error)?.message)
+    }
+
+    // 3. Schedules — related_voter_ids stored as JSON text, e.g. "[1,2,3]"
+    // Match by serialized id token to avoid false positives (e.g., "1" in "10").
+    try {
+      const idToken = String(voterId)
+      const rows = db.prepare(`
+        SELECT id, title, start_time, schedule_type, location, status
+        FROM schedules
+        WHERE COALESCE(is_active, 1) = 1
+          AND related_voter_ids IS NOT NULL
+          AND (
+            related_voter_ids LIKE ? ESCAPE '\\'
+            OR related_voter_ids LIKE ? ESCAPE '\\'
+            OR related_voter_ids LIKE ? ESCAPE '\\'
+            OR related_voter_ids LIKE ? ESCAPE '\\'
+            OR related_voter_ids = ?
+          )
+        ORDER BY start_time DESC
+        LIMIT ?
+      `).all(
+        `[${idToken}]`,
+        `[${idToken},%`,
+        `%,${idToken}]`,
+        `%,${idToken},%`,
+        idToken,
+        SOURCE_CAP,
+      ) as any[]
+      for (const r of rows) {
+        events.push({
+          type: 'schedule',
+          date: String(r.start_time || ''),
+          title: r.title || '行程',
+          description: r.location || r.schedule_type || null,
+          status: r.status ?? null,
+          icon: 'calendar',
+          link: `/schedules/${r.id}`,
+          reference_id: Number(r.id),
+        })
+      }
+    } catch (e) {
+      console.error('[timeline] schedules query failed:', (e as Error)?.message)
+    }
+
+    // 4. Ceremony records
+    try {
+      const rows = db.prepare(`
+        SELECT id, ceremony_type, recipient_name, event_date, event_location,
+               status, total_amount, created_at
+        FROM ceremony_records
+        WHERE voter_id = ?
+        ORDER BY COALESCE(event_date, created_at) DESC
+        LIMIT ?
+      `).all(voterId, SOURCE_CAP) as any[]
+      for (const r of rows) {
+        events.push({
+          type: 'ceremony',
+          date: String(r.event_date || r.created_at || ''),
+          title: `${r.ceremony_type || '禮儀'}：${r.recipient_name || ''}`.trim(),
+          description: r.event_location || null,
+          status: r.status ?? null,
+          icon: 'gift',
+          link: `/ceremonies/${r.id}`,
+          reference_id: Number(r.id),
+        })
+      }
+    } catch (e) {
+      console.error('[timeline] ceremonies query failed:', (e as Error)?.message)
+    }
+
+    // 5. Tasks
+    try {
+      const rows = db.prepare(`
+        SELECT id, title, description, status, priority, due_date, created_at, completed_at
+        FROM tasks
+        WHERE related_voter_id = ?
+        ORDER BY COALESCE(due_date, created_at) DESC
+        LIMIT ?
+      `).all(voterId, SOURCE_CAP) as any[]
+      for (const r of rows) {
+        events.push({
+          type: 'task',
+          date: String(r.due_date || r.created_at || ''),
+          title: `待辦：${r.title || ''}`.trim(),
+          description: typeof r.description === 'string' ? r.description.slice(0, 200) : null,
+          status: r.status ?? null,
+          icon: r.priority === 'high' ? 'alert' : 'check',
+          link: `/tasks/${r.id}`,
+          reference_id: Number(r.id),
+        })
+      }
+    } catch (e) {
+      console.error('[timeline] tasks query failed:', (e as Error)?.message)
+    }
+
+    // 6. Notification recipients (notification history sent to this voter)
+    try {
+      const rows = db.prepare(`
+        SELECT nr.id, nr.notification_id, nr.status, nr.sent_at,
+               n.title, n.content, n.channel, n.created_at
+        FROM notification_recipients nr
+        JOIN notifications n ON nr.notification_id = n.id
+        WHERE nr.voter_id = ?
+        ORDER BY COALESCE(nr.sent_at, n.created_at) DESC
+        LIMIT ?
+      `).all(voterId, SOURCE_CAP) as any[]
+      for (const r of rows) {
+        events.push({
+          type: 'note',
+          date: String(r.sent_at || r.created_at || ''),
+          title: `通知：${r.title || ''}`.trim(),
+          description: typeof r.content === 'string' ? r.content.slice(0, 200) : null,
+          status: r.status ?? null,
+          icon: 'bell',
+          link: `/notifications/${r.notification_id}`,
+          reference_id: Number(r.id),
+        })
+      }
+    } catch (e) {
+      console.error('[timeline] notifications query failed:', (e as Error)?.message)
+    }
+
+    // Sort merged events by date DESC and cap at limit. Empty-date entries go last.
+    events.sort((a, b) => {
+      const da = a.date || ''
+      const db_ = b.date || ''
+      if (da === db_) return 0
+      if (!da) return 1
+      if (!db_) return -1
+      return db_.localeCompare(da)
+    })
+
+    return reply.send({ success: true, data: events.slice(0, limit) })
+  })
+
   // D-13: GET /api/voters/:id/activity-history
   fastify.get('/api/voters/:id/activity-history', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
     const { id } = request.params as any

@@ -741,6 +741,119 @@ test('voter merge transfers activity history, merges engagement fields, and surv
   assert.equal(affectedRecords.merged_duplicate_group_members, 1)
 })
 
+test('voter timeline endpoint requires authentication, returns empty for new voters, and merges sources sorted by date DESC', async () => {
+  // 1. Unauthenticated request must be rejected
+  const unauthorized = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/voters/1/timeline',
+  }))
+  assert.equal(unauthorized.statusCode, 401)
+
+  // 2. Voter with no history returns an empty array (not a 404 / not null)
+  const stamp = Date.now()
+  const created = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/voters',
+    headers: bearer(adminToken),
+    payload: {
+      name: `時間軸測試-空 ${stamp}`,
+      mobile: `09${String(stamp).slice(-8)}`,
+    },
+  }))
+  assert.equal(created.statusCode, 201)
+  const emptyVoterId = created.body.data.id
+
+  const emptyTimeline = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: `/api/voters/${emptyVoterId}/timeline`,
+    headers: bearer(adminToken),
+  }))
+  assert.equal(emptyTimeline.statusCode, 200)
+  assert.equal(emptyTimeline.body.success, true)
+  assert.ok(Array.isArray(emptyTimeline.body.data))
+  assert.equal(emptyTimeline.body.data.length, 0)
+
+  // Non-existent voter id returns 404
+  const missing = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/voters/99999999/timeline',
+    headers: bearer(adminToken),
+  }))
+  assert.equal(missing.statusCode, 404)
+
+  // 3. Voter with a mix of records across modules
+  const populated = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/voters',
+    headers: bearer(adminToken),
+    payload: {
+      name: `時間軸測試-完整 ${stamp}`,
+      mobile: `09${String(stamp + 1).slice(-8)}`,
+    },
+  }))
+  assert.equal(populated.statusCode, 201)
+  const voterId = populated.body.data.id
+
+  // Insert direct rows so the test does not depend on every module's POST API.
+  ctx.db.prepare(`
+    INSERT INTO petitions (case_number, petition_date, voter_id, channel, category, content, status, created_by, is_active)
+    VALUES (?, ?, ?, '電話', '民政', ?, 'pending', 1, 1)
+  `).run(`TL-${stamp}-1`, '2026-04-15', voterId, '時間軸陳情內容')
+
+  ctx.db.prepare(`
+    INSERT INTO contact_records (voter_id, contact_date, contact_type, content, result_type, created_by)
+    VALUES (?, '2026-04-20', 'phone', ?, 'contacted', 1)
+  `).run(voterId, '時間軸聯絡內容')
+
+  ctx.db.prepare(`
+    INSERT INTO schedules (title, start_time, related_voter_ids, status, created_by, is_active)
+    VALUES (?, ?, ?, 'scheduled', 1, 1)
+  `).run('時間軸行程', '2026-04-22 09:00:00', JSON.stringify([voterId]))
+
+  ctx.db.prepare(`
+    INSERT INTO ceremony_records (voter_id, ceremony_type, recipient_name, event_date, status, created_by)
+    VALUES (?, 'wedding', '時間軸禮儀對象', '2026-04-18', 'planned', 1)
+  `).run(voterId)
+
+  ctx.db.prepare(`
+    INSERT INTO tasks (title, related_voter_id, status, due_date, created_by)
+    VALUES (?, ?, 'pending', '2026-04-25', 1)
+  `).run('時間軸待辦', voterId)
+
+  const notificationId = ctx.db.prepare(`
+    INSERT INTO notifications (title, content, channel, status, created_by)
+    VALUES ('時間軸通知', '通知內容', 'app', 'sent', 1)
+  `).run().lastInsertRowid as number
+  ctx.db.prepare(`
+    INSERT INTO notification_recipients (notification_id, voter_id, status, sent_at)
+    VALUES (?, ?, 'sent', '2026-04-10 12:00:00')
+  `).run(notificationId, voterId)
+
+  const populatedTimeline = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: `/api/voters/${voterId}/timeline`,
+    headers: bearer(adminToken),
+  }))
+  assert.equal(populatedTimeline.statusCode, 200)
+  const events = populatedTimeline.body.data as Array<{ type: string; date: string; reference_id: number; link: string | null }>
+  assert.ok(Array.isArray(events))
+  // All six sources should be represented
+  const types = new Set(events.map((e) => e.type))
+  for (const expected of ['petition', 'contact', 'schedule', 'ceremony', 'task', 'note']) {
+    assert.ok(types.has(expected), `expected event type "${expected}" in timeline (got ${[...types].join(',')})`)
+  }
+  // Sorted by date DESC
+  for (let i = 1; i < events.length; i += 1) {
+    assert.ok(
+      String(events[i - 1].date) >= String(events[i].date),
+      `timeline not sorted DESC at index ${i}: ${events[i - 1].date} < ${events[i].date}`
+    )
+  }
+  // Spot-check that the schedule with id token "[voterId]" matched (no false-positive guard)
+  const scheduleEvent = events.find((e) => e.type === 'schedule')
+  assert.ok(scheduleEvent && scheduleEvent.link === `/schedules/${scheduleEvent.reference_id}`)
+})
+
 test('tasks list accepts comma-separated status filters for open queues', async () => {
   const stamp = Date.now()
 

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense } from 'react'
 import {
   Card, Tabs, Tag, Button, Space, Typography, Spin, Breadcrumb, message, Drawer, Form, Input, Select,
-  DatePicker, Radio, Row, Col, Divider
+  DatePicker, Radio, Row, Col, Divider, Skeleton
 } from 'antd'
 import { ArrowLeftOutlined, EditOutlined, StarFilled, PhoneOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -16,6 +16,9 @@ import PetitionTab from './components/PetitionTab'
 import EngagementTab from './components/EngagementTab'
 import TaskTab from './components/TaskTab'
 import RelationsTab from './components/RelationsTab'
+
+// Lazy-load TimelineTab to keep this page's chunk small
+const TimelineTab = React.lazy(() => import('./components/TimelineTab'))
 
 const { Text } = Typography
 const { Option } = Select
@@ -132,6 +135,15 @@ export default function VoterDetailPage() {
       key: 'relations',
       label: '人際關聯',
       children: <RelationsTab voterId={voterId} voterData={voter} />,
+    },
+    {
+      key: 'timeline',
+      label: '活動時間軸',
+      children: (
+        <Suspense fallback={<Skeleton active paragraph={{ rows: 5 }} />}>
+          <TimelineTab voterId={voterId} />
+        </Suspense>
+      ),
     },
     {
       key: 'documents',
