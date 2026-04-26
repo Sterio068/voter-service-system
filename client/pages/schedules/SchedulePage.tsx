@@ -716,7 +716,9 @@ export default function SchedulePage() {
         <Space wrap role="search" aria-label="行程篩選">
           <Input.Search
             placeholder="搜尋行程標題、地點、備註"
-            aria-label="搜尋行程標題、地點或備註"
+            // 簡化 aria-label，避免和表單「標題」/「地點」/「備註」欄位
+            // 在 Playwright getByLabel 命中重複；placeholder 已說明搜尋對象。
+            aria-label="搜尋行程"
             allowClear
             style={{ width: 220 }}
             value={searchKeyword}

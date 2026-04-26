@@ -484,7 +484,9 @@ export default function PetitionListPage() {
         <Space wrap role="search" aria-label="陳情案件篩選">
           <Input.Search
             placeholder="搜尋陳情內容"
-            aria-label="搜尋陳情內容"
+            // 簡化 aria-label，避免和表單「陳情內容」textarea 在 Playwright
+            // getByLabel 命中重複；placeholder 已交代搜尋對象。
+            aria-label="搜尋陳情"
             allowClear
             style={{ width: 200 }}
             value={search}
