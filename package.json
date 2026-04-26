@@ -149,7 +149,7 @@
       "identity": null,
       "gatekeeperAssess": false,
       "hardenedRuntime": false,
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "voter-service-system-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
