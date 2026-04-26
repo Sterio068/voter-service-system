@@ -9,6 +9,22 @@ function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
 }
 
+const PETITION_BULK_STATUS = ['pending', 'processing', 'waiting_external', 'waiting_applicant', 'replied', 'closed', 'cancelled'] as const
+const PETITION_BULK_URGENCY = ['normal', 'urgent', 'critical'] as const
+
+// 後端：批次更新陳情案件 — 允許 status / assignee_id / urgency；至少需指定一項
+const BulkUpdatePetitionsSchema = z
+  .object({
+    petition_ids: z.array(z.number().int().positive()).min(1, '至少需要一筆陳情案件').max(1000, '單次批次最多 1000 筆'),
+    status: z.enum(PETITION_BULK_STATUS).optional(),
+    assignee_id: z.number().int().positive().nullable().optional(),
+    urgency: z.enum(PETITION_BULK_URGENCY).optional(),
+  })
+  .refine(
+    (data) => data.status !== undefined || data.assignee_id !== undefined || data.urgency !== undefined,
+    { message: '至少需要指定一個更新欄位（status / assignee_id / urgency）' },
+  )
+
 const CreatePetitionSchema = z.object({
   content: z.string().min(1, '陳情內容為必填').max(5000, '陳情內容最長 5000 字'),
   petition_date: z.string().min(1, '陳情日期為必填'),
@@ -258,6 +274,84 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
 
     createAuditLog(request, cu.id, { action: 'update', module: '陳情管理', target_type: 'petition', target_id: Number(id), target_name: petition.case_number, before: petition, after: updateData })
     return reply.send({ success: true, message: '陳情案件已更新' })
+  })
+
+  // POST /api/petitions/bulk-update — 批次更新狀態 / 承辦人 / 緊急程度（單一 transaction）
+  fastify.post('/api/petitions/bulk-update', { preHandler: [requirePermission('petitions', 'edit')] }, async (request, reply) => {
+    const cu = request.currentUser!
+    const parsed = BulkUpdatePetitionsSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
+    const { petition_ids, status, assignee_id, urgency } = parsed.data
+    const uniqueIds = Array.from(new Set(petition_ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)))
+    if (uniqueIds.length === 0) {
+      return reply.code(400).send({ success: false, error: '至少需要一筆陳情案件' })
+    }
+
+    const placeholders = uniqueIds.map(() => '?').join(',')
+    const existing = db.prepare(`SELECT id, case_number, status FROM petitions WHERE id IN (${placeholders}) AND is_active = 1`).all(...uniqueIds) as Array<{ id: number; case_number: string; status: string }>
+    const existingIds = new Set(existing.map((p) => p.id))
+    const missingIds = uniqueIds.filter((id) => !existingIds.has(id))
+
+    // 動態組裝 SET 子句（僅更新有提供的欄位）
+    const setClauses: string[] = []
+    const setValues: any[] = []
+    if (status !== undefined) { setClauses.push('status = ?'); setValues.push(status) }
+    if (assignee_id !== undefined) { setClauses.push('assignee_id = ?'); setValues.push(assignee_id) }
+    if (urgency !== undefined) { setClauses.push('urgency = ?'); setValues.push(urgency) }
+    setClauses.push("updated_at = datetime('now','localtime')")
+
+    let updated = 0
+    if (existing.length > 0) {
+      const updateOne = db.prepare(`UPDATE petitions SET ${setClauses.join(',')} WHERE id = ? AND is_active = 1`)
+      const closingNow = status === 'closed'
+      const updateOneClosing = closingNow
+        ? db.prepare(`UPDATE petitions SET ${setClauses.join(',')}, closed_at = datetime('now','localtime') WHERE id = ? AND is_active = 1 AND status != 'closed'`)
+        : null
+      const bulkApply = db.transaction(() => {
+        for (const petition of existing) {
+          if (closingNow && petition.status !== 'closed' && updateOneClosing) {
+            const r = updateOneClosing.run(...setValues, petition.id)
+            if (r.changes > 0) { updated++; continue }
+          }
+          const r = updateOne.run(...setValues, petition.id)
+          if (r.changes > 0) updated++
+        }
+      })
+      bulkApply()
+    }
+
+    const failed = uniqueIds.length - updated
+    const appliedFields: Record<string, any> = {}
+    if (status !== undefined) appliedFields.status = status
+    if (assignee_id !== undefined) appliedFields.assignee_id = assignee_id
+    if (urgency !== undefined) appliedFields.urgency = urgency
+
+    createAuditLog(request, cu.id, {
+      action: 'update',
+      module: '陳情管理',
+      target_type: 'petition_bulk_update',
+      target_id: 0,
+      target_name: `批次更新陳情：${Object.keys(appliedFields).join(',')}`,
+      detail: {
+        applied_fields: appliedFields,
+        requested_count: uniqueIds.length,
+        updated_count: updated,
+        failed_count: failed,
+        missing_ids: missingIds,
+      },
+    })
+
+    return reply.send({
+      success: true,
+      updated,
+      failed,
+      missing_ids: missingIds,
+      message: missingIds.length
+        ? `成功 ${updated} 筆，失敗 ${failed} 筆`
+        : `已批次更新 ${updated} 筆陳情案件`,
+    })
   })
 
   fastify.post('/api/petitions/:id/logs', { preHandler: [requirePermission('petitions', 'edit')] }, async (request, reply) => {

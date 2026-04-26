@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
   Table, Button, Space, Input, Select, Tag, Typography, Card,
-  Drawer, Form, DatePicker, message, Popconfirm, Row, Col, Modal, Upload, Alert, AutoComplete
+  Drawer, Form, DatePicker, message, Popconfirm, Row, Col, Modal, Upload, Alert, AutoComplete, Radio
 } from 'antd'
-import { PlusOutlined, SearchOutlined, EyeOutlined, DownloadOutlined, FilterOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, EyeOutlined, DownloadOutlined, FilterOutlined, EditOutlined, DeleteOutlined, UploadOutlined, SwapOutlined, CheckCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import api from '../../utils/api'
 import { useAuthStore } from '../../stores/authStore'
@@ -99,6 +99,12 @@ export default function PetitionListPage() {
   const [endDate, setEndDate] = useState(_savedFilters.endDate || '')
   const [editingPetitionId, setEditingPetitionId] = useState<number | null>(null)
 
+  // 批次操作 Modal
+  const [batchAssigneeOpen, setBatchAssigneeOpen] = useState(false)
+  const [batchAssigneeId, setBatchAssigneeId] = useState<number | null>(null)
+  const [batchUrgencyOpen, setBatchUrgencyOpen] = useState(false)
+  const [batchUrgency, setBatchUrgency] = useState<'normal' | 'urgent' | 'critical'>('normal')
+
   useEffect(() => {
     fetchCategories()
     fetchAreas()
@@ -192,21 +198,61 @@ export default function PetitionListPage() {
     if (Object.keys(nextValues).length > 0) targetForm.setFieldsValue(nextValues)
   }
 
-  const handleBatchStatusChange = async (status: string) => {
+  // 共用批次更新呼叫 — 走單一 transaction 端點 /petitions/bulk-update
+  const callBulkUpdate = async (
+    payload: { status?: string; assignee_id?: number | null; urgency?: 'normal' | 'urgent' | 'critical' },
+    successDescription: string,
+  ) => {
     if (selectedRowKeys.length === 0) return
     setBatchLoading(true)
     try {
-      const results = await Promise.allSettled(
-        selectedRowKeys.map(id => api.put(`/petitions/${id}`, { status }))
-      )
-      const ok = results.filter(r => r.status === 'fulfilled').length
-      const failed = results.length - ok
-      if (failed === 0) message.success(`已將 ${ok} 筆案件更新為「${STATUS_LABELS[status]}」`)
-      else if (ok > 0) message.warning(`成功 ${ok} 筆、失敗 ${failed} 筆`)
-      else message.error('批量更新全部失敗')
+      const res = await api.post('/petitions/bulk-update', {
+        petition_ids: selectedRowKeys,
+        ...payload,
+      })
+      const updated = Number(res.data?.updated ?? 0)
+      const failed = Number(res.data?.failed ?? 0)
+      const missing: number[] = res.data?.missing_ids || []
+      if (failed === 0) {
+        message.success(`${successDescription}：成功 ${updated} 筆`)
+      } else if (updated > 0) {
+        message.warning(`${successDescription}：成功 ${updated} 筆、失敗 ${failed} 筆${missing.length ? `（缺案 ID：${missing.slice(0, 5).join(',')}${missing.length > 5 ? '…' : ''}）` : ''}`)
+      } else {
+        message.error(`${successDescription}全部失敗（共 ${failed} 筆）`)
+      }
       setSelectedRowKeys([])
       fetchPetitions()
-    } finally { setBatchLoading(false) }
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '批次更新失敗')
+    } finally {
+      setBatchLoading(false)
+    }
+  }
+
+  const handleBatchStatusChange = (status: string) =>
+    callBulkUpdate({ status }, `批次更新狀態為「${STATUS_LABELS[status] || status}」`)
+
+  const handleBatchAssignee = async () => {
+    if (!batchAssigneeId) { message.warning('請選擇承辦人'); return }
+    await callBulkUpdate({ assignee_id: batchAssigneeId }, '批次轉派')
+    setBatchAssigneeOpen(false)
+    setBatchAssigneeId(null)
+  }
+
+  const handleBatchUrgency = async () => {
+    await callBulkUpdate({ urgency: batchUrgency }, `批次設定優先級為「${URGENCY_LABELS[batchUrgency]}」`)
+    setBatchUrgencyOpen(false)
+  }
+
+  const handleBatchClose = () => {
+    Modal.confirm({
+      title: `確定批次結案 ${selectedRowKeys.length} 筆陳情案件？`,
+      content: '結案後仍可重新開啟，但會記錄結案時間。',
+      okText: '確定結案',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => callBulkUpdate({ status: 'closed' }, '批次結案'),
+    })
   }
 
   const handleDownloadTemplate = async () => {
@@ -515,12 +561,21 @@ export default function PetitionListPage() {
       </WorkspaceToolbar>
 
       {canEditPetition && (
-        <SelectionActionBar selectedCount={selectedRowKeys.length} onClear={() => setSelectedRowKeys([])}>
-          <Text type="secondary" style={{ fontSize: 12 }}>批量變更狀態：</Text>
-          {Object.entries(STATUS_LABELS).filter(([v]) => v !== 'cancelled').map(([v, l]) => (
-            <Button key={v} size="small" loading={batchLoading} onClick={() => handleBatchStatusChange(v)}>{l}</Button>
-          ))}
-          <Button size="small" danger loading={batchLoading} onClick={() => handleBatchStatusChange('cancelled')}>已取消</Button>
+        <SelectionActionBar
+          fixed
+          selectedCount={selectedRowKeys.length}
+          itemLabel="筆案件"
+          onClear={() => setSelectedRowKeys([])}
+        >
+          <Button size="small" icon={<SwapOutlined />} loading={batchLoading} onClick={() => { setBatchAssigneeId(null); setBatchAssigneeOpen(true) }}>
+            批次轉派
+          </Button>
+          <Button size="small" icon={<CheckCircleOutlined />} loading={batchLoading} onClick={handleBatchClose}>
+            批次結案
+          </Button>
+          <Button size="small" icon={<ExclamationCircleOutlined />} loading={batchLoading} onClick={() => { setBatchUrgency('normal'); setBatchUrgencyOpen(true) }}>
+            批次設定優先級
+          </Button>
         </SelectionActionBar>
       )}
       <Card>
@@ -765,6 +820,55 @@ export default function PetitionListPage() {
               )}
             />
           )}
+        </Space>
+      </Modal>
+
+      {/* 批次轉派 Modal */}
+      <Modal
+        title="批次轉派承辦人"
+        open={batchAssigneeOpen}
+        onCancel={() => { if (!batchLoading) setBatchAssigneeOpen(false) }}
+        onOk={handleBatchAssignee}
+        okText="套用"
+        cancelText="取消"
+        confirmLoading={batchLoading}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Text type="secondary">將 {selectedRowKeys.length} 筆陳情案件轉派給：</Text>
+          <Select
+            showSearch
+            style={{ width: '100%' }}
+            placeholder="選擇承辦人"
+            value={batchAssigneeId ?? undefined}
+            onChange={(v: number) => setBatchAssigneeId(v)}
+            optionFilterProp="children"
+            filterOption={(input, opt) => String(opt?.children || '').toLowerCase().includes(input.toLowerCase())}
+          >
+            {users.map(u => <Option key={u.id} value={u.id}>{u.name}</Option>)}
+          </Select>
+        </Space>
+      </Modal>
+
+      {/* 批次設定優先級 Modal */}
+      <Modal
+        title="批次設定優先級"
+        open={batchUrgencyOpen}
+        onCancel={() => { if (!batchLoading) setBatchUrgencyOpen(false) }}
+        onOk={handleBatchUrgency}
+        okText="套用"
+        cancelText="取消"
+        confirmLoading={batchLoading}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Text type="secondary">將 {selectedRowKeys.length} 筆陳情案件的優先級設定為：</Text>
+          <Radio.Group
+            value={batchUrgency}
+            onChange={(e) => setBatchUrgency(e.target.value)}
+          >
+            <Radio value="normal">{URGENCY_LABELS.normal}</Radio>
+            <Radio value="urgent">{URGENCY_LABELS.urgent}</Radio>
+            <Radio value="critical">{URGENCY_LABELS.critical}</Radio>
+          </Radio.Group>
         </Space>
       </Modal>
 

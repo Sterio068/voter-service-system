@@ -1254,6 +1254,89 @@ test('petition lifecycle creates case numbers, logs, updates status, and audits 
   assert.equal(auditCount, 2)
 })
 
+test('petition bulk-update updates listed cases atomically and rejects unauthorized callers', async () => {
+  // 建立三筆陳情案件，混入一筆已停用 (soft-deleted) 以驗證 missing_ids 行為
+  const caseIds: number[] = []
+  for (let i = 0; i < 3; i++) {
+    const created = parseJsonResponse(await ctx.app.inject({
+      method: 'POST',
+      url: '/api/petitions',
+      headers: bearer(adminToken),
+      payload: {
+        petition_date: '2026-04-25',
+        contact_name: `批次測試 ${i + 1}`,
+        contact_phone: `09${String(7000000 + i).padStart(8, '0')}`,
+        content: `批次案件內容 ${i + 1}`,
+        urgency: 'normal',
+        status: 'pending',
+      },
+    }))
+    assert.equal(created.statusCode, 201)
+    caseIds.push(created.body.data.id)
+  }
+  // 將最後一筆停用，模擬「missing」情境
+  ctx.db.prepare('UPDATE petitions SET is_active = 0 WHERE id = ?').run(caseIds[2])
+
+  // 志工沒有 petitions:edit 權限 — 必須被拒絕
+  const rejected = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/petitions/bulk-update',
+    headers: bearer(volunteerToken),
+    payload: { petition_ids: caseIds, status: 'closed' },
+  }))
+  assert.equal(rejected.statusCode, 403)
+
+  // 管理員：批次轉派 + 設定優先級 + 結案三項一次套用
+  const bulk = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/petitions/bulk-update',
+    headers: bearer(adminToken),
+    payload: {
+      petition_ids: caseIds,
+      status: 'closed',
+      assignee_id: 1,
+      urgency: 'urgent',
+    },
+  }))
+  assert.equal(bulk.statusCode, 200)
+  assert.equal(bulk.body.success, true)
+  assert.equal(bulk.body.updated, 2)
+  assert.equal(bulk.body.failed, 1)
+  assert.deepEqual(bulk.body.missing_ids, [caseIds[2]])
+
+  // 確認前兩筆已更新、第三筆未動
+  for (const id of caseIds.slice(0, 2)) {
+    const row = ctx.db.prepare('SELECT status, urgency, assignee_id, closed_at FROM petitions WHERE id = ?').get(id) as any
+    assert.equal(row.status, 'closed')
+    assert.equal(row.urgency, 'urgent')
+    assert.equal(row.assignee_id, 1)
+    assert.ok(row.closed_at, '結案時應寫入 closed_at')
+  }
+  const skipped = ctx.db.prepare('SELECT status FROM petitions WHERE id = ?').get(caseIds[2]) as any
+  assert.equal(skipped.status, 'pending')
+
+  // 驗證 audit log 寫入單筆批次紀錄
+  const audit = ctx.db.prepare(`
+    SELECT detail FROM audit_logs
+    WHERE target_type = 'petition_bulk_update' AND user_id = 1
+    ORDER BY id DESC LIMIT 1
+  `).get() as any
+  assert.ok(audit, '批次更新應寫入單筆 audit log')
+  const detail = JSON.parse(audit.detail)
+  assert.equal(detail.requested_count, 3)
+  assert.equal(detail.updated_count, 2)
+  assert.deepEqual(detail.applied_fields, { status: 'closed', assignee_id: 1, urgency: 'urgent' })
+
+  // Schema 驗證：未指定欄位時必須回 400
+  const empty = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/petitions/bulk-update',
+    headers: bearer(adminToken),
+    payload: { petition_ids: [caseIds[0]] },
+  }))
+  assert.equal(empty.statusCode, 400)
+})
+
 test('document numbers increase sequentially per type', async () => {
   const firstOutgoing = parseJsonResponse(await ctx.app.inject({
     method: 'POST',
