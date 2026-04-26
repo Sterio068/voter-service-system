@@ -295,11 +295,15 @@ test.describe('schedule overlap warning', () => {
     const { stamp } = uniqueStamp('overlap')
 
     // Anchor: pre-create one schedule via API on a stable, non-rounded slot.
+    // Use 18:30–19:30 to avoid clashing with role-access.spec.ts which
+    // uses 10:00–11:00 (assistant) and 14:00–15:00 (volunteer). Tests
+    // share the same .tmp/e2e DB session in CI, so distinct time slots
+    // prevent cross-test conflict-detection false positives.
     await createScheduleRecord(request, session.token, {
       title: `E2E 衝突基準 ${stamp}`,
       schedule_type: 'meeting',
-      start_time: `${today} 14:00:00`,
-      end_time: `${today} 15:00:00`,
+      start_time: `${today} 18:30:00`,
+      end_time: `${today} 19:30:00`,
       location: '衝突會議室',
     })
 
@@ -325,8 +329,9 @@ test.describe('schedule overlap warning', () => {
         body: JSON.stringify({
           title: `E2E 衝突 UI ${stamp}`,
           schedule_type: 'meeting',
-          start_time: `${today} 14:30:00`,
-          end_time: `${today} 15:30:00`,
+          // Overlaps the 18:30–19:30 anchor by 30 min from 19:00.
+          start_time: `${today} 19:00:00`,
+          end_time: `${today} 20:00:00`,
           status: 'scheduled',
         }),
       })
