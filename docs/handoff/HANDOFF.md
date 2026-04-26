@@ -1,6 +1,6 @@
 # 選民服務系統 — 完整交接文件
 
-**版本**：v1.0.13（2026-04-25）
+**版本**：v1.0.17（2026-04-25）
 **授權**：私有專案
 **Repo**：https://github.com/Sterio068/voter-service-system
 
@@ -19,11 +19,14 @@
 
 **不是 web 服務**：沒有多使用者共享伺服器，每台電腦獨立安裝、獨立資料庫。但透過 LAN IP 可讓同辦公室多人連同一後端。
 
-**目前交付狀態補充**：
-- restore-on-startup 已有 rollback 保護：pending restore 套用失敗時，系統會回復原主 DB，並保留 `*.restore.failed-*` 供排查。
-- `POST /api/voters/:id/merge` 已補 `voter_activity_history`、`voter_engagement` 與 duplicate membership 處理，實務上較不容易在髒資料下 rollback。
-- Electron main process 已補本機 Fastify watchdog，連續 health check 失敗時會嘗試自動重啟；server scheduler 已做 idempotent 保護。
-- 2026-04-25 已完成最新版正式包本機 smoke：`/Applications/選民服務系統.app` 可正常啟動與登入，`/api/health` 回 `ok`，匿名 `POST /api/client-errors` 會被拒絕、登入後可成功上報，且 packaged runtime 的 `mode=full` 匿名化會實際清掉延伸欄位。
+**v1.0.14-17 最新交付補充**：
+- ✅ v1.0.14：備份 HMAC 簽章驗證、Excel safeCell、62 個 integration tests、SLA helper、MetricCard、auto-update 提示。
+- ✅ v1.0.15：in-app 一鍵自動更新（Windows 完整／Mac 輔助）。
+- ✅ v1.0.16：silent failure 修正、error UI、lineWebhook bug fix、voter_tags migration、備份 .meta sidecar 下載、資料品質 CSV 匯出、新增 4 個 API tests + 4 個 e2e tests、antd-vendor chunk split、Mac artifactName 修正。
+- ✅ v1.0.17：92 個 currentUser as-any 移除、16 個新 Zod schema、25 個 safeParse、17 個新 DB 索引、2 個 N+1 修正、8 個死檔案移除、Dashboard Skeleton、ActionQueue 空狀態、5 個列表頁 aria-labels、5 個 e2e 邊界案例。
+- ✅ restore-on-startup rollback 保護、voter merge 完整轉移、Electron Fastify watchdog、idempotent scheduler。
+- ✅ 測試：85 個後端測試、31 條 e2e 測試、正式版隔離驗收、本機 packaged smoke。
+- ✅ 2026-04-25 最新版正式包驗證：登入、選民列表、client-errors 權限、mode=full 匿名化。
 
 ---
 
@@ -678,14 +681,20 @@ const FORM_INITIAL = { channel: '電話' }
 
 ---
 
-## 13. 測試策略（剛建立基線）
+## 13. 測試策略（v1.0.14-17）
 
-**現狀**：已有 `npm test`，使用 Node 內建 test runner + `tsx` 執行 TypeScript 測試；目前共 62 個 Node tests，覆蓋 vendor 授權密碼、secret 加密工具、安全標頭、附件檔案安全、備份 metadata、PII 遮罩工具，以及 Fastify + 暫存 SQLite 的 API integration tests（auth、fresh install 預設設定、first-run guard、client-errors auth、permissions、voters、voter anonymize/full mode、petitions、petition import/export、attachments、schedules、consultations、backup/restore、voter import/export、data retention、secrets round-trip、ceremonies/expenses/template RBAC），並新增 `restoreOnStartup` 測試驗證待還原資料庫會在啟動前真正套用到主 DB。CI 已新增 `typecheck client/server/electron/test`、`npm test`、`npm run build`、`npm audit --omit=dev`。Playwright E2E smoke/navigation/role-access 已可跑 `npm run test:e2e`，目前覆蓋登入、Dashboard 今日工作台 deep-link、主要模組 compact page shell 與共用篩選工具列、全主要路由無 ErrorBoundary 崩潰、設定頁資料保留控制、UI 新增選民、UI 新增陳情、備份建立、完整匯出理由 Modal 與下載，以及 assistant / supervisor / volunteer 的受限路由、列印頁、導覽、快捷鍵、Dashboard 入口、禮儀/收支 read-only 管控與頁內 CRUD 按鈕巡檢，smoke/navigation/role-access 共 18 條已可通過。UI primitives 已包含 `PageScaffold`、`WorkspaceToolbar`、`EmptyState`、`FormFooter`、`FormSection`、`SelectionActionBar`、`MetricCard`、`ActionQueue`，前端主路由、側邊欄與快捷鍵也已統一走共用 permission map；另外已新增 `shared/permissions.ts` 作為前後端共用 RBAC 基線，並把 reports / audit logs / categories / ceremonies / expenses 收斂成 read-only / manage 分層頁面。2026-04-25 另補上 `VendorPage`、`ProposalsPage` 長表單 Modal 的 scrollable body + 可見 footer，修正正式版 1280×768 視窗下 primary action 掉出畫面的 UX 缺陷；同日也補上 fresh install `settings` baseline seed、`backup_path` 跟隨 `BACKUPS_PATH`、正式版隔離 restore-on-restart 驗收與 12k/1.5k/300 packaged load smoke，並進一步收斂首次執行精靈不可再略過管理員密碼修改、`/api/client-errors` 僅允許登入後 session 上報，以及單筆匿名化與資料保留匿名化規則統一。最新版安裝包已完成 source 與 packaged app 雙驗證，且本機正式包 smoke 已再次確認登入、選民列表、`client-errors` 權限與 `full` 匿名化行為皆正常。
+**現狀**：
+- **後端**：85 個 Node tests + Node test runner，覆蓋 vendor auth、secrets encrypt/decrypt、safe headers、file security、backup metadata、PII masking，以及完整 API integration tests（auth、permissions、voters/merge、petitions、attachments、schedules、consultations、backup、import/export、data retention、secrets round-trip）。
+- **前端**：31 條 Playwright E2E 測試（smoke/navigation/role-access），覆蓋登入、Dashboard、主要路由、角色權限矩陣、列印、備份、資料保留、新增流程。
+- **CI**：typecheck client/server/electron/test + `npm test` + build + production audit。
+- **UI primitives**：`PageScaffold`、`WorkspaceToolbar`、`EmptyState`、`FormFooter`、`FormSection`、`SelectionActionBar`、`MetricCard`、`ActionQueue`。
+- **驗收**：fresh install baseline、pending restore、正式版隔離驗收、12k/1.5k/300 packaged smoke、本機正式包驗證。
 
 **建議下一步**：
-- 後端：沿用 `tests/helpers/apiTestServer.ts` 的暫存 SQLite harness，繼續補 petition export/import、schedule conflict、consultation capacity、secrets round-trip 等 integration tests
-- 前端：重要頁面用 Playwright E2E，下一批優先補 Dashboard 工作佇列項目、資料品質掃描、選民合併、Google Calendar 失敗不阻擋，並依 `FULL_SYSTEM_TEST_PLAN.md` 把人工巡檢缺陷轉成回歸測試
-- 擴充既有 `npm test`，優先補 Google/LINE/AI 設定路由 secrets round-trip、團體匯入 round-trip、活動/問卷/通知模組稽核完整性
+- Google/LINE/AI route-level secrets round-trip tests
+- Dashboard 工作佇列 e2e、資料品質掃描、選民合併
+- 活動/問卷/通知模組 integration tests
+- 人工巡檢缺陷轉 regression tests
 
 ---
 
@@ -739,14 +748,15 @@ SELECT * FROM settings;
 ## 16. 緊急聯絡 / 下一步
 
 **repo owner**：https://github.com/Sterio068  
-**最後已發佈 tag**：`v1.0.12`（2026-04-25）
-**最後本機正式包驗證**：`v1.0.13`，`/Applications/選民服務系統.app`（2026-04-25 15:00 安裝），來源 `release/選民服務系統-1.0.13-arm64.dmg`
+**最後已發佈 tag**：`v1.0.17`（2026-04-25）
+**最後本機正式包驗證**：`v1.0.17`，`/Applications/選民服務系統.app` 登入 / 選民列表 / client-errors 權限 / full 匿名化皆驗證通過
 
 **建議下個 AI / 開發者優先做**：
-1. 補 Google Calendar、LINE、AI 設定路由的 secrets 儲存/遮罩/讀取整合測試
-2. 擴充 E2E smoke：資料品質掃描、選民合併、權限矩陣與 Google Calendar 失敗不阻擋
-3. 補活動、問卷、通知、Call Bank 等頁面的自動化驗證與業務流程測試
-4. 補團體匯入完整 round-trip 測試，確認 `@e965/xlsx` 相容既有範本
+1. Google Calendar / LINE / AI route-level secrets round-trip tests
+2. 資料品質掃描 e2e、選民合併 e2e、Dashboard 工作佇列 e2e
+3. 活動、問卷、通知模組 integration tests
+4. 備份 ZIP 下載與 metadata 匯入 UX
+5. 將人工測試矩陣缺陷轉成 regression tests
 
 ---
 

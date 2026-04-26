@@ -72,6 +72,10 @@ function setupWinUpdater(): void {
   updater.autoInstallOnAppQuit = false
   // No code-signing cert; skip signature verification on Windows.
   // (Mac would still error here, but we never call updater on Mac.)
+  // SECURITY NOTE: verifyUpdateCodeSignature is disabled because this build has
+  // no code-signing certificate. The download URL comes from the GitHub Releases
+  // API over HTTPS, which provides transport-layer authenticity. A proper
+  // certificate should be added in a future release to enable binary signing.
   ;(updater as any).disableWebInstaller = true
   ;(updater as any).verifyUpdateCodeSignature = false
 

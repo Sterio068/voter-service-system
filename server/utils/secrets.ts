@@ -24,6 +24,20 @@ export function isEncryptedSecret(value: unknown): value is string {
 
 export function getSecretEncryptionKey(): Buffer {
   const explicit = process.env.VOTER_SERVICE_SETTINGS_KEY || process.env.SETTINGS_ENCRYPTION_KEY
+
+  // Production must supply an explicit key. Hostname + username are not
+  // secret — on a VM clone or predictable host name, an attacker with DB
+  // read access could reconstruct the key and decrypt all stored
+  // secrets. The fallback only stays available in development / test
+  // (where reproducibility matters and the threat model is local-only).
+  if (!explicit && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'VOTER_SERVICE_SETTINGS_KEY (or legacy SETTINGS_ENCRYPTION_KEY) must be set in production. ' +
+      'Generate one with `node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"` ' +
+      'and persist it in your service configuration.'
+    )
+  }
+
   const material = explicit || [
     'voter-service-system',
     os.hostname(),

@@ -788,8 +788,10 @@ export async function runMigrations() {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_voters_id_number ON voters(id_number) WHERE id_number IS NOT NULL') } catch {}
   // voters: referrer_id 用於 D-14 介紹人迴圈檢查與 key-influencer 報表 JOIN
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_voters_referrer ON voters(referrer_id) WHERE referrer_id IS NOT NULL') } catch {}
-  // users: username 唯一已存在但補上明確索引以加速登入查詢計畫
-  try { db.exec('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)') } catch {}
+  // users: username 已是 UNIQUE 欄位（CREATE TABLE 時 SQLite 自動建立 unique
+  // index），登入查詢 SELECT * FROM users WHERE username=? 直接走那個索引；
+  // 額外建一個 non-unique idx_users_username 只會在每次寫入多維護一棵 b-tree
+  // 卻不會被 query planner 採用，所以省略。
   // tasks: related_voter_id 在合併與選民詳情頁被頻繁 JOIN/UPDATE
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_related_voter ON tasks(related_voter_id)') } catch {}
   // tasks: due_date + status 用於 /api/tasks/today 掃描

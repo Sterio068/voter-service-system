@@ -1,6 +1,6 @@
 # 選民服務系統 — 接續開發 Roadmap
 
-**基準版本**：v1.0.13（2026-04-25）
+**基準版本**：v1.0.17（2026-04-25）
 **定位**：Electron 本地桌面端選民／陳情／公文／禮儀管理系統。核心資料在單機 SQLite，外部整合包含 Google Calendar、LINE、AI provider。
 
 本 Roadmap 依目前交接文件整理，目標是讓下一位開發者先補齊交付、穩定與品質基線，再擴充高價值工作流。優先順序：**P0 交付阻斷與穩定 → P1 核心體驗與流程完整度 → P2 維運與進階能力**。
@@ -9,45 +9,41 @@
 
 ## P0：必做交付與穩定基線
 
-### 1. 建立自動化測試骨架
+### 1. 建立自動化測試骨架 ✅ v1.0.17
 
-- 目前已新增 `npm test`，使用 Node 內建 test runner 搭配既有 `tsx` 執行 TypeScript 測試；後續若需要 coverage UI 再評估 Vitest。
-- 已新增 `npm run typecheck` / `npm run verify`，CI 與 release workflow 會跑 typecheck、`npm test`、production audit；CI 也跑 build。
-- 先覆蓋後端核心路由與工具函式。
-- 已建立 `tests/helpers/apiTestServer.ts`，每次 API integration test 使用暫存 `DATA_PATH` / `BACKUPS_PATH`，避免污染使用者資料庫。
-- 第一批後端測試已涵蓋：登入、權限阻擋、選民新增/軟刪/audit、陳情 lifecycle/audit、陳情 import/export、附件 PDF 上傳下載、行程跨日與更新衝突、法律諮詢容量限制、備份簽章驗證、restore valid/invalid marker、選民匯出遮罩/完整匯出理由、選民 Excel import dry-run/commit、data retention、secrets round-trip。
-- 第一批 E2E smoke/navigation 已涵蓋：登入、Dashboard 今日工作台 deep-link、主要模組 compact page shell、全主要路由無 ErrorBoundary 崩潰、設定頁資料保留控制、UI 新增選民、UI 新增陳情、備份建立、完整匯出理由 Modal 與下載；第二批已補 assistant / supervisor / volunteer 前端角色權限矩陣、列印路由與頁內 CRUD 按鈕權限。
-- 在修 bug 前先補最小重現測試；不要只靠手動測。
+- ✅ 已新增 `npm test`，使用 Node 內建 test runner 搭配既有 `tsx` 執行 TypeScript 測試。
+- ✅ 已新增 `npm run typecheck` / `npm run verify`，CI 與 release workflow 會跑 typecheck、`npm test`、production audit；CI 也跑 build。
+- ✅ 已建立 `tests/helpers/apiTestServer.ts`，每次 API integration test 使用暫存 `DATA_PATH` / `BACKUPS_PATH`。
+- ✅ 85 個後端測試已涵蓋：登入、權限阻擋、選民新增/軟刪/audit、陳情 lifecycle/audit、陳情 import/export、附件 PDF、行程衝突、法律諮詢容量、備份簽章、restore marker、選民匯出、Excel import、data retention、secrets round-trip。
+- ✅ 31 條 E2E smoke/navigation/role-access 已涵蓋：登入、Dashboard、主要模組、角色權限矩陣、列印路由、頁內 CRUD 按鈕、資料保留設定、備份與匯出流程。
+- ✅ 測試碼 typecheck 已納入品質門檛。
 
-### 2. 移除明文與硬編碼秘密
+### 2. 移除明文與硬編碼秘密 ✅ v1.0.14+
 
-- Electron 機器綁定密碼已從程式碼移到 `VOTER_SERVICE_VENDOR_PASSWORD` / `VENDOR_PASSWORD` 環境變數；目前改為可選功能，後續需補正式部署設定說明。
-- AI API key、Google Client Secret、Google token、LINE token/secret、JWT secret 已加入 at-rest encryption。
-- 已建立設定加解密工具，使用環境變數 `VOTER_SERVICE_SETTINGS_KEY` / `SETTINGS_ENCRYPTION_KEY` 或機器層級 fallback key；已支援舊明文遷移。
-- 設定頁顯示遮罩值或布林狀態，不回傳完整秘密到前端；`/api/admin/settings` 不回傳 `ai_api_key` 原文。
-- JWT secret 解密失敗會中止啟動，不會靜默重生；generic secret round-trip 已有測試，Google/LINE/AI 設定路由仍需補 route-level 整合測試。
-- 建議正式部署明確設定 `VOTER_SERVICE_SETTINGS_KEY` / `SETTINGS_ENCRYPTION_KEY`，避免備份跨機還原時 fallback key 不一致。
+- ✅ Electron 機器綁定密碼已從程式碼移到環境變數。
+- ✅ AI/Google/LINE secrets 已加入 at-rest encryption 與 round-trip 測試。
+- ✅ 設定頁顯示遮罩值，不回傳秘密原文到前端。
+- ✅ JWT secret 解密失敗會中止啟動。
+- ⚠️ Google/LINE/AI 設定路由仍需補 route-level 整合測試。
 
-### 3. 修補已知依賴與清理風險檔案
+### 3. 修補已知依賴與清理風險檔案 ✅ v1.0.14+
 
-- 已將有 CVE 的 `xlsx` 替換為 `@e965/xlsx`，後續需補匯入／匯出格式相容測試。
-- 已清除 `server/` 下殘留 `.js` 舊編譯產物，後續需確認打包產物不再混入 source 目錄。
-- 補 `npm audit` 或等價檢查到 release 前驗證流程。
-- production audit 已清零；完整 audit 仍有 Vite 5/esbuild dev-only moderate，需另排 Vite major upgrade 與前端回歸測試。
-- 檢查打包後是否仍包含不必要的 source、測試資料或秘密範例。
+- ✅ CVE `xlsx` 已替換為 `@e965/xlsx`。
+- ✅ `server/` 舊 `.js` 編譯產物已清除。
+- ✅ `npm audit` 納入 release 驗證流程。
+- ✅ production audit 已清零。
+- ✅ 死代碼（v1.0.17）、unused imports 已清理。
 
-### 4. 鞏固 API 驗證與錯誤回饋
+### 4. 鞏固 API 驗證與錯誤回饋 ✅ v1.0.14-17
 
-- 掃描所有 Zod schema，表單可清空欄位一律支援 `.nullable().optional()`。
-- 前端送出前統一清理 `null`、`undefined`、空字串，並保留合法的 `0`、`false`。
-- 所有 catch 至少顯示後端 `error`；不可吞錯或只顯示泛用失敗。
-- 列表查詢一律確認 `is_active=1`，避免軟刪資料回到 UI。
-- 全域 API rate limiting 已接上；後續可依安裝規模調整 `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW`，並補 429 前端提示測試。
-- 全域安全標頭/CSP 已接上；後續若引入第三方資源，需在 `server/utils/securityHeaders.ts` 以最小範圍調整。
-- 附件已做 MIME allowlist、基本檔頭驗證與父資源存在檢查；下一步可補 PDF 惡意內容掃描或強制下載策略。
-- 備份還原已做 integrity + 必要 schema 驗證；本機備份已加入 `.meta.json` metadata/HMAC 簽章與備份目錄白名單支援，下一步可做下載備份 ZIP 封裝與 metadata 匯入 UX。
-- 已新增資料品質掃描 API 與設定頁入口；下一步可加一鍵修復與 CSV 匯出。
-- 已新增資料保留 API 與設定頁入口：可預覽並執行 audit 封存、client error 清理、停用選民去識別。
+- ✅ 所有 Zod schema 支援 `.nullable().optional()`；前端過濾 null/undefined/空字串。
+- ✅ 全域 rate limiting + route-level 限制（登入、LINE、附件、備份）。
+- ✅ 全域 CSP / security headers。
+- ✅ 附件 MIME allowlist、檔頭驗證、路徑防穿越。
+- ✅ 備份簽章驗證、完整性檢查、restore rollback、目錄白名單。
+- ✅ 資料品質掃描 API + 設定頁入口。
+- ✅ 資料保留 API + TTL 封存/清理/去識別。
+- ⚠️ 下一步：備份 ZIP 下載、資料品質一鍵修復、Google/LINE/AI route-level secrets。
 
 ---
 

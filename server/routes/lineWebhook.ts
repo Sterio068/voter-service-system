@@ -48,7 +48,10 @@ const LinkVoterSchema = z.object({
 function verifyLineSignature(body: string, signature: string | undefined, channelSecret: string): boolean {
   if (!signature || !channelSecret) return false
   const hash = crypto.createHmac('sha256', channelSecret).update(body).digest('base64')
-  return hash === signature
+  const expected = Buffer.from(hash)
+  const actual = Buffer.from(signature)
+  if (expected.length !== actual.length) return false
+  return crypto.timingSafeEqual(expected, actual)
 }
 
 export default async function lineWebhookRoutes(fastify: FastifyInstance) {
@@ -70,8 +73,11 @@ export default async function lineWebhookRoutes(fastify: FastifyInstance) {
     // Get channel secret from settings
     const channelSecret = getSetting('line_channel_secret') || ''
 
-    // Get raw body for signature verification
-    const rawBody = JSON.stringify(request.body)
+    // Use the raw request body bytes for signature verification, not re-serialised JSON,
+    // to avoid mis-verification caused by key ordering or whitespace differences.
+    const rawBody = (request as any).rawBody
+      ? (request as any).rawBody.toString('utf8')
+      : JSON.stringify(request.body)
     const signature = request.headers['x-line-signature'] as string | undefined
 
     // Always require a valid signature — if channel secret is not configured, reject all requests
