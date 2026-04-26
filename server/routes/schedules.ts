@@ -60,7 +60,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/schedules', { preHandler: [requirePermission('schedules', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const parsedBody = CreateScheduleSchema.safeParse(request.body)
     if (!parsedBody.success) {
       return reply.code(400).send({ success: false, error: parsedBody.error.issues[0].message })
@@ -92,7 +92,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance) {
   })
 
   fastify.put('/api/schedules/:id', { preHandler: [requirePermission('schedules', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const body = request.body as any
     const s = db.prepare('SELECT * FROM schedules WHERE id=?').get(Number(id)) as any
@@ -133,7 +133,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance) {
   })
 
   fastify.delete('/api/schedules/:id', { preHandler: [requirePermission('schedules', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const s = db.prepare('SELECT * FROM schedules WHERE id=?').get(Number(id)) as any
     if (!s) return reply.code(404).send({ success: false, error: '行程不存在' })

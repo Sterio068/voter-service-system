@@ -104,7 +104,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
 
   // ===== 選民匯出 =====
   fastify.get('/api/voters/export', { preHandler: [requirePermission('voters', 'export')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { search, city, district, village, tag, mask, include_sensitive, reason } = request.query as any
     const fullSensitiveExport = include_sensitive === '1' || include_sensitive === 'true' || mask === '0' || mask === 'false'
     const exportReason = typeof reason === 'string' ? reason.trim() : ''
@@ -123,8 +123,8 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     if (tag) { conds.push('v.id IN (SELECT voter_id FROM voter_tags WHERE tag = ?)'); params.push(tag) }
     const where = `WHERE ${conds.join(' AND ')}`
 
-    // G-2: Readonly role cannot export
-    if (cu.role === 'readonly') {
+    // G-2: Readonly role cannot export (允許未來新增 readonly 角色，目前 UserRole 尚未含此值)
+    if ((cu.role as string) === 'readonly') {
       return reply.code(403).send({ success: false, error: '唯讀帳號無法匯出資料' })
     }
 
@@ -197,7 +197,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
 
   // ===== 選民批次匯入 =====
   fastify.post('/api/voters/import', { preHandler: [requirePermission('voters', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const data = await request.file()
     if (!data) return reply.code(400).send({ success: false, error: '請上傳 Excel 檔案' })
 
@@ -461,7 +461,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
 
   // ===== 陳情匯出 =====
   fastify.get('/api/petitions/export', { preHandler: [requirePermission('petitions', 'export')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { status, category, urgency, start_date, end_date, search } = request.query as any
     const conds: string[] = []
     const params: any[] = []
@@ -554,7 +554,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
 
   // ===== 陳情批量匯入 =====
   fastify.post('/api/petitions/import', { preHandler: [requirePermission('petitions', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const data = await request.file()
     if (!data) return reply.code(400).send({ success: false, error: '請上傳 Excel 檔案' })
 
@@ -653,7 +653,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
 
   // ===== 團體批量匯入 =====
   fastify.post('/api/groups/import', { preHandler: [requirePermission('groups', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const data = await request.file()
     if (!data) return reply.code(400).send({ success: false, error: '請上傳 Excel 檔案' })
 

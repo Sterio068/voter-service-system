@@ -131,7 +131,7 @@ export default async function googleCalendarRoutes(fastify: FastifyInstance) {
 
   // 儲存 OAuth 用戶端憑證
   fastify.post('/api/integrations/gcal/credentials', { preHandler: [requirePermission('settings', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { client_id, client_secret } = request.body as any
     const trimmedClientId = String(client_id || '').trim()
     const trimmedClientSecret = String(client_secret || '').trim()
@@ -231,7 +231,7 @@ export default async function googleCalendarRoutes(fastify: FastifyInstance) {
 
   // 刪除帳號
   fastify.delete('/api/integrations/gcal/accounts/:id', { preHandler: [requirePermission('settings', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const acc = db.prepare('SELECT email, label FROM google_calendar_accounts WHERE id=?').get(Number(id)) as any
     db.prepare('DELETE FROM google_calendar_accounts WHERE id=?').run(Number(id))

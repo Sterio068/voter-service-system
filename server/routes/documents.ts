@@ -55,7 +55,7 @@ export default async function documentRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/documents', { preHandler: [requirePermission('documents', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const body = request.body as any
     if (!body.subject || !String(body.subject).trim()) {
       return reply.code(400).send({ success: false, error: '主旨為必填欄位' })
@@ -81,7 +81,7 @@ export default async function documentRoutes(fastify: FastifyInstance) {
   })
 
   fastify.put('/api/documents/:id', { preHandler: [requirePermission('documents', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const body = request.body as any
     const doc = db.prepare('SELECT * FROM documents WHERE id=?').get(Number(id)) as any
@@ -101,7 +101,7 @@ export default async function documentRoutes(fastify: FastifyInstance) {
   })
 
   fastify.delete('/api/documents/:id', { preHandler: [requirePermission('documents', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const doc = db.prepare('SELECT * FROM documents WHERE id=?').get(Number(id)) as any
     if (!doc) return reply.code(404).send({ success: false, error: '公文不存在' })

@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
@@ -30,11 +31,47 @@ const ALLOWED_UPDATE_FIELDS = new Set([
   'track_note','source_url','related_petition_ids','updated_at'
 ])
 
+const CreateProposalSchema = z.object({
+  session: z.string().max(100).nullable().optional(),
+  meeting: z.string().max(200).nullable().optional(),
+  proposal_number: z.string().max(100).nullable().optional(),
+  proposal_date: z.string().max(20).nullable().optional(),
+  title: z.string().min(1, '提案主旨為必填').max(500, '提案主旨過長'),
+  category: z.string().max(100).nullable().optional(),
+  proposal_type: z.string().max(50).nullable().optional(),
+  proposer: z.string().max(200).nullable().optional(),
+  co_signers: z.string().max(2000).nullable().optional(),
+  content: z.string().max(10000).nullable().optional(),
+  status: z.string().max(30).nullable().optional(),
+  result: z.string().max(2000).nullable().optional(),
+  track_note: z.string().max(2000).nullable().optional(),
+  source_url: z.string().max(1000).nullable().optional(),
+  related_petition_ids: z.array(z.unknown()).optional(),
+})
+
+const UpdateProposalSchema = z.object({
+  session: z.string().max(100).nullable().optional(),
+  meeting: z.string().max(200).nullable().optional(),
+  proposal_number: z.string().max(100).nullable().optional(),
+  proposal_date: z.string().max(20).nullable().optional(),
+  title: z.string().min(1, '提案主旨不可為空').max(500, '提案主旨過長').optional(),
+  category: z.string().max(100).nullable().optional(),
+  proposal_type: z.string().max(50).nullable().optional(),
+  proposer: z.string().max(200).nullable().optional(),
+  co_signers: z.string().max(2000).nullable().optional(),
+  content: z.string().max(10000).nullable().optional(),
+  status: z.string().max(30).nullable().optional(),
+  result: z.string().max(2000).nullable().optional(),
+  track_note: z.string().max(2000).nullable().optional(),
+  source_url: z.string().max(1000).nullable().optional(),
+  related_petition_ids: z.array(z.unknown()).optional(),
+})
+
 export default async function proposalRoutes(fastify: FastifyInstance) {
 
   // GET /api/proposals/export
   fastify.get('/api/proposals/export', { preHandler: [requirePermission('proposals', 'export')] }, async (req, reply) => {
-    const cu = (req as any).currentUser
+    const cu = req.currentUser!
     const q = req.query as any
 
     const conds: string[] = ['p.is_active=1']
@@ -159,9 +196,13 @@ export default async function proposalRoutes(fastify: FastifyInstance) {
 
   // POST /api/proposals
   fastify.post('/api/proposals', { preHandler: [requirePermission('proposals', 'create')] }, async (req, reply) => {
-    const cu = (req as any).currentUser
+    const cu = req.currentUser!
+    const parsed = CreateProposalSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = req.body as any
-    if (!body.title || !String(body.title).trim()) {
+    if (!String(body.title).trim()) {
       return reply.code(400).send({ success: false, error: '提案主旨為必填' })
     }
     if (body.status && !VALID_STATUSES.includes(body.status)) {
@@ -199,8 +240,12 @@ export default async function proposalRoutes(fastify: FastifyInstance) {
 
   // PUT /api/proposals/:id
   fastify.put('/api/proposals/:id', { preHandler: [requirePermission('proposals', 'edit')] }, async (req, reply) => {
-    const cu = (req as any).currentUser
+    const cu = req.currentUser!
     const { id } = req.params as any
+    const parsed = UpdateProposalSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = req.body as any
     const existing = db.prepare('SELECT * FROM proposals WHERE id=? AND is_active=1').get(Number(id)) as any
     if (!existing) return reply.code(404).send({ success: false, error: '提案不存在' })
@@ -240,7 +285,7 @@ export default async function proposalRoutes(fastify: FastifyInstance) {
 
   // DELETE /api/proposals/:id (soft delete)
   fastify.delete('/api/proposals/:id', { preHandler: [requirePermission('proposals', 'delete')] }, async (req, reply) => {
-    const cu = (req as any).currentUser
+    const cu = req.currentUser!
     const { id } = req.params as any
     const existing = db.prepare('SELECT * FROM proposals WHERE id=? AND is_active=1').get(Number(id)) as any
     if (!existing) return reply.code(404).send({ success: false, error: '提案不存在' })

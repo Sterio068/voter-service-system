@@ -68,19 +68,20 @@ export default async function authRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/auth/logout', { preHandler: [authenticate] }, async (request, reply) => {
-    const user = (request as any).currentUser
+    const user = request.currentUser!
     createAuditLog(request, user.id, { action: 'logout', module: '認證', target_name: user.username })
     return reply.send({ success: true, message: '已成功登出' })
   })
 
   fastify.get('/api/auth/me', { preHandler: [authenticate] }, async (request, reply) => {
-    const user = (request as any).currentUser
-    const { password: _, ...out } = user
+    const user = request.currentUser!
+    // 中介軟體查 SELECT * 會帶到 password 欄位，回傳前剝除
+    const { password: _, ...out } = user as typeof user & { password?: string }
     return reply.send({ success: true, data: out })
   })
 
   fastify.put('/api/auth/password', { preHandler: [authenticate] }, async (request, reply) => {
-    const user = (request as any).currentUser
+    const user = request.currentUser!
     const { old_password, new_password } = request.body as ChangePasswordBody
     if (!old_password || !new_password) return reply.code(400).send({ success: false, error: '請填寫完整資料' })
     if (new_password.length < 8) return reply.code(400).send({ success: false, error: '新密碼至少需要 8 個字元' })

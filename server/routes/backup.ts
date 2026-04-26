@@ -134,7 +134,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     preHandler: [requirePermission('system', 'edit')],
     config: { rateLimit: { max: 5, timeWindow: '1 hour' } },
   }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     // Force WAL checkpoint to ensure all data is in main DB
     try {
       db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
@@ -200,7 +200,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     preHandler: [requirePermission('system', 'edit')],
     config: { rateLimit: { max: 10, timeWindow: '1 hour' } },
   }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const fname = getBackupFileName()
     const destPath = resolveBackupPath(fname)
     if (!destPath) return reply.code(500).send({ success: false, error: '無法建立備份檔案' })
@@ -243,7 +243,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     preHandler: [requirePermission('system', 'edit')],
     config: { rateLimit: restoreRate },
   }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
 
     // 收集 multipart：可帶 backup (.db) + 可選 metadata (.meta.json) + 可選 force flag
     let backupBuf: Buffer | null = null
@@ -485,7 +485,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
 
   // ===== 刪除本機備份 =====
   fastify.delete('/api/admin/backup/:name', { preHandler: [requirePermission('system', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { name } = request.params as any
     // 防路徑穿越
     const safeName = path.basename(name)
@@ -520,7 +520,7 @@ export default async function backupRoutes(fastify: FastifyInstance) {
 
   // ===== 設定備份目錄 =====
   fastify.post('/api/admin/backup/path', { preHandler: [requirePermission('system', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { path: newPath } = request.body as any
     if (!newPath || typeof newPath !== 'string') {
       return reply.code(400).send({ success: false, error: '請提供備份目錄路徑' })

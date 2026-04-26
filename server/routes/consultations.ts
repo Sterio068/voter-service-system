@@ -73,7 +73,7 @@ export default async function consultationRoutes(fastify: FastifyInstance) {
 
   // POST /api/consultations
   fastify.post('/api/consultations', { preHandler: [requirePermission('schedules','create')] }, async (req, reply) => {
-    const cu = (req as any).currentUser
+    const cu = req.currentUser!
     const parsed = CreateConsultationSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
@@ -101,7 +101,7 @@ export default async function consultationRoutes(fastify: FastifyInstance) {
 
   // PUT /api/consultations/:id
   fastify.put('/api/consultations/:id', { preHandler: [requirePermission('schedules','edit')] }, async (req, reply) => {
-    const cu = (req as any).currentUser
+    const cu = req.currentUser!
     const { id } = req.params as any
     const parsed = UpdateConsultationSchema.safeParse(req.body)
     if (!parsed.success) {

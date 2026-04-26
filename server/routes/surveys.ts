@@ -1,7 +1,32 @@
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+
+const CreateSurveySchema = z.object({
+  title: z.string().min(1, '問卷標題為必填').max(200, '問卷標題過長'),
+  description: z.string().max(2000).nullable().optional(),
+})
+
+const UpdateSurveySchema = z.object({
+  title: z.string().min(1, '問卷標題不可為空').max(200, '問卷標題過長').optional(),
+  description: z.string().max(2000).nullable().optional(),
+  status: z.string().max(30).optional(),
+})
+
+const CreateQuestionSchema = z.object({
+  question: z.string().min(1, '問題內容為必填').max(2000, '問題內容過長'),
+  question_type: z.string().max(30).nullable().optional(),
+  options: z.unknown().nullable().optional(),
+  sort_order: z.number().int().nullable().optional(),
+})
+
+const CreateResponseSchema = z.object({
+  voter_id: z.number().int().positive().nullable().optional(),
+  respondent_name: z.string().max(100).nullable().optional(),
+  answers: z.unknown(),
+})
 
 function generatePetitionCaseNumber(): string {
   const year = new Date().getFullYear()
@@ -49,9 +74,13 @@ export default async function surveyRoutes(fastify: FastifyInstance) {
 
   // POST /api/surveys
   fastify.post('/api/surveys', { preHandler: [requirePermission('surveys', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
+    const parsed = CreateSurveySchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
-    if (!body.title || !String(body.title).trim()) {
+    if (!String(body.title).trim()) {
       return reply.code(400).send({ success: false, error: '問卷標題為必填' })
     }
     const r = db.prepare('INSERT INTO surveys (title, description, created_by) VALUES (?, ?, ?)').run(
@@ -64,8 +93,12 @@ export default async function surveyRoutes(fastify: FastifyInstance) {
 
   // PUT /api/surveys/:id
   fastify.put('/api/surveys/:id', { preHandler: [requirePermission('surveys', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
+    const parsed = UpdateSurveySchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(Number(id)) as any
     if (!survey) return reply.code(404).send({ success: false, error: '問卷不存在' })
@@ -89,12 +122,16 @@ export default async function surveyRoutes(fastify: FastifyInstance) {
 
   // POST /api/surveys/:id/questions
   fastify.post('/api/surveys/:id/questions', { preHandler: [requirePermission('surveys', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
+    const parsed = CreateQuestionSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(Number(id)) as any
     if (!survey) return reply.code(404).send({ success: false, error: '問卷不存在' })
-    if (!body.question || !String(body.question).trim()) {
+    if (!String(body.question).trim()) {
       return reply.code(400).send({ success: false, error: '問題內容為必填' })
     }
     const r = db.prepare(
@@ -107,7 +144,7 @@ export default async function surveyRoutes(fastify: FastifyInstance) {
 
   // DELETE /api/surveys/:id/questions/:qid
   fastify.delete('/api/surveys/:id/questions/:qid', { preHandler: [requirePermission('surveys', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id, qid } = request.params as any
     const question = db.prepare('SELECT * FROM survey_questions WHERE id = ? AND survey_id = ?').get(Number(qid), Number(id)) as any
     if (!question) return reply.code(404).send({ success: false, error: '問題不存在' })
@@ -118,8 +155,12 @@ export default async function surveyRoutes(fastify: FastifyInstance) {
 
   // POST /api/surveys/:id/responses
   fastify.post('/api/surveys/:id/responses', { preHandler: [requirePermission('surveys', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
+    const parsed = CreateResponseSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     const survey = db.prepare('SELECT * FROM surveys WHERE id = ?').get(Number(id)) as any
     if (!survey) return reply.code(404).send({ success: false, error: '問卷不存在' })
@@ -153,7 +194,7 @@ export default async function surveyRoutes(fastify: FastifyInstance) {
 
   // W-8: Survey response → petition one-click
   fastify.post('/api/surveys/responses/:responseId/to-petition', { preHandler: [requirePermission('petitions', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { responseId } = request.params as any
     const response = db.prepare(`
       SELECT sr.*, s.title as survey_title, s.description as survey_description, s.category as survey_category
@@ -227,7 +268,7 @@ export default async function surveyRoutes(fastify: FastifyInstance) {
 
   // 刪除問卷
   fastify.delete('/api/surveys/:id', { preHandler: [requirePermission('surveys', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const survey = db.prepare('SELECT * FROM surveys WHERE id=?').get(Number(id)) as any
     if (!survey) return reply.code(404).send({ success: false, error: '問卷不存在' })

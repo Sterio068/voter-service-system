@@ -1,10 +1,24 @@
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 
 function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
 }
+
+const VendorSchema = z.object({
+  name: z.string().min(1, '廠商名稱為必填').max(100, '廠商名稱過長'),
+  category: z.string().max(50).nullable().optional(),
+  contact_person: z.string().max(100).nullable().optional(),
+  phone: z.string().max(30).nullable().optional(),
+  line_id: z.string().max(100).nullable().optional(),
+  address: z.string().max(200).nullable().optional(),
+  bank_account: z.string().max(100).nullable().optional(),
+  note: z.string().max(2000).nullable().optional(),
+  rating: z.union([z.number(), z.string()]).nullable().optional(),
+  is_active: z.union([z.boolean(), z.number()]).nullable().optional(),
+})
 
 export default async function vendorRoutes(fastify: FastifyInstance) {
   // GET /api/vendors
@@ -72,6 +86,10 @@ export default async function vendorRoutes(fastify: FastifyInstance) {
 
   // POST /api/vendors
   fastify.post('/api/vendors', { preHandler: [requirePermission('vendors', 'create')] }, async (request, reply) => {
+    const parsed = VendorSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     if (!body.name?.trim()) return reply.code(400).send({ success: false, error: '廠商名稱為必填' })
     const result = db.prepare(`
@@ -84,6 +102,10 @@ export default async function vendorRoutes(fastify: FastifyInstance) {
   // PUT /api/vendors/:id
   fastify.put('/api/vendors/:id', { preHandler: [requirePermission('vendors', 'edit')] }, async (request, reply) => {
     const { id } = request.params as any
+    const parsed = VendorSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     // HIGH-002: 先確認廠商存在再執行更新
     const existing = db.prepare('SELECT id FROM vendors WHERE id = ?').get(Number(id))

@@ -27,7 +27,7 @@ export default async function attachmentRoutes(fastify: FastifyInstance) {
     preHandler: [authenticate],
     config: { rateLimit: { max: 30, timeWindow: '10 minutes' } },
   }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { ref_type, ref_id } = request.query as any
     const refId = Number(ref_id)
 
@@ -78,7 +78,7 @@ export default async function attachmentRoutes(fastify: FastifyInstance) {
 
   // 列出附件
   fastify.get('/api/attachments', { preHandler: [authenticate] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { ref_type, ref_id } = request.query as any
     const refId = Number(ref_id)
     if (!ref_type || !Number.isSafeInteger(refId) || refId <= 0) return reply.code(400).send({ success: false, error: '缺少參數' })
@@ -121,7 +121,7 @@ export default async function attachmentRoutes(fastify: FastifyInstance) {
 
   // 下載 / 預覽附件（需認證）
   fastify.get('/api/attachments/:id/file', { preHandler: [authenticate] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const att = db.prepare('SELECT * FROM attachments WHERE id=?').get(Number(id)) as any
     if (!att) return reply.code(404).send({ success: false, error: '附件不存在' })
@@ -147,7 +147,7 @@ export default async function attachmentRoutes(fastify: FastifyInstance) {
 
   // 刪除附件
   fastify.delete('/api/attachments/:id', { preHandler: [authenticate] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const att = db.prepare('SELECT * FROM attachments WHERE id=?').get(Number(id)) as any
     if (!att) return reply.code(404).send({ success: false, error: '附件不存在' })

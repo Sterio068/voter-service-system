@@ -1,7 +1,24 @@
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+
+const CreateNotificationSchema = z.object({
+  title: z.string().min(1, '通知標題為必填').max(200, '通知標題過長'),
+  content: z.string().min(1, '通知內容為必填').max(2000, '通知內容過長'),
+  channel: z.string().max(30).nullable().optional(),
+  target_type: z.string().max(30).nullable().optional(),
+  target_filter: z.string().max(2000).nullable().optional(),
+})
+
+const UpdateNotificationSchema = z.object({
+  title: z.string().min(1, '通知標題不可為空').max(200, '通知標題過長').optional(),
+  content: z.string().min(1, '通知內容不可為空').max(2000, '通知內容過長').optional(),
+  channel: z.string().max(30).nullable().optional(),
+  target_type: z.string().max(30).nullable().optional(),
+  target_filter: z.string().max(2000).nullable().optional(),
+})
 
 export default async function notificationRoutes(fastify: FastifyInstance) {
   // GET /api/notifications
@@ -20,12 +37,16 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
 
   // POST /api/notifications (create draft)
   fastify.post('/api/notifications', { preHandler: [requirePermission('notifications', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
+    const parsed = CreateNotificationSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
-    if (!body.title || !String(body.title).trim()) {
+    if (!String(body.title).trim()) {
       return reply.code(400).send({ success: false, error: '通知標題為必填' })
     }
-    if (!body.content || !String(body.content).trim()) {
+    if (!String(body.content).trim()) {
       return reply.code(400).send({ success: false, error: '通知內容為必填' })
     }
     const fields = ['title', 'content', 'channel', 'target_type', 'target_filter']
@@ -43,8 +64,12 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
 
   // PUT /api/notifications/:id (edit draft)
   fastify.put('/api/notifications/:id', { preHandler: [requirePermission('notifications', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
+    const parsed = UpdateNotificationSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     const notification = db.prepare('SELECT * FROM notifications WHERE id=?').get(Number(id)) as any
     if (!notification) return reply.code(404).send({ success: false, error: '通知不存在' })
@@ -61,7 +86,7 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
 
   // POST /api/notifications/:id/send
   fastify.post('/api/notifications/:id/send', { preHandler: [requirePermission('notifications', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const notification = db.prepare('SELECT * FROM notifications WHERE id = ?').get(Number(id)) as any
     if (!notification) return reply.code(404).send({ success: false, error: '通知不存在' })
@@ -125,7 +150,7 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
 
   // DELETE /api/notifications/:id (only if draft)
   fastify.delete('/api/notifications/:id', { preHandler: [requirePermission('notifications', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const notification = db.prepare('SELECT * FROM notifications WHERE id = ?').get(Number(id)) as any
     if (!notification) return reply.code(404).send({ success: false, error: '通知不存在' })

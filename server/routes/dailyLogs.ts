@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
@@ -8,6 +9,14 @@ function validateDate(date: string): boolean {
   const d = new Date(date)
   return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === date
 }
+
+const DailyLogUpsertSchema = z.object({
+  highlights: z.string().max(2000).nullable().optional(),
+  new_cases_summary: z.string().max(2000).nullable().optional(),
+  completed_summary: z.string().max(2000).nullable().optional(),
+  pending_handover: z.string().max(2000).nullable().optional(),
+  director_note: z.string().max(2000).nullable().optional(),
+})
 
 export default async function dailyLogRoutes(fastify: FastifyInstance) {
   // GET /api/daily-logs — list recent 30
@@ -33,7 +42,7 @@ export default async function dailyLogRoutes(fastify: FastifyInstance) {
 
   // DELETE /api/daily-logs/:date
   fastify.delete('/api/daily-logs/:date', { preHandler: [requirePermission('admin','edit')] }, async (req, reply) => {
-    const cu = (req as any).currentUser
+    const cu = req.currentUser!
     const { date } = req.params as any
     if (!validateDate(date)) return reply.code(400).send({ success: false, error: '日期格式錯誤' })
     const log = db.prepare('SELECT id FROM daily_logs WHERE log_date=?').get(date)
@@ -45,9 +54,13 @@ export default async function dailyLogRoutes(fastify: FastifyInstance) {
 
   // PUT /api/daily-logs/:date — upsert
   fastify.put('/api/daily-logs/:date', { preHandler: [requirePermission('admin','edit')] }, async (req, reply) => {
-    const cu = (req as any).currentUser
+    const cu = req.currentUser!
     const { date } = req.params as any
     if (!validateDate(date)) return reply.code(400).send({ success: false, error: '日期格式錯誤或不合法，需為 YYYY-MM-DD' })
+    const parsed = DailyLogUpsertSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = req.body as any
     const existing = db.prepare('SELECT id FROM daily_logs WHERE log_date=?').get(date)
     const fields = ['highlights','new_cases_summary','completed_summary','pending_handover','director_note']

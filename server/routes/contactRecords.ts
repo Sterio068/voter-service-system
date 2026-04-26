@@ -1,12 +1,23 @@
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
 
+const CreateContactRecordSchema = z.object({
+  voter_id: z.number().int().positive().nullable().optional(),
+  contact_date: z.string().min(1, '聯絡日期為必填').max(20, '聯絡日期格式錯誤'),
+  contact_type: z.string().max(30).nullable().optional(),
+  content: z.string().min(1, '聯絡內容為必填').max(2000, '聯絡內容過長'),
+  result: z.string().max(2000).nullable().optional(),
+  result_type: z.string().max(50).nullable().optional(),
+  follow_up_date: z.string().max(20).nullable().optional(),
+})
+
 export default async function contactRecordRoutes(fastify: FastifyInstance) {
   // GET /api/contact-records?voter_id=X&page=1&pageSize=20
   fastify.get('/api/contact-records', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { voter_id, page = 1, pageSize = 20 } = request.query as any
     const isAdmin = cu.role === 'admin' || cu.role === 'supervisor'
     if (!voter_id && !isAdmin) {
@@ -29,7 +40,11 @@ export default async function contactRecordRoutes(fastify: FastifyInstance) {
 
   // POST /api/contact-records
   fastify.post('/api/contact-records', { preHandler: [requirePermission('voters', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
+    const parsed = CreateContactRecordSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     if (!body.contact_date) return reply.code(400).send({ success: false, error: '聯絡日期為必填' })
     if (!body.content || !String(body.content).trim()) return reply.code(400).send({ success: false, error: '聯絡內容為必填' })
@@ -46,7 +61,7 @@ export default async function contactRecordRoutes(fastify: FastifyInstance) {
 
   // DELETE /api/contact-records/:id
   fastify.delete('/api/contact-records/:id', { preHandler: [requirePermission('voters', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const row = db.prepare('SELECT * FROM contact_records WHERE id=?').get(Number(id)) as any
     if (!row) return reply.code(404).send({ success: false, error: '記錄不存在' })

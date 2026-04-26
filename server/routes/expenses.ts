@@ -1,6 +1,16 @@
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
+
+const BudgetSchema = z.object({
+  year: z.union([z.number(), z.string()]),
+  month: z.union([z.number(), z.string()]).nullable().optional(),
+  budget_type: z.string().max(30).nullable().optional(),
+  reference_id: z.union([z.number().int(), z.string()]).nullable().optional(),
+  amount: z.union([z.number(), z.string()]),
+  note: z.string().max(2000).nullable().optional(),
+})
 
 export default async function expenseRoutes(fastify: FastifyInstance) {
   // GET /api/expenses/summary  收支統計
@@ -78,6 +88,10 @@ export default async function expenseRoutes(fastify: FastifyInstance) {
 
   // POST /api/expenses/budgets
   fastify.post('/api/expenses/budgets', { preHandler: [requirePermission('expenses', 'edit')] }, async (request, reply) => {
+    const parsed = BudgetSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     if (!body.year || !body.amount) return reply.code(400).send({ success: false, error: '年度和金額為必填' })
     const bMonth = body.month ? Number(body.month) : null

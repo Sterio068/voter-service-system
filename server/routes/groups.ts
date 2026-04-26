@@ -1,7 +1,41 @@
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission, authenticate } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+
+const CreateGroupSchema = z.object({
+  name: z.string().min(1, '團體名稱為必填欄位').max(100, '團體名稱過長'),
+  category: z.string().max(50).nullable().optional(),
+  leader_id: z.number().int().positive().nullable().optional(),
+  contact_id: z.number().int().positive().nullable().optional(),
+  phone: z.string().max(30).nullable().optional(),
+  address: z.string().max(200).nullable().optional(),
+  member_count: z.number().int().nullable().optional(),
+  note: z.string().max(2000).nullable().optional(),
+})
+
+const UpdateGroupSchema = z.object({
+  name: z.string().max(100, '團體名稱過長').nullable().optional(),
+  category: z.string().max(50).nullable().optional(),
+  leader_id: z.number().int().positive().nullable().optional(),
+  contact_id: z.number().int().positive().nullable().optional(),
+  phone: z.string().max(30).nullable().optional(),
+  address: z.string().max(200).nullable().optional(),
+  member_count: z.number().int().nullable().optional(),
+  note: z.string().max(2000).nullable().optional(),
+  is_active: z.union([z.number(), z.boolean()]).nullable().optional(),
+})
+
+const AddMembersSchema = z.object({
+  voter_ids: z.array(z.number().int().positive()).min(1, '請選擇成員'),
+  role: z.string().max(50).nullable().optional(),
+})
+
+const UpdateMemberSchema = z.object({
+  role: z.string().max(50).nullable().optional(),
+  title: z.string().max(50).nullable().optional(),
+})
 
 export default async function groupRoutes(fastify: FastifyInstance) {
   fastify.get('/api/groups', { preHandler: [requirePermission('groups', 'view')] }, async (request, reply) => {
@@ -29,9 +63,13 @@ export default async function groupRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/groups', { preHandler: [requirePermission('groups', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
+    const parsed = CreateGroupSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
-    if (!body.name || !String(body.name).trim()) {
+    if (!String(body.name).trim()) {
       return reply.code(400).send({ success: false, error: '團體名稱為必填欄位' })
     }
     const fields = ['name','category','leader_id','contact_id','phone','address','member_count','note']
@@ -44,8 +82,12 @@ export default async function groupRoutes(fastify: FastifyInstance) {
   })
 
   fastify.put('/api/groups/:id', { preHandler: [requirePermission('groups', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
+    const parsed = UpdateGroupSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     const group = db.prepare('SELECT * FROM groups WHERE id=?').get(Number(id)) as any
     if (!group) return reply.code(404).send({ success: false, error: '團體不存在' })
@@ -65,7 +107,7 @@ export default async function groupRoutes(fastify: FastifyInstance) {
   })
 
   fastify.delete('/api/groups/:id', { preHandler: [requirePermission('groups', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const group = db.prepare('SELECT * FROM groups WHERE id=?').get(Number(id)) as any
     if (!group) return reply.code(404).send({ success: false, error: '團體不存在' })
@@ -75,8 +117,12 @@ export default async function groupRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/groups/:id/members', { preHandler: [requirePermission('groups', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
+    const parsed = AddMembersSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const { voter_ids, role } = request.body as any
     if (!voter_ids?.length) return reply.code(400).send({ success: false, error: '請選擇成員' })
     const ins = db.prepare('INSERT OR IGNORE INTO group_members (group_id,voter_id,role) VALUES (?,?,?)')
@@ -87,7 +133,7 @@ export default async function groupRoutes(fastify: FastifyInstance) {
   })
 
   fastify.delete('/api/groups/:id/members/:voter_id', { preHandler: [requirePermission('groups', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id, voter_id } = request.params as any
     db.prepare('DELETE FROM group_members WHERE group_id=? AND voter_id=?').run(Number(id), Number(voter_id))
     createAuditLog(request, cu.id, { action: 'delete', module: '團體管理', target_type: 'group_member', target_id: Number(id) })
@@ -97,6 +143,10 @@ export default async function groupRoutes(fastify: FastifyInstance) {
   // Update member role/title
   fastify.put('/api/groups/:id/members/:voter_id', { preHandler: [requirePermission('groups', 'edit')] }, async (request, reply) => {
     const { id, voter_id } = request.params as any
+    const parsed = UpdateMemberSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const { role, title } = request.body as any
     db.prepare('UPDATE group_members SET role=?, title=? WHERE group_id=? AND voter_id=?').run(role ?? null, title ?? null, Number(id), Number(voter_id))
     return reply.send({ success: true, message: '成員資料已更新' })

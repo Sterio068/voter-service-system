@@ -62,7 +62,7 @@ export default async function taskRoutes(fastify: FastifyInstance) {
 
   // POST /api/tasks
   fastify.post('/api/tasks', { preHandler: [requirePermission('tasks', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const body = request.body as any
     if (!body.title || !String(body.title).trim()) {
       return reply.code(400).send({ success: false, error: '任務標題為必填' })
@@ -83,7 +83,7 @@ export default async function taskRoutes(fastify: FastifyInstance) {
 
   // PUT /api/tasks/:id
   fastify.put('/api/tasks/:id', { preHandler: [requirePermission('tasks', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const body = request.body as any
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(Number(id)) as any
@@ -147,7 +147,7 @@ export default async function taskRoutes(fastify: FastifyInstance) {
 
   // DELETE /api/tasks/:id
   fastify.delete('/api/tasks/:id', { preHandler: [requirePermission('tasks', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(Number(id)) as any
     if (!task) return reply.code(404).send({ success: false, error: '任務不存在' })

@@ -349,7 +349,7 @@ export default async function voterRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/voters', { preHandler: [requirePermission('voters', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { tags, ...rawData } = request.body as CreateVoterBody & { tags?: string[] }
     const parsed = CreateVoterSchema.safeParse(rawData)
     if (!parsed.success) {
@@ -406,7 +406,7 @@ export default async function voterRoutes(fastify: FastifyInstance) {
   })
 
   fastify.put('/api/voters/:id', { preHandler: [requirePermission('voters', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const { tags, ...data } = request.body as any
     const voter = db.prepare('SELECT * FROM voters WHERE id = ?').get(Number(id)) as any
@@ -517,7 +517,7 @@ export default async function voterRoutes(fastify: FastifyInstance) {
   })
 
   fastify.delete('/api/voters/:id', { preHandler: [requirePermission('voters', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const voter = db.prepare('SELECT * FROM voters WHERE id = ?').get(Number(id)) as any
     if (!voter) return reply.code(404).send({ success: false, error: '選民不存在' })
@@ -558,7 +558,7 @@ export default async function voterRoutes(fastify: FastifyInstance) {
 
   // POST /api/voters/:id/merge — merge source voter into target
   fastify.post('/api/voters/:id/merge', { preHandler: [requirePermission('voters','delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const { merge_from_id } = request.body as any
     if (!merge_from_id) return reply.code(400).send({ success: false, error: 'merge_from_id 為必填' })
@@ -716,7 +716,7 @@ export default async function voterRoutes(fastify: FastifyInstance) {
 
   // G-4: DELETE /api/voters/:id/anonymize — PDPA anonymization
   fastify.delete('/api/voters/:id/anonymize', { preHandler: [requirePermission('voters', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const { mode = 'anonymize' } = request.query as any
     const voter = db.prepare('SELECT * FROM voters WHERE id=?').get(Number(id)) as any
@@ -766,7 +766,7 @@ export default async function voterRoutes(fastify: FastifyInstance) {
 
   // POST /api/voters/:id/contacts
   fastify.post('/api/voters/:id/contacts', { preHandler: [requirePermission('voters', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const body = request.body as any
     const voter = db.prepare('SELECT id,name FROM voters WHERE id = ?').get(Number(id)) as any
@@ -799,7 +799,7 @@ export default async function voterRoutes(fastify: FastifyInstance) {
 
   // POST /api/voters/:id/relations
   fastify.post('/api/voters/:id/relations', { preHandler: [requirePermission('voters', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const body = request.body as any
     if (!body.related_voter_id || !body.relation_type) {
@@ -818,7 +818,7 @@ export default async function voterRoutes(fastify: FastifyInstance) {
 
   // DELETE /api/voters/:id/relations/:rid
   fastify.delete('/api/voters/:id/relations/:rid', { preHandler: [requirePermission('voters', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id, rid } = request.params as any
     const rel = db.prepare('SELECT * FROM voter_relations WHERE id=? AND voter_id=?').get(Number(rid), Number(id)) as any
     if (!rel) return reply.code(404).send({ success: false, error: '關聯不存在' })
@@ -829,7 +829,7 @@ export default async function voterRoutes(fastify: FastifyInstance) {
 
   // PUT /api/voters/:id/engagement
   fastify.put('/api/voters/:id/engagement', { preHandler: [requirePermission('voters', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const body = request.body as any
     const voter = db.prepare('SELECT * FROM voters WHERE id = ?').get(Number(id)) as any

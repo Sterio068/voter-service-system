@@ -129,7 +129,7 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/petitions', { preHandler: [requirePermission('petitions', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const parsedBody = CreatePetitionSchema.safeParse(request.body)
     if (!parsedBody.success) {
       return reply.code(400).send({ success: false, error: parsedBody.error.issues[0].message })
@@ -185,7 +185,7 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
   })
 
   fastify.put('/api/petitions/:id', { preHandler: [requirePermission('petitions', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const body = request.body as any
     const petition = db.prepare('SELECT * FROM petitions WHERE id=? AND is_active=1').get(Number(id)) as any
@@ -260,7 +260,7 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/petitions/:id/logs', { preHandler: [requirePermission('petitions', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const { action_type, content, referred_to } = request.body as any
     if (!action_type) return reply.code(400).send({ success: false, error: '處理方式為必填' })
@@ -291,7 +291,7 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
 
   // 刪除陳情案件（軟刪除，保留紀錄與關聯資料）
   fastify.delete('/api/petitions/:id', { preHandler: [requirePermission('petitions', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const petition = db.prepare('SELECT * FROM petitions WHERE id=? AND is_active=1').get(Number(id)) as any
     if (!petition) return reply.code(404).send({ success: false, error: '陳情案件不存在' })

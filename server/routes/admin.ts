@@ -49,7 +49,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/admin/users', { preHandler: [requirePermission('users', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { username, password, name, role, email, phone } = request.body as any
     if (!username || !password || !name || !role) return reply.code(400).send({ success: false, error: '帳號、密碼、姓名、角色為必填' })
     if (password.length < 8) return reply.code(400).send({ success: false, error: '密碼至少需要 8 個字元' })
@@ -63,7 +63,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   })
 
   fastify.put('/api/admin/users/:id', { preHandler: [requirePermission('users', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const { name, role, email, phone, is_active } = request.body as any
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id)) as any
@@ -91,7 +91,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   })
 
   fastify.put('/api/admin/users/:id/password', { preHandler: [requirePermission('users', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const { password, confirm_self_password } = request.body as any
     if (!password || password.length < 8) return reply.code(400).send({ success: false, error: '密碼至少需要 8 個字元' })
@@ -111,7 +111,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
 
   // D-N9: Delete user with active petition check
   fastify.delete('/api/admin/users/:id', { preHandler: [requirePermission('users', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id)) as any
     if (!user) return reply.code(404).send({ success: false, error: '使用者不存在' })
@@ -162,7 +162,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/admin/categories', { preHandler: [requirePermission('categories', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { type, parent_id, name, sort_order, code, color } = request.body as any
     if (!type || !name) return reply.code(400).send({ success: false, error: '類別類型和名稱為必填' })
     const r = db.prepare('INSERT INTO categories (type,parent_id,name,sort_order,code,color) VALUES (?,?,?,?,?,?)')
@@ -172,7 +172,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   })
 
   fastify.put('/api/admin/categories/:id', { preHandler: [requirePermission('categories', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const { name, sort_order, is_active, code, color } = request.body as any
     const existing = db.prepare('SELECT id FROM categories WHERE id=?').get(Number(id))
@@ -184,7 +184,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   })
 
   fastify.delete('/api/admin/categories/:id', { preHandler: [requirePermission('categories', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const cat = db.prepare('SELECT * FROM categories WHERE id=?').get(Number(id)) as any
     if (cat?.is_protected) return reply.code(403).send({ success: false, error: '此類別為系統保護，無法刪除' })
@@ -237,7 +237,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   ])
 
   fastify.put('/api/admin/settings', { preHandler: [requirePermission('settings', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const updates = request.body as Record<string, string>
     const illegal = Object.keys(updates).filter(k => !ALLOWED_SETTINGS.has(k))
     if (illegal.length > 0) {
@@ -257,7 +257,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
 
   // ===== E-1: Staff Transfer (Handover) =====
   fastify.post('/api/admin/users/:userId/transfer', { preHandler: [requirePermission('admin', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { userId } = request.params as any
     const { transfer_to_user_id, include_petitions = true, include_tasks = true } = request.body as any
     if (!transfer_to_user_id) return reply.code(400).send({ success: false, error: 'transfer_to_user_id 為必填' })
@@ -289,7 +289,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
 
   // E-1: Disable user with mandatory transfer check
   fastify.put('/api/admin/users/:userId/disable', { preHandler: [requirePermission('admin', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { userId } = request.params as any
     const { force = false } = request.body as any
 
@@ -564,7 +564,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/admin/data-retention/run', { preHandler: [requirePermission('admin', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { confirm } = request.body as any
     const policy = getDataRetentionPolicy(db)
     if (!policy.enabled) {
@@ -599,7 +599,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     }
     // Truncate fields to prevent log flooding
     const { message, source, stack, url } = request.body as any
-    const user_id = (request as any).currentUser?.id ?? null
+    const user_id = request.currentUser!.id ?? null
     const user_agent = request.headers['user-agent'] ?? null
     db.prepare(`INSERT INTO client_errors(message,source,stack,user_agent,user_id,url) VALUES(?,?,?,?,?,?)`)
       .run(

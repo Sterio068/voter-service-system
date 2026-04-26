@@ -1,7 +1,45 @@
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+
+const CreateEventSchema = z.object({
+  title: z.string({ error: () => '活動標題為必填' }).min(1, '活動標題為必填').max(200, '活動標題過長'),
+  event_date: z.string({ error: () => '活動日期為必填' }).min(1, '活動日期為必填').max(20, '日期格式不正確'),
+  end_date: z.string().max(20).nullable().optional(),
+  location: z.string().max(200).nullable().optional(),
+  event_type: z.string().max(50).nullable().optional(),
+  description: z.string().max(2000).nullable().optional(),
+  organizer: z.string().max(100).nullable().optional(),
+  capacity: z.number().int().nullable().optional(),
+  status: z.string().max(30).nullable().optional(),
+})
+
+const UpdateEventSchema = z.object({
+  title: z.string().min(1, '活動標題不可為空').max(200, '活動標題過長').optional(),
+  event_date: z.string().max(20).optional(),
+  end_date: z.string().max(20).nullable().optional(),
+  location: z.string().max(200).nullable().optional(),
+  event_type: z.string().max(50).nullable().optional(),
+  description: z.string().max(2000).nullable().optional(),
+  organizer: z.string().max(100).nullable().optional(),
+  capacity: z.number().int().nullable().optional(),
+  status: z.string().max(30).nullable().optional(),
+  linked_survey_id: z.number().int().positive().nullable().optional(),
+})
+
+const ParticipantUpsertSchema = z.object({
+  voter_id: z.number().int().positive('voter_id 為必填'),
+  role: z.string().max(50).nullable().optional(),
+  note: z.string().max(2000).nullable().optional(),
+})
+
+const ParticipantUpdateSchema = z.object({
+  attendance: z.string().max(30).nullable().optional(),
+  note: z.string().max(2000).nullable().optional(),
+  role: z.string().max(50).nullable().optional(),
+})
 
 export default async function eventRoutes(fastify: FastifyInstance) {
   // GET /api/events
@@ -45,9 +83,13 @@ export default async function eventRoutes(fastify: FastifyInstance) {
 
   // POST /api/events
   fastify.post('/api/events', { preHandler: [requirePermission('events', 'create')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
+    const parsed = CreateEventSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
-    if (!body.title || !String(body.title).trim()) {
+    if (!String(body.title).trim()) {
       return reply.code(400).send({ success: false, error: '活動標題為必填' })
     }
     if (!body.event_date) {
@@ -69,8 +111,12 @@ export default async function eventRoutes(fastify: FastifyInstance) {
 
   // PUT /api/events/:id
   fastify.put('/api/events/:id', { preHandler: [requirePermission('events', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
+    const parsed = UpdateEventSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     const event = db.prepare('SELECT * FROM events WHERE id = ? AND is_active = 1').get(Number(id)) as any
     if (!event) return reply.code(404).send({ success: false, error: '活動不存在' })
@@ -89,7 +135,7 @@ export default async function eventRoutes(fastify: FastifyInstance) {
 
   // DELETE /api/events/:id (soft delete)
   fastify.delete('/api/events/:id', { preHandler: [requirePermission('events', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
     const event = db.prepare('SELECT * FROM events WHERE id = ? AND is_active = 1').get(Number(id)) as any
     if (!event) return reply.code(404).send({ success: false, error: '活動不存在' })
@@ -136,8 +182,12 @@ export default async function eventRoutes(fastify: FastifyInstance) {
 
   // POST /api/events/:id/participants (upsert)
   fastify.post('/api/events/:id/participants', { preHandler: [requirePermission('events', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id } = request.params as any
+    const parsed = ParticipantUpsertSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     if (!body.voter_id) return reply.code(400).send({ success: false, error: 'voter_id 為必填' })
     const event = db.prepare('SELECT id FROM events WHERE id = ? AND is_active = 1').get(Number(id))
@@ -162,8 +212,12 @@ export default async function eventRoutes(fastify: FastifyInstance) {
 
   // PUT /api/events/:id/participants/:voter_id
   fastify.put('/api/events/:id/participants/:voter_id', { preHandler: [requirePermission('events', 'edit')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id, voter_id } = request.params as any
+    const parsed = ParticipantUpdateSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
     const body = request.body as any
     const participant = db.prepare('SELECT * FROM event_participants WHERE event_id = ? AND voter_id = ?').get(Number(id), Number(voter_id)) as any
     if (!participant) return reply.code(404).send({ success: false, error: '參與記錄不存在' })
@@ -182,7 +236,7 @@ export default async function eventRoutes(fastify: FastifyInstance) {
 
   // DELETE /api/events/:id/participants/:voter_id
   fastify.delete('/api/events/:id/participants/:voter_id', { preHandler: [requirePermission('events', 'delete')] }, async (request, reply) => {
-    const cu = (request as any).currentUser
+    const cu = request.currentUser!
     const { id, voter_id } = request.params as any
     const participant = db.prepare('SELECT * FROM event_participants WHERE event_id = ? AND voter_id = ?').get(Number(id), Number(voter_id)) as any
     if (!participant) return reply.code(404).send({ success: false, error: '參與記錄不存在' })

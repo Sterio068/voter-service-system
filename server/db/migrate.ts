@@ -773,6 +773,44 @@ export async function runMigrations() {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_voter_relations_voter ON voter_relations(voter_id)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_assignee_status ON tasks(assignee_id, status)') } catch {}
 
+  // Performance v2: 補強查詢/JOIN 索引（audit 2026-04）
+  // petitions: follow-up / due-date / closed-at 經常被 WHERE / ORDER 使用
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_petitions_follow_up_date ON petitions(follow_up_date) WHERE follow_up_date IS NOT NULL') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_petitions_due_date ON petitions(due_date) WHERE due_date IS NOT NULL') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_petitions_closed_at ON petitions(closed_at) WHERE closed_at IS NOT NULL') } catch {}
+  // petitions: voter_id + is_active 加速合併預覽 / 熱區報表 JOIN
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_petitions_voter_active ON petitions(voter_id, is_active)') } catch {}
+  // petitions: case_number 用於 generateCaseNumber MAX 掃描，現為全表掃
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_petitions_case_number ON petitions(case_number)') } catch {}
+  // documents: doc_type + doc_number 用於 generateDocNumber MAX 掃描
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_documents_doc_type_number ON documents(doc_type, doc_number)') } catch {}
+  // voters: id_number 用於登入查重 / 匯入 / data-quality 重複偵測
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_voters_id_number ON voters(id_number) WHERE id_number IS NOT NULL') } catch {}
+  // voters: referrer_id 用於 D-14 介紹人迴圈檢查與 key-influencer 報表 JOIN
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_voters_referrer ON voters(referrer_id) WHERE referrer_id IS NOT NULL') } catch {}
+  // users: username 唯一已存在但補上明確索引以加速登入查詢計畫
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)') } catch {}
+  // tasks: related_voter_id 在合併與選民詳情頁被頻繁 JOIN/UPDATE
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_related_voter ON tasks(related_voter_id)') } catch {}
+  // tasks: due_date + status 用於 /api/tasks/today 掃描
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_due_status ON tasks(due_date, status)') } catch {}
+  // proposals: is_active + proposal_date DESC + id DESC 用於分頁列表 ORDER
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_proposals_active_date ON proposals(is_active, proposal_date DESC, id DESC)') } catch {}
+  // consultation_appointments: voter_id 用於合併與匿名化清理
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_consultation_voter ON consultation_appointments(voter_id)') } catch {}
+  // voter_relations: related_voter_id 用於合併雙向 redirect 與匿名化清理
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_voter_relations_related ON voter_relations(related_voter_id)') } catch {}
+  // notification_recipients: voter_id 用於合併 redirect
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_notif_recipients_voter ON notification_recipients(voter_id)') } catch {}
+  // archive_audit_logs / client_errors: 資料保留作業按 created_at 範圍掃描
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_archive_audit_created ON archive_audit_logs(created_at)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_client_errors_created ON client_errors(created_at)') } catch {}
+  // notifications: sent_at 用於 reach-rate 報表 /reports/notification-reach
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_sent_at ON notifications(sent_at) WHERE sent_at IS NOT NULL') } catch {}
+  try {
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('5.5.0', 'Performance: 查詢/JOIN 索引補強（陳情 follow_up/due/closed/case、文件序號、選民身分證/介紹人、任務關聯選民、提案分頁等）')
+  } catch {}
+
   // D-2: Insert schema version record
   try {
     db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('4.1.0', 'v4.0 audit optimizations: merge history, views, indexes')

@@ -255,17 +255,21 @@ export default async function reportRoutes(fastify: FastifyInstance) {
 
   // R-8: Event ROI Report
   fastify.get('/api/reports/event-roi', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
-    const events = db.prepare(`
+    // Batch event lookup + same-day contact counts in a single LEFT JOIN to remove N+1
+    const result = db.prepare(`
       SELECT e.id, e.title, e.event_date,
-        COALESCE(e.participant_count, 0) as participant_count
+        COALESCE(e.participant_count, 0) as participant_count,
+        COALESCE(c.same_day_contacts, 0) as same_day_contacts
       FROM events e
+      LEFT JOIN (
+        SELECT DATE(contact_date) AS d, COUNT(*) AS same_day_contacts
+        FROM contact_records
+        WHERE contact_date >= date('now', '-6 months')
+        GROUP BY DATE(contact_date)
+      ) c ON c.d = DATE(e.event_date)
       WHERE e.event_date >= date('now', '-6 months')
       ORDER BY COALESCE(e.participant_count, 0) DESC
     `).all()
-    const result = (events as any[]).map((ev: any) => {
-      const sameDay = (db.prepare(`SELECT COUNT(*) as c FROM contact_records WHERE DATE(contact_date)=DATE(?)`).get(ev.event_date) as any).c
-      return { ...ev, same_day_contacts: sameDay }
-    })
     return reply.send({ success: true, data: result })
   })
 
