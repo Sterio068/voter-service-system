@@ -1,6 +1,6 @@
 {
   "name": "voter-service-system",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "本地單機版選民服務管理系統",
   "main": "dist-electron/main.js",
   "homepage": "./",
