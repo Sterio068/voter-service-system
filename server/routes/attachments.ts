@@ -36,7 +36,17 @@ export default async function attachmentRoutes(fastify: FastifyInstance) {
     }
     if (!canAccessRef(cu, ref_type, refId)) return reply.code(403).send({ success: false, error: '無上傳權限' })
 
-    const data = await request.file()
+    // M-4: 在串流層強制大小上限，避免大檔被先 buffer 進記憶體後才拒絕
+    const MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024
+    let data
+    try {
+      data = await request.file({ limits: { fileSize: MAX_ATTACHMENT_SIZE } })
+    } catch (err: any) {
+      if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
+        return reply.code(413).send({ success: false, error: '檔案大小不能超過 20MB' })
+      }
+      throw err
+    }
     if (!data) return reply.code(400).send({ success: false, error: '未收到檔案' })
 
     if (!ALLOWED_ATTACHMENT_MIME_TYPES.has(data.mimetype)) {
@@ -49,18 +59,15 @@ export default async function attachmentRoutes(fastify: FastifyInstance) {
     const dir = getAttachmentsDir()
     const filePath = path.join(dir, uniqueName)
 
-    const maxAttachmentSize = 20 * 1024 * 1024
-    const chunks: Buffer[] = []
-    let totalSize = 0
-    for await (const chunk of data.file) {
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-      totalSize += buffer.length
-      if (totalSize > maxAttachmentSize) {
-        return reply.code(400).send({ success: false, error: '檔案大小不能超過 20MB' })
+    let buf: Buffer
+    try {
+      buf = await data.toBuffer()
+    } catch (err: any) {
+      if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
+        return reply.code(413).send({ success: false, error: '檔案大小不能超過 20MB' })
       }
-      chunks.push(buffer)
+      throw err
     }
-    const buf = Buffer.concat(chunks, totalSize)
     if (!isAllowedAttachmentContent(data.mimetype, buf)) {
       return reply.code(400).send({ success: false, error: '檔案內容與格式不符' })
     }

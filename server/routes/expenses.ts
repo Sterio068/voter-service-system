@@ -107,10 +107,10 @@ export default async function expenseRoutes(fastify: FastifyInstance) {
     const existing = db.prepare(`SELECT id FROM expense_budgets WHERE year=? AND ${monthCond} AND budget_type=? AND ${refCond}`).get(...upsertParams) as any
     if (existing) {
       db.prepare('UPDATE expense_budgets SET amount=?, note=? WHERE id=?').run(Number(body.amount), body.note || null, existing.id)
-      return reply.send({ success: true, id: existing.id })
+      return reply.send({ success: true, data: { id: existing.id } })
     }
     const result = db.prepare('INSERT INTO expense_budgets (year, month, budget_type, reference_id, amount, note) VALUES (?,?,?,?,?,?)').run(Number(body.year), bMonth, body.budget_type || 'total', body.reference_id || null, Number(body.amount), body.note || null)
-    return reply.code(201).send({ success: true, id: result.lastInsertRowid })
+    return reply.code(201).send({ success: true, data: { id: result.lastInsertRowid } })
   })
 
   // DELETE /api/expenses/budgets/:id

@@ -870,6 +870,34 @@ export async function runMigrations() {
     console.error('secret encryption migration:', e.message)
   }
 
+  // Security M-1: JWT 撤銷清單（登出後使 token 立即失效）
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS revoked_tokens (
+      jti         TEXT PRIMARY KEY,
+      user_id     INTEGER NOT NULL,
+      revoked_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      expires_at  TEXT NOT NULL
+    )`)
+    db.exec('CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens(expires_at)')
+  } catch (e: any) {
+    if (!e.message?.includes('already exists')) console.error('revoked_tokens migration:', e.message)
+  }
+
+  // Security M-2: 登入失敗鎖定持久化（避免重啟即解鎖）
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS login_attempts (
+      username      TEXT PRIMARY KEY,
+      count         INTEGER NOT NULL DEFAULT 0,
+      locked_until  TEXT
+    )`)
+  } catch (e: any) {
+    if (!e.message?.includes('already exists')) console.error('login_attempts migration:', e.message)
+  }
+
+  try {
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('5.6.0', 'Security: JWT 撤銷清單 + 登入失敗鎖定持久化（M-1 / M-2）')
+  } catch {}
+
   await seedDefaultData()
 }
 

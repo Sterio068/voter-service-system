@@ -349,7 +349,7 @@ export default async function reportRoutes(fastify: FastifyInstance) {
         GROUP BY s.id, s.title, s.created_at
         ORDER BY s.created_at DESC
       `).all()
-      return reply.send({ success: true, surveys, survey_id: null })
+      return reply.send({ success: true, data: { surveys, survey_id: null } })
     }
     const survey = db.prepare(`SELECT id, title FROM surveys WHERE id=?`).get(Number(survey_id)) as any
     const byDistrict = db.prepare(`
@@ -359,7 +359,7 @@ export default async function reportRoutes(fastify: FastifyInstance) {
       WHERE sr.survey_id=?
       GROUP BY district ORDER BY count DESC
     `).all(Number(survey_id))
-    return reply.send({ success: true, survey, byDistrict, survey_id: Number(survey_id) })
+    return reply.send({ success: true, data: { survey, byDistrict, survey_id: Number(survey_id) } })
   })
 
   // C-2: Key Influencer Report

@@ -57,7 +57,7 @@ function verifyLineSignature(body: string, signature: string | undefined, channe
 export default async function lineWebhookRoutes(fastify: FastifyInstance) {
   // Webhook verification (GET)
   fastify.get('/api/line/webhook', async (request, reply) => {
-    return reply.send({ status: 'ok', message: 'LINE Webhook endpoint active' })
+    return reply.send({ success: true, message: 'LINE Webhook endpoint active' })
   })
 
   // Receive LINE events (POST)
@@ -125,7 +125,7 @@ export default async function lineWebhookRoutes(fastify: FastifyInstance) {
       }
     }
 
-    return reply.send({ status: 'ok' })
+    return reply.send({ success: true })
   })
 
   // Admin: Link LINE user ID to voter (C-4: requires admin permission)

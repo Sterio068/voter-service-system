@@ -96,7 +96,7 @@ export default async function vendorRoutes(fastify: FastifyInstance) {
       INSERT INTO vendors (name, category, contact_person, phone, line_id, address, bank_account, note, rating, is_active)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
     `).run(body.name.trim(), body.category || 'other', body.contact_person || null, body.phone || null, body.line_id || null, body.address || null, body.bank_account || null, body.note || null, Number(body.rating) || 0)
-    return reply.code(201).send({ success: true, id: result.lastInsertRowid })
+    return reply.code(201).send({ success: true, data: { id: result.lastInsertRowid } })
   })
 
   // PUT /api/vendors/:id

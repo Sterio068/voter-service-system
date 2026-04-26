@@ -14,7 +14,7 @@ export default function SurveyCrossAnalysis() {
   useEffect(() => {
     setLoading(true)
     api.get('/reports/survey-cross')
-      .then(r => { setSurveys(r.data.surveys || []) })
+      .then(r => { setSurveys(r.data.data?.surveys || []) })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -23,7 +23,7 @@ export default function SurveyCrossAnalysis() {
     if (!selectedId) { setDetail(null); return }
     setLoading(true)
     api.get(`/reports/survey-cross?survey_id=${selectedId}`)
-      .then(r => setDetail(r.data))
+      .then(r => setDetail(r.data.data))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [selectedId])

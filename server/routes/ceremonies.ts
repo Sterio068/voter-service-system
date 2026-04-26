@@ -56,7 +56,7 @@ export default async function ceremonyRoutes(fastify: FastifyInstance) {
     if (!body.name?.trim()) return reply.code(400).send({ success: false, error: '類別名稱為必填' })
     const max = (db.prepare('SELECT MAX(sort_order) as m FROM gift_categories').get() as any).m || 0
     const result = db.prepare('INSERT INTO gift_categories (name, unit, default_price, sort_order) VALUES (?,?,?,?)').run(body.name.trim(), body.unit || '份', Number(body.default_price) || 0, max + 1)
-    return reply.code(201).send({ success: true, id: result.lastInsertRowid })
+    return reply.code(201).send({ success: true, data: { id: result.lastInsertRowid } })
   })
 
   // PUT /api/gift-categories/:id

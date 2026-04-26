@@ -12,6 +12,23 @@ function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
 }
 
+// M-4 / M-5: Excel 匯入單檔大小上限（範本只有數十 KB，5MB 對使用者足夠寬裕）
+const EXCEL_IMPORT_MAX_BYTES = 5 * 1024 * 1024
+const EXCEL_IMPORT_TOO_LARGE_MESSAGE = 'Excel 檔案過大（上限 5MB），請拆分後再上傳'
+
+// 共用：Excel 副檔名 / MIME 白名單
+const EXCEL_ALLOWED_EXTS = ['.xlsx', '.xls']
+const EXCEL_ALLOWED_MIME_KEYWORDS = [
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/octet-stream',
+]
+
+function isAllowedExcelMime(mime: string | undefined): boolean {
+  if (!mime) return true // 部分瀏覽器/工具不送 MIME；以副檔名為主
+  return EXCEL_ALLOWED_MIME_KEYWORDS.some((m) => mime.includes(m.split('/')[1]))
+}
+
 // ===== 選民 Excel 範本欄位 =====
 const VOTER_TEMPLATE_HEADERS = [
   '姓名*', '性別(男/女/其他)', '出生日期(YYYY-MM-DD)', '身份證號',
@@ -198,7 +215,16 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
   // ===== 選民批次匯入 =====
   fastify.post('/api/voters/import', { preHandler: [requirePermission('voters', 'create')] }, async (request, reply) => {
     const cu = request.currentUser!
-    const data = await request.file()
+    // M-4: Excel 匯入單檔上限 5MB（在串流層強制執行）
+    let data
+    try {
+      data = await request.file({ limits: { fileSize: EXCEL_IMPORT_MAX_BYTES } })
+    } catch (err: any) {
+      if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
+        return reply.code(413).send({ success: false, error: EXCEL_IMPORT_TOO_LARGE_MESSAGE })
+      }
+      throw err
+    }
     if (!data) return reply.code(400).send({ success: false, error: '請上傳 Excel 檔案' })
 
     // 驗證副檔名與 MIME 類型，防止上傳偽裝成 xlsx 的惡意檔案
@@ -219,7 +245,15 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     const dryRun = (request.query as any).dryRun === 'true'
     const body = request.body as any || {}
 
-    const buf = await data.toBuffer()
+    let buf: Buffer
+    try {
+      buf = await data.toBuffer()
+    } catch (err: any) {
+      if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
+        return reply.code(413).send({ success: false, error: EXCEL_IMPORT_TOO_LARGE_MESSAGE })
+      }
+      throw err
+    }
     const wb = XLSX.read(buf, { type: 'buffer' })
     const ws = wb.Sheets[wb.SheetNames[0]]
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][]
@@ -555,10 +589,36 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
   // ===== 陳情批量匯入 =====
   fastify.post('/api/petitions/import', { preHandler: [requirePermission('petitions', 'create')] }, async (request, reply) => {
     const cu = request.currentUser!
-    const data = await request.file()
+    // M-4: 串流層強制 5MB 上限
+    let data
+    try {
+      data = await request.file({ limits: { fileSize: EXCEL_IMPORT_MAX_BYTES } })
+    } catch (err: any) {
+      if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
+        return reply.code(413).send({ success: false, error: EXCEL_IMPORT_TOO_LARGE_MESSAGE })
+      }
+      throw err
+    }
     if (!data) return reply.code(400).send({ success: false, error: '請上傳 Excel 檔案' })
 
-    const buf = await data.toBuffer()
+    // M-5: 對齊選民匯入的副檔名與 MIME 白名單，防止偽裝檔案
+    const fileExt = data.filename.toLowerCase().slice(data.filename.lastIndexOf('.'))
+    if (!EXCEL_ALLOWED_EXTS.includes(fileExt)) {
+      return reply.code(400).send({ success: false, error: '只接受 .xlsx 或 .xls 格式的檔案' })
+    }
+    if (!isAllowedExcelMime(data.mimetype)) {
+      return reply.code(400).send({ success: false, error: '檔案類型不符，請上傳 Excel 格式' })
+    }
+
+    let buf: Buffer
+    try {
+      buf = await data.toBuffer()
+    } catch (err: any) {
+      if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
+        return reply.code(413).send({ success: false, error: EXCEL_IMPORT_TOO_LARGE_MESSAGE })
+      }
+      throw err
+    }
     const wb = XLSX.read(buf, { type: 'buffer' })
     const ws = wb.Sheets[wb.SheetNames[0]]
     const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
@@ -654,10 +714,36 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
   // ===== 團體批量匯入 =====
   fastify.post('/api/groups/import', { preHandler: [requirePermission('groups', 'create')] }, async (request, reply) => {
     const cu = request.currentUser!
-    const data = await request.file()
+    // M-4: 串流層強制 5MB 上限
+    let data
+    try {
+      data = await request.file({ limits: { fileSize: EXCEL_IMPORT_MAX_BYTES } })
+    } catch (err: any) {
+      if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
+        return reply.code(413).send({ success: false, error: EXCEL_IMPORT_TOO_LARGE_MESSAGE })
+      }
+      throw err
+    }
     if (!data) return reply.code(400).send({ success: false, error: '請上傳 Excel 檔案' })
 
-    const buf = await data.toBuffer()
+    // M-5: 對齊選民匯入的副檔名與 MIME 白名單
+    const fileExt = data.filename.toLowerCase().slice(data.filename.lastIndexOf('.'))
+    if (!EXCEL_ALLOWED_EXTS.includes(fileExt)) {
+      return reply.code(400).send({ success: false, error: '只接受 .xlsx 或 .xls 格式的檔案' })
+    }
+    if (!isAllowedExcelMime(data.mimetype)) {
+      return reply.code(400).send({ success: false, error: '檔案類型不符，請上傳 Excel 格式' })
+    }
+
+    let buf: Buffer
+    try {
+      buf = await data.toBuffer()
+    } catch (err: any) {
+      if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
+        return reply.code(413).send({ success: false, error: EXCEL_IMPORT_TOO_LARGE_MESSAGE })
+      }
+      throw err
+    }
     const wb = XLSX.read(buf, { type: 'buffer' })
     const ws = wb.Sheets[wb.SheetNames[0]]
     const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })

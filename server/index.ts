@@ -562,6 +562,20 @@ function checkAndCreateAlerts() {
   }
 }
 
+// Security M-1: 每小時清除已過期的撤銷 token，避免 revoked_tokens 表無限增長
+function scheduleRevokedTokenCleanup() {
+  const CLEANUP_INTERVAL_MS = 60 * 60 * 1000 // hourly
+  const doCleanup = () => {
+    try {
+      db.prepare("DELETE FROM revoked_tokens WHERE expires_at < datetime('now','localtime')").run()
+    } catch (e) {
+      console.error('[RevokedTokenCleanup] Error:', e)
+    }
+  }
+  doCleanup()
+  setInterval(doCleanup, CLEANUP_INTERVAL_MS)
+}
+
 // F-2: Audit log archiving
 function archiveOldAuditLogs() {
   try {
@@ -611,6 +625,7 @@ async function start() {
     scheduleWeeklyBackupVerify()
     scheduleDailyAlerts()
     scheduleAuditArchive()
+    scheduleRevokedTokenCleanup()
 
     // Catch-up: run missed scheduled tasks on startup
     async function runMissedTasks() {
@@ -686,6 +701,7 @@ export function startSchedules() {
   scheduleWeeklyBackupVerify()
   scheduleDailyAlerts()
   scheduleAuditArchive()
+  scheduleRevokedTokenCleanup()
   return true
 }
 

@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import bcrypt from 'bcrypt'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { db } from '../db/index'
 import { authenticate } from '../middleware/auth'
@@ -12,7 +13,39 @@ const LoginSchema = z.object({
 
 interface ChangePasswordBody { old_password: string; new_password: string }
 
-const loginAttempts = new Map<string, { count: number; lockUntil?: number }>()
+// JWT 預設有效期，必須與 jwt.sign 的 expiresIn 一致；用於計算 revoked_tokens.expires_at。
+const TOKEN_TTL_SECONDS = 8 * 60 * 60
+
+// Security M-2: 登入失敗鎖定狀態（持久化於 login_attempts 表）。
+// 將原本的 in-process Map 替換為 SQLite，避免重啟即重置計數器導致無限次撞密碼。
+interface LoginAttemptRow { username: string; count: number; locked_until: string | null }
+
+function getLoginAttempt(username: string): LoginAttemptRow | undefined {
+  return db.prepare('SELECT username, count, locked_until FROM login_attempts WHERE username = ?').get(username) as LoginAttemptRow | undefined
+}
+
+function clearLoginAttempt(username: string): void {
+  db.prepare('DELETE FROM login_attempts WHERE username = ?').run(username)
+}
+
+function recordFailedAttempt(username: string, lockMinutes: number, maxAttempts: number): { count: number; lockedUntilMs: number | null } {
+  const existing = getLoginAttempt(username)
+  const nextCount = (existing?.count ?? 0) + 1
+  const shouldLock = nextCount >= maxAttempts
+  const lockedUntilDate = shouldLock ? new Date(Date.now() + lockMinutes * 60_000) : null
+  const lockedUntilStr = lockedUntilDate ? lockedUntilDate.toISOString() : null
+
+  db.prepare(`
+    INSERT INTO login_attempts (username, count, locked_until)
+    VALUES (?, ?, ?)
+    ON CONFLICT(username) DO UPDATE SET count = excluded.count, locked_until = excluded.locked_until
+  `).run(username, nextCount, lockedUntilStr)
+
+  return {
+    count: nextCount,
+    lockedUntilMs: lockedUntilDate ? lockedUntilDate.getTime() : null,
+  }
+}
 
 export default async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/api/auth/login', {
@@ -34,10 +67,14 @@ export default async function authRoutes(fastify: FastifyInstance) {
     const maxAttempts = parseInt(lockAttemptsSetting?.value || '5')
     const lockMinutes = parseInt(lockMinutesSetting?.value || '15')
 
-    const attempts = loginAttempts.get(username)
-    if (attempts?.lockUntil && Date.now() < attempts.lockUntil) {
-      const remaining = Math.ceil((attempts.lockUntil - Date.now()) / 60000)
-      return reply.code(429).send({ success: false, error: `帳號已鎖定，請於 ${remaining} 分鐘後再試` })
+    // 檢查鎖定狀態（持久化於 DB）
+    const attempts = getLoginAttempt(username)
+    if (attempts?.locked_until) {
+      const lockedUntilMs = Date.parse(attempts.locked_until)
+      if (!Number.isNaN(lockedUntilMs) && Date.now() < lockedUntilMs) {
+        const remaining = Math.ceil((lockedUntilMs - Date.now()) / 60000)
+        return reply.code(429).send({ success: false, error: `帳號已鎖定，請於 ${remaining} 分鐘後再試` })
+      }
     }
 
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any
@@ -48,19 +85,19 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     if (!validUser || !match) {
       // Always increment attempt counter (prevents username enumeration via lockout bypass)
-      const cur = loginAttempts.get(username) || { count: 0 }
-      cur.count += 1
-      if (cur.count >= maxAttempts) {
-        cur.lockUntil = Date.now() + lockMinutes * 60000
-        loginAttempts.set(username, cur)
+      const result = recordFailedAttempt(username, lockMinutes, maxAttempts)
+      if (result.lockedUntilMs !== null) {
         return reply.code(429).send({ success: false, error: `登入失敗次數過多，已鎖定 ${lockMinutes} 分鐘` })
       }
-      loginAttempts.set(username, cur)
       return reply.code(401).send({ success: false, error: '帳號或密碼錯誤' })
     }
 
-    loginAttempts.delete(username)
-    const token = fastify.jwt.sign({ id: user.id, username: user.username, role: user.role }, { expiresIn: '8h' })
+    clearLoginAttempt(username)
+    const jti = randomUUID()
+    const token = fastify.jwt.sign(
+      { id: user.id, username: user.username, role: user.role, jti },
+      { expiresIn: `${TOKEN_TTL_SECONDS}s` }
+    )
     createAuditLog(request, user.id, { action: 'login', module: '認證', target_name: user.username })
 
     const { password: _, ...userOut } = user
@@ -69,6 +106,17 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
   fastify.post('/api/auth/logout', { preHandler: [authenticate] }, async (request, reply) => {
     const user = request.currentUser!
+    // Security M-1: 將目前 token 加入撤銷清單，使其立即失效
+    const payload = request.user as { jti?: string; exp?: number }
+    if (payload?.jti) {
+      const expiresAt = payload.exp
+        ? new Date(payload.exp * 1000).toISOString()
+        : new Date(Date.now() + TOKEN_TTL_SECONDS * 1000).toISOString()
+      db.prepare(`
+        INSERT OR IGNORE INTO revoked_tokens (jti, user_id, expires_at)
+        VALUES (?, ?, ?)
+      `).run(payload.jti, user.id, expiresAt)
+    }
     createAuditLog(request, user.id, { action: 'logout', module: '認證', target_name: user.username })
     return reply.send({ success: true, message: '已成功登出' })
   })
