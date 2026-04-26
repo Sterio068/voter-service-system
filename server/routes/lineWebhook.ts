@@ -121,7 +121,7 @@ export default async function lineWebhookRoutes(fastify: FastifyInstance) {
             .run(0, 'receive', 'LINE整合', 'line_message', JSON.stringify({ line_user_id: lineUserId, message: messageText.slice(0, 200), matched_voter: voter?.id || null }))
         }
       } catch (e) {
-        console.error('LINE webhook event error:', e)
+        console.error('[lineWebhook] event processing failed:', { type: event.type, lineUserId: event.source?.userId, error: e instanceof Error ? e.message : String(e) })
       }
     }
 
@@ -151,6 +151,7 @@ export default async function lineWebhookRoutes(fastify: FastifyInstance) {
       ).run(voter.id)
     }
 
+    createAuditLog(request, request.currentUser!.id, { action: 'update', module: 'LINE整合', target_type: 'voter', target_id: Number(voter_id), target_name: `LINE連結 voter ${voter_id}` })
     return reply.send({ success: true, message: 'LINE 帳號已連結' })
   })
 

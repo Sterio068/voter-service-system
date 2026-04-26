@@ -3,6 +3,7 @@ import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { aiChat, testAIConnection, getAIConfig, isAIEnabled, sanitizeError } from '../utils/aiClient'
 import { setSetting } from '../utils/settings'
+import { createAuditLog } from '../middleware/audit'
 
 const PETITION_CATEGORIES = ['市政建設', '社會福利', '教育文化', '環境衛生', '交通運輸', '都市計畫', '法律諮詢', '就業服務', '其他']
 const VALID_PROVIDERS = ['none', 'gemini', 'openai', 'ollama']
@@ -81,6 +82,8 @@ export default async function aiRoutes(fastify: FastifyInstance) {
     if (body.apiKey !== undefined && !String(body.apiKey).startsWith('***')) setSetting('ai_api_key', String(body.apiKey).slice(0, 256))
     if (body.baseUrl !== undefined) setSetting('ai_base_url', String(body.baseUrl))
     if (body.maxTokens !== undefined) setSetting('ai_max_tokens', String(parseInt(body.maxTokens, 10)))
+    const cu = req.currentUser!
+    createAuditLog(req, cu.id, { action: 'update', module: 'AI設定', target_name: body.provider ?? 'AI設定' })
     return reply.send({ success: true, message: 'AI 設定已儲存' })
   })
 

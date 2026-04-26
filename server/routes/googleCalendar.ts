@@ -79,7 +79,7 @@ export async function syncScheduleToGCal(scheduleId: number, action: 'create' | 
 
         if (action === 'delete') {
           if (existingEventId) {
-            await cal.events.delete({ calendarId: calId, eventId: existingEventId }).catch(() => {})
+            await cal.events.delete({ calendarId: calId, eventId: existingEventId }).catch((delErr: unknown) => { console.warn(`[GCal] delete event ${existingEventId} on account ${account.id} failed:`, delErr instanceof Error ? delErr.message : delErr) })
             delete syncData[String(account.id)]
           }
           continue

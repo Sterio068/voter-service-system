@@ -122,7 +122,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
   // ===== 選民匯出 =====
   fastify.get('/api/voters/export', { preHandler: [requirePermission('voters', 'export')] }, async (request, reply) => {
     const cu = request.currentUser!
-    const { search, city, district, village, tag, mask, include_sensitive, reason } = request.query as any
+    const { search, city, district, village, tag, mask, include_sensitive, reason, selected_ids, ids: idsParam } = request.query as any
     const fullSensitiveExport = include_sensitive === '1' || include_sensitive === 'true' || mask === '0' || mask === 'false'
     const exportReason = typeof reason === 'string' ? reason.trim() : ''
     if (fullSensitiveExport && cu.role !== 'admin') {
@@ -131,8 +131,24 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
     if (fullSensitiveExport && exportReason.length < 5) {
       return reply.code(400).send({ success: false, error: '完整個資匯出需填寫至少 5 個字的匯出理由' })
     }
+    // 支援 selected_ids / ids 兩種命名（皆為逗號分隔）— 縮限匯出範圍至選取的選民
+    const idsRaw = (typeof selected_ids === 'string' && selected_ids) || (typeof idsParam === 'string' && idsParam) || ''
+    const selectedIdList: number[] = idsRaw
+      ? idsRaw.split(',')
+        .map((s: string) => Number(s.trim()))
+        .filter((n: number) => Number.isInteger(n) && n > 0)
+      : []
+    // 限制 selected_ids 上限，避免 SQL 過長
+    if (selectedIdList.length > 5000) {
+      return reply.code(400).send({ success: false, error: 'selected_ids 一次最多 5000 筆，請分批匯出' })
+    }
+
     const conds = ['v.is_active = 1']
     const params: any[] = []
+    if (selectedIdList.length > 0) {
+      conds.push(`v.id IN (${selectedIdList.map(() => '?').join(',')})`)
+      params.push(...selectedIdList)
+    }
     if (search) { const es = escapeLike(search); conds.push("(v.name LIKE ? ESCAPE '\\' OR v.mobile LIKE ? ESCAPE '\\' OR v.household_address LIKE ? ESCAPE '\\')"); params.push(`%${es}%`, `%${es}%`, `%${es}%`) }
     if (city) { conds.push('v.household_city = ?'); params.push(city) }
     if (district) { conds.push('v.household_district = ?'); params.push(district) }
@@ -174,6 +190,7 @@ export default async function importExportRoutes(fastify: FastifyInstance) {
         masked: !fullSensitiveExport,
         reason: fullSensitiveExport ? exportReason : null,
         filters: { search: !!search, city: city || null, district: district || null, village: village || null, tag: tag || null },
+        selected_ids_count: selectedIdList.length || null,
       },
     })
     // Large export warning

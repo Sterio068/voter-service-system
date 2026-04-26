@@ -195,7 +195,7 @@ export default function VoterListPage() {
     } catch { setIdNumberDupWarning('') }
   }
 
-  // U-7: Batch tag assignment
+  // U-7: Batch tag assignment — 優先使用單一 transaction 端點，失敗時退回 N 次 PUT
   const handleBatchTag = async () => {
     if (batchTags.length === 0) { message.warning('請選擇至少一個標籤'); return }
     setBatchRunning(true)
@@ -210,23 +210,41 @@ export default function VoterListPage() {
     }
     undoDataRef.current = { ids, field: 'tags', oldValues }
 
-    let done = 0; let failed = 0
-    for (const id of ids) {
-      const voter = data.find((v: any) => v.id === id)
-      const existingTags: string[] = voter?.tags || []
-      const mergedTags = Array.from(new Set([...existingTags, ...batchTags]))
-      try { await api.put(`/voters/${id}`, { tags: mergedTags }) } catch { failed++ }
-      done++
-      setBatchProgress(Math.round((done / ids.length) * 100))
+    let success = 0
+    let failed = 0
+    let usedFallback = false
+    try {
+      const res = await api.post('/voters/bulk-tags', { voter_ids: ids, tags: batchTags })
+      success = res.data?.data?.success ?? 0
+      failed = res.data?.data?.failed ?? 0
+      setBatchProgress(100)
+    } catch {
+      // Fallback：服務端尚未支援 bulk-tags（舊版），退回 Promise.allSettled
+      usedFallback = true
+      const tasks = ids.map((id) => {
+        const voter = data.find((v: any) => v.id === id)
+        const existingTags: string[] = voter?.tags || []
+        const mergedTags = Array.from(new Set([...existingTags, ...batchTags]))
+        return api.put(`/voters/${id}`, { tags: mergedTags })
+      })
+      const results = await Promise.allSettled(tasks)
+      results.forEach((r, idx) => {
+        if (r.status === 'fulfilled') success++
+        else failed++
+        setBatchProgress(Math.round(((idx + 1) / ids.length) * 100))
+      })
     }
+
     setBatchRunning(false)
     setBatchTagModalOpen(false)
     setBatchTags([])
     setSelectedRowKeys([])
     notification[failed ? 'warning' : 'success']({
       key: undoNotificationKey,
-      message: failed ? `批次更新完成，${failed} 位失敗` : `已完成批次更新 ${ids.length} 位選民`,
-      description: '標籤已批次套用',
+      message: failed
+        ? `成功 ${success} 筆，失敗 ${failed} 筆`
+        : `已加標籤到 ${success} 筆選民`,
+      description: usedFallback ? '標籤已批次套用（使用後備模式）' : '標籤已批次套用',
       btn: <Button size="small" onClick={handleUndo}>撤銷</Button>,
       duration: 30,
     })
@@ -368,7 +386,7 @@ export default function VoterListPage() {
     URL.revokeObjectURL(url)
   }
 
-  const handleExport = async (options: { includeSensitive?: boolean; reason?: string } = {}) => {
+  const handleExport = async (options: { includeSensitive?: boolean; reason?: string; selectedOnly?: boolean } = {}) => {
     setExporting(true)
     try {
       const params: any = {}
@@ -377,6 +395,10 @@ export default function VoterListPage() {
       if (filterDistrict) params.district = filterDistrict
       if (filterVillage) params.village = filterVillage
       if (filterTag) params.tag = filterTag
+      // 批次匯出：將選取的 ID 帶入後端 selected_ids 參數
+      if (options.selectedOnly && selectedRowKeys.length > 0) {
+        params.selected_ids = selectedRowKeys.join(',')
+      }
       if (options.includeSensitive) {
         params.include_sensitive = '1'
         params.reason = options.reason
@@ -677,15 +699,25 @@ export default function VoterListPage() {
         <SelectionActionBar
           fixed
           selectedCount={selectedRowKeys.length}
-          itemLabel="位選民"
+          itemLabel="筆選民"
           onClear={() => setSelectedRowKeys([])}
         >
           <Button size="small" icon={<TagsOutlined />} onClick={() => { setBatchTags([]); setBatchProgress(0); setBatchTagModalOpen(true) }}>
-            批次標籤
+            批次加標籤
           </Button>
           <Button size="small" icon={<StarOutlined />} onClick={() => { setBatchSupportLevel(null); setBatchProgress(0); setBatchSupportModalOpen(true) }}>
             批次設定支持度
           </Button>
+          {canExportVoter && (
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              loading={exporting}
+              onClick={() => handleExport({ selectedOnly: true })}
+            >
+              批次匯出選取的選民
+            </Button>
+          )}
         </SelectionActionBar>
       )}
 

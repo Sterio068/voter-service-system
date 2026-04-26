@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
+import { createAuditLog } from '../middleware/audit'
 
 function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
@@ -86,6 +87,7 @@ export default async function vendorRoutes(fastify: FastifyInstance) {
 
   // POST /api/vendors
   fastify.post('/api/vendors', { preHandler: [requirePermission('vendors', 'create')] }, async (request, reply) => {
+    const cu = request.currentUser!
     const parsed = VendorSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
@@ -96,11 +98,13 @@ export default async function vendorRoutes(fastify: FastifyInstance) {
       INSERT INTO vendors (name, category, contact_person, phone, line_id, address, bank_account, note, rating, is_active)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
     `).run(body.name.trim(), body.category || 'other', body.contact_person || null, body.phone || null, body.line_id || null, body.address || null, body.bank_account || null, body.note || null, Number(body.rating) || 0)
+    createAuditLog(request, cu.id, { action: 'create', module: '廠商管理', target_type: 'vendor', target_id: result.lastInsertRowid as number, target_name: body.name.trim() })
     return reply.code(201).send({ success: true, data: { id: result.lastInsertRowid } })
   })
 
   // PUT /api/vendors/:id
   fastify.put('/api/vendors/:id', { preHandler: [requirePermission('vendors', 'edit')] }, async (request, reply) => {
+    const cu = request.currentUser!
     const { id } = request.params as any
     const parsed = VendorSchema.safeParse(request.body)
     if (!parsed.success) {
@@ -108,21 +112,26 @@ export default async function vendorRoutes(fastify: FastifyInstance) {
     }
     const body = request.body as any
     // HIGH-002: 先確認廠商存在再執行更新
-    const existing = db.prepare('SELECT id FROM vendors WHERE id = ?').get(Number(id))
+    const existing = db.prepare('SELECT id, name FROM vendors WHERE id = ?').get(Number(id)) as any
     if (!existing) return reply.code(404).send({ success: false, error: '廠商不存在' })
     if (!body.name?.trim()) return reply.code(400).send({ success: false, error: '廠商名稱為必填' })
     db.prepare(`
       UPDATE vendors SET name=?, category=?, contact_person=?, phone=?, line_id=?, address=?, bank_account=?, note=?, rating=?, is_active=?, updated_at=datetime('now','localtime')
       WHERE id=?
     `).run(body.name.trim(), body.category || 'other', body.contact_person || null, body.phone || null, body.line_id || null, body.address || null, body.bank_account || null, body.note || null, Number(body.rating) || 0, body.is_active !== false ? 1 : 0, Number(id))
+    createAuditLog(request, cu.id, { action: 'update', module: '廠商管理', target_type: 'vendor', target_id: Number(id), target_name: existing.name })
     return reply.send({ success: true })
   })
 
   // DELETE /api/vendors/:id
   fastify.delete('/api/vendors/:id', { preHandler: [requirePermission('vendors', 'delete')] }, async (request, reply) => {
+    const cu = request.currentUser!
     const { id } = request.params as any
+    const vendor = db.prepare('SELECT id, name FROM vendors WHERE id = ?').get(Number(id)) as any
+    if (!vendor) return reply.code(404).send({ success: false, error: '廠商不存在' })
     // 軟刪除
     db.prepare("UPDATE vendors SET is_active=0, updated_at=datetime('now','localtime') WHERE id=?").run(Number(id))
+    createAuditLog(request, cu.id, { action: 'delete', module: '廠商管理', target_type: 'vendor', target_id: Number(id), target_name: vendor.name })
     return reply.send({ success: true })
   })
 }

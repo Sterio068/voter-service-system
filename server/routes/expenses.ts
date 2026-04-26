@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
+import { createAuditLog } from '../middleware/audit'
 
 const BudgetSchema = z.object({
   year: z.union([z.number(), z.string()]),
@@ -88,6 +89,7 @@ export default async function expenseRoutes(fastify: FastifyInstance) {
 
   // POST /api/expenses/budgets
   fastify.post('/api/expenses/budgets', { preHandler: [requirePermission('expenses', 'edit')] }, async (request, reply) => {
+    const cu = request.currentUser!
     const parsed = BudgetSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
@@ -107,16 +109,21 @@ export default async function expenseRoutes(fastify: FastifyInstance) {
     const existing = db.prepare(`SELECT id FROM expense_budgets WHERE year=? AND ${monthCond} AND budget_type=? AND ${refCond}`).get(...upsertParams) as any
     if (existing) {
       db.prepare('UPDATE expense_budgets SET amount=?, note=? WHERE id=?').run(Number(body.amount), body.note || null, existing.id)
+      createAuditLog(request, cu.id, { action: 'update', module: '支出預算', target_type: 'expense_budget', target_id: existing.id, target_name: `${body.year}年${bMonth ? bMonth + '月' : ''}${body.budget_type || 'total'}` })
       return reply.send({ success: true, data: { id: existing.id } })
     }
     const result = db.prepare('INSERT INTO expense_budgets (year, month, budget_type, reference_id, amount, note) VALUES (?,?,?,?,?,?)').run(Number(body.year), bMonth, body.budget_type || 'total', body.reference_id || null, Number(body.amount), body.note || null)
+    createAuditLog(request, cu.id, { action: 'create', module: '支出預算', target_type: 'expense_budget', target_id: result.lastInsertRowid as number, target_name: `${body.year}年${bMonth ? bMonth + '月' : ''}${body.budget_type || 'total'}` })
     return reply.code(201).send({ success: true, data: { id: result.lastInsertRowid } })
   })
 
   // DELETE /api/expenses/budgets/:id
   fastify.delete('/api/expenses/budgets/:id', { preHandler: [requirePermission('expenses', 'edit')] }, async (request, reply) => {
+    const cu = request.currentUser!
     const { id } = request.params as any
+    const budget = db.prepare('SELECT * FROM expense_budgets WHERE id=?').get(Number(id)) as any
     db.prepare('DELETE FROM expense_budgets WHERE id=?').run(Number(id))
+    createAuditLog(request, cu.id, { action: 'delete', module: '支出預算', target_type: 'expense_budget', target_id: Number(id), target_name: budget ? `${budget.year}年${budget.month ? budget.month + '月' : ''}${budget.budget_type || 'total'}` : `id:${id}` })
     return reply.send({ success: true })
   })
 }

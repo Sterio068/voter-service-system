@@ -179,6 +179,11 @@ const CreateVoterSchema = z.object({
   addr_village: z.string().nullable().optional(),
 })
 
+const BulkTagsSchema = z.object({
+  voter_ids: z.array(z.number().int().positive()).min(1, '至少需要一位選民').max(1000, '單次批次最多 1000 位選民'),
+  tags: z.array(z.string().min(1).max(50)).min(1, '至少需要一個標籤').max(20, '單次最多 20 個標籤'),
+})
+
 interface CreateVoterBody {
   name: string
   gender?: string
@@ -825,6 +830,62 @@ export default async function voterRoutes(fastify: FastifyInstance) {
     db.prepare('DELETE FROM voter_relations WHERE id=?').run(Number(rid))
     createAuditLog(request, cu.id, { action: 'delete', module: '選民管理', target_type: 'voter_relation', target_id: Number(rid), target_name: `關聯 ${rid}` })
     return reply.send({ success: true, message: '關聯已刪除' })
+  })
+
+  // POST /api/voters/bulk-tags — 批次套用標籤（單一 transaction，避免部分成功）
+  fastify.post('/api/voters/bulk-tags', { preHandler: [requirePermission('voters', 'edit')] }, async (request, reply) => {
+    const cu = request.currentUser!
+    const parsed = BulkTagsSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
+    const { voter_ids, tags } = parsed.data
+    const uniqueTags = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)))
+    if (uniqueTags.length === 0) {
+      return reply.code(400).send({ success: false, error: '至少需要一個有效標籤' })
+    }
+    const uniqueIds = Array.from(new Set(voter_ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)))
+    if (uniqueIds.length === 0) {
+      return reply.code(400).send({ success: false, error: '至少需要一位選民' })
+    }
+    // 確認所有選民存在且未停用
+    const placeholders = uniqueIds.map(() => '?').join(',')
+    const existing = db.prepare(`SELECT id, name FROM voters WHERE id IN (${placeholders}) AND is_active = 1`)
+      .all(...uniqueIds) as Array<{ id: number; name: string }>
+    const existingIds = new Set(existing.map((v) => v.id))
+    const missingIds = uniqueIds.filter((id) => !existingIds.has(id))
+
+    let success = 0
+    const insertTag = db.prepare('INSERT OR IGNORE INTO voter_tags (voter_id, tag) VALUES (?, ?)')
+    const bulkApply = db.transaction(() => {
+      for (const voter of existing) {
+        for (const tag of uniqueTags) insertTag.run(voter.id, tag)
+        success++
+      }
+    })
+    bulkApply()
+
+    createAuditLog(request, cu.id, {
+      action: 'update',
+      module: '選民管理',
+      target_type: 'voter_bulk_tags',
+      target_id: 0,
+      target_name: `批次標籤：${uniqueTags.join(',')}`,
+      detail: {
+        tags: uniqueTags,
+        applied_count: success,
+        requested_count: uniqueIds.length,
+        missing_ids: missingIds,
+      },
+    })
+
+    return reply.send({
+      success: true,
+      data: { success, failed: missingIds.length, missing_ids: missingIds, tags: uniqueTags },
+      message: missingIds.length
+        ? `成功 ${success} 筆，失敗 ${missingIds.length} 筆`
+        : `已加標籤到 ${success} 筆選民`,
+    })
   })
 
   // PUT /api/voters/:id/engagement
