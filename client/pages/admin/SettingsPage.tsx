@@ -394,6 +394,7 @@ export default function SettingsPage() {
             onClick={() => handleVerifyBackup(r.name)}
             type="text"
             title="驗證簽章"
+            aria-label={`驗證備份 ${r.name} 的簽章`}
           />
           {r.signed && (
             <Button
@@ -401,6 +402,7 @@ export default function SettingsPage() {
               icon={<DownloadOutlined />}
               type="text"
               title="下載 .meta.json sidecar（搬到外部儲存時請和 .db 一起留存）"
+              aria-label={`下載備份 ${r.name} 的 .meta.json sidecar`}
               onClick={async () => {
                 try {
                   const res = await api.get('/admin/backup/download-meta', { params: { file: r.name }, responseType: 'blob' })
@@ -418,7 +420,7 @@ export default function SettingsPage() {
             />
           )}
           <Popconfirm title="確定刪除此備份？" onConfirm={() => handleDeleteBackup(r.name)}>
-            <Button size="small" icon={<DeleteOutlined />} danger type="text" />
+            <Button size="small" icon={<DeleteOutlined />} danger type="text" aria-label={`刪除備份 ${r.name}`} />
           </Popconfirm>
         </Space>
       ),

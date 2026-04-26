@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { Suspense, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Col, List, Progress, Row, Skeleton, Space, Tag, Typography } from 'antd'
 import {
   AlertOutlined,
@@ -16,19 +16,11 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 import api from '../utils/api'
+
+// Lazy-load chart-vendor (recharts, 410 KB gz) — not needed until data resolves.
+const DashboardCharts = React.lazy(() => import('./dashboard/DashboardCharts'))
+
 import { useAuthStore } from '../stores/authStore'
 import PageScaffold from '../components/ui/PageScaffold'
 import MetricCard from '../components/ui/MetricCard'
@@ -552,45 +544,13 @@ export default function Dashboard() {
           </Col>
         )}
 
-        <Col xs={24} lg={birthdayVoters.length > 0 ? 12 : 24}>
-          <Card title="陳情狀態分佈">
-            {statusData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
-                  <Pie data={statusData} cx="50%" cy="50%" innerRadius={58} outerRadius={86} dataKey="value">
-                    {statusData.map((entry: any, index: number) => (
-                      <Cell key={index} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState variant="compact" title="尚無陳情資料" description="建立案件後會顯示狀態分佈。" />
-            )}
-          </Card>
-        </Col>
-
-        <Col xs={24}>
-          <Card
-            title={<><AlertOutlined /> 本年度陳情趨勢</>}
-            extra={<Button type="link" onClick={() => navigate('/reports')}>進階報表</Button>}
-          >
-            {monthlyData.some((item: any) => item.數量 > 0) ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={monthlyData} margin={{ top: 8, right: 16, left: -12, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="數量" fill="#007AFF" radius={[6, 6, 0, 0]} maxBarSize={42} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState variant="compact" title="本年度尚無陳情紀錄" description="案件建立後會自動累積月份趨勢。" />
-            )}
-          </Card>
-        </Col>
+        <Suspense fallback={null}>
+          <DashboardCharts
+            statusData={statusData}
+            monthlyData={monthlyData}
+            birthdaySpan={birthdayVoters.length > 0 ? 12 : 24}
+          />
+        </Suspense>
       </Row>
     </PageScaffold>
   )

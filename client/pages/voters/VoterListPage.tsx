@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Table, Button, Space, Input, Select, Tag, Typography, Card,
   Modal, Form, DatePicker, Radio, Drawer, Row, Col, message, Popconfirm, Upload, Alert, Progress, notification, Popover, Spin
@@ -460,7 +460,7 @@ export default function VoterListPage() {
     }
   }
 
-  const columns: ColumnsType<any> = [
+  const columns: ColumnsType<any> = useMemo(() => [
     {
       title: '姓名',
       dataIndex: 'name',
@@ -482,10 +482,14 @@ export default function VoterListPage() {
             open={isHovered || (hoverLoading && hoverTimerRef.current !== null)}
           >
             <a
+              role="link"
+              tabIndex={0}
+              aria-label={`查看選民 ${name} 詳情`}
               style={{ cursor: 'pointer' }}
               onMouseEnter={() => handleVoterHover(record.id)}
               onMouseLeave={handleVoterLeave}
               onClick={() => navigate(`/voters/${record.id}`)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/voters/${record.id}`) } }}
             >
               {name}
             </a>
@@ -543,7 +547,8 @@ export default function VoterListPage() {
         </Space>
       ),
     },
-  ]
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [hoverVoter, hoverLoading, canEditVoter, canDeleteVoter, navigate, handleEdit, handleDelete, handleVoterHover, handleVoterLeave])
 
   return (
     <PageScaffold
@@ -593,23 +598,25 @@ export default function VoterListPage() {
         description="以姓名、電話、戶籍區域與標籤快速縮小選民名單。"
         meta={<Text type="secondary">共 {total} 筆</Text>}
       >
-        <Space wrap>
+        <Space wrap role="search" aria-label="選民篩選">
           <Input.Search
             placeholder="姓名/手機/地址搜尋"
+            aria-label="搜尋選民（姓名、手機或地址）"
             allowClear
             style={{ width: 220 }}
             value={search}
             onChange={(e) => { if (!e.target.value) { setSearch(''); setPage(1) } }}
             onSearch={(v) => { setSearch(v); setPage(1) }}
-            prefix={<SearchOutlined />}
+            prefix={<SearchOutlined aria-hidden />}
           />
-          <Select placeholder="縣市篩選" allowClear style={{ width: 130 }} value={filterCity || undefined} onChange={(v) => { setFilterCity(v || ''); setFilterDistrict(''); setFilterVillage(''); setPage(1) }}>
+          <Select placeholder="縣市篩選" aria-label="縣市篩選" allowClear style={{ width: 130 }} value={filterCity || undefined} onChange={(v) => { setFilterCity(v || ''); setFilterDistrict(''); setFilterVillage(''); setPage(1) }}>
             {['台北市', '新北市', '桃園市', '台中市', '台南市', '高雄市', '基隆市', '新竹市', '嘉義市',
               '新竹縣', '苗栗縣', '彰化縣', '南投縣', '雲林縣', '嘉義縣', '屏東縣', '宜蘭縣', '花蓮縣', '台東縣',
               '澎湖縣', '金門縣', '連江縣'].map(c => <Option key={c} value={c}>{c}</Option>)}
           </Select>
           <Input
             placeholder="鄉鎮市區"
+            aria-label="鄉鎮市區篩選"
             allowClear
             style={{ width: 110 }}
             value={filterDistrict}
@@ -617,12 +624,13 @@ export default function VoterListPage() {
           />
           <Input
             placeholder="村里"
+            aria-label="村里篩選"
             allowClear
             style={{ width: 90 }}
             value={filterVillage}
             onChange={(e) => { setFilterVillage(e.target.value); setPage(1) }}
           />
-          <Select placeholder="標籤篩選" allowClear style={{ width: 120 }} value={filterTag || undefined} onChange={(v) => { setFilterTag(v || ''); setPage(1) }}>
+          <Select placeholder="標籤篩選" aria-label="標籤篩選" allowClear style={{ width: 120 }} value={filterTag || undefined} onChange={(v) => { setFilterTag(v || ''); setPage(1) }}>
             {tags.map(t => <Option key={t} value={t}>{t}</Option>)}
           </Select>
           {(search || filterCity || filterDistrict || filterVillage || filterTag) && (

@@ -5,7 +5,8 @@ import {
   Divider, Tabs, Popconfirm, Alert, Checkbox, TimePicker
 } from 'antd'
 import { PlusOutlined, PrinterOutlined, FileWordOutlined, GiftOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
-import { Document, Packer, Paragraph, Table as DocxTable, TableRow, TableCell, TextRun, AlignmentType, WidthType, ShadingType, BorderStyle, PageNumber, Footer, Header, convertInchesToTwip } from 'docx'
+// docx is part of file-vendor (350 KB). Import dynamically inside handleExportWord
+// so it only loads when the user actually clicks "匯出 Word".
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
@@ -415,6 +416,13 @@ export default function SchedulePage() {
       message.info('目前角色無法匯出行程')
       return
     }
+
+    // Dynamically load docx (file-vendor, 350 KB) only on first click.
+    const {
+      Document, Packer, Paragraph, Table: DocxTable, TableRow, TableCell, TextRun,
+      AlignmentType, WidthType, ShadingType, BorderStyle, PageNumber, Footer, Header, convertInchesToTwip,
+    } = await import('docx')
+
     const startDate = printStartDate.startOf('day')
     const endDate = startDate.add(printDays - 1, 'day').endOf('day')
 
@@ -449,7 +457,7 @@ export default function SchedulePage() {
       { size: 26, type: WidthType.PERCENTAGE },
     ]
 
-    const tableRows: TableRow[] = [
+    const tableRows: InstanceType<typeof TableRow>[] = [
       new TableRow({
         tableHeader: true,
         children: [
@@ -705,19 +713,20 @@ export default function SchedulePage() {
           ? <Text type="secondary">顯示 {filteredSchedules.length} / {schedules.length} 筆</Text>
           : <Text type="secondary">共 {schedules.length} 筆</Text>}
       >
-        <Space wrap>
+        <Space wrap role="search" aria-label="行程篩選">
           <Input.Search
             placeholder="搜尋行程標題、地點、備註"
+            aria-label="搜尋行程標題、地點或備註"
             allowClear
             style={{ width: 220 }}
             value={searchKeyword}
             onChange={e => { if (!e.target.value) setSearchKeyword('') }}
             onSearch={v => setSearchKeyword(v)}
           />
-          <Select placeholder="類型篩選" allowClear style={{ width: 130 }} value={filterType || undefined} onChange={v => setFilterType(v || '')}>
+          <Select placeholder="類型篩選" aria-label="行程類型篩選" allowClear style={{ width: 130 }} value={filterType || undefined} onChange={v => setFilterType(v || '')}>
             {scheduleTypes.map(t => <Option key={t.code} value={t.code}>{t.name}</Option>)}
           </Select>
-          <Select placeholder="狀態篩選" allowClear style={{ width: 110 }} value={filterStatus || undefined} onChange={v => setFilterStatus(v || '')}>
+          <Select placeholder="狀態篩選" aria-label="行程狀態篩選" allowClear style={{ width: 110 }} value={filterStatus || undefined} onChange={v => setFilterStatus(v || '')}>
             <Option value="confirmed">確認</Option>
             <Option value="tentative">暫定</Option>
             <Option value="cancelled">已取消</Option>

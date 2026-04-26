@@ -63,19 +63,19 @@ export default function LoginPage() {
     }}>
       <Card style={{ width: 400, boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
         <Space direction="vertical" style={{ width: '100%', textAlign: 'center', marginBottom: 24 }}>
-          <div style={{ fontSize: 48, cursor: 'default', userSelect: 'none' }} onClick={handleLogoClick}>🗳️</div>
+          <div role="img" aria-label="選民服務系統 Logo" style={{ fontSize: 48, cursor: 'default', userSelect: 'none' }} onClick={handleLogoClick}>🗳️</div>
           <Title level={3} style={{ margin: 0 }}>選民服務系統</Title>
           <Text type="secondary">請登入以繼續</Text>
         </Space>
 
-        {error && <Alert message={error} type="error" showIcon style={{ marginBottom: 16 }} />}
+        {error && <Alert message={error} type="error" showIcon role="alert" style={{ marginBottom: 16 }} />}
 
-        <Form onFinish={handleLogin} layout="vertical" size="large">
-          <Form.Item name="username" rules={[{ required: true, message: '請輸入帳號' }]}>
-            <Input prefix={<UserOutlined />} placeholder="帳號" autoFocus />
+        <Form onFinish={handleLogin} layout="vertical" size="large" aria-label="登入表單">
+          <Form.Item name="username" label="帳號" rules={[{ required: true, message: '請輸入帳號' }]}>
+            <Input prefix={<UserOutlined aria-hidden />} placeholder="帳號" autoFocus aria-label="帳號" autoComplete="username" />
           </Form.Item>
-          <Form.Item name="password" rules={[{ required: true, message: '請輸入密碼' }]}>
-            <Input.Password prefix={<LockOutlined />} placeholder="密碼" />
+          <Form.Item name="password" label="密碼" rules={[{ required: true, message: '請輸入密碼' }]}>
+            <Input.Password prefix={<LockOutlined aria-hidden />} placeholder="密碼" aria-label="密碼" autoComplete="current-password" />
           </Form.Item>
           <Form.Item style={{ marginBottom: 0 }}>
             <Button type="primary" htmlType="submit" loading={loading} block>

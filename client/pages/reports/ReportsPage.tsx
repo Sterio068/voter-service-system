@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { Card, Tabs, Select, Button, Alert, Modal, Form, Input, message, Row, Col } from 'antd'
+import React, { Suspense, useState, useEffect } from 'react'
+import { Card, Tabs, Select, Button, Alert, Modal, Form, Input, message, Row, Col, Spin } from 'antd'
 import { FileTextOutlined, AlertOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
@@ -10,25 +10,35 @@ import MetricCard from '../../components/ui/MetricCard'
 import { useAuthStore } from '../../stores/authStore'
 import { hasModulePermission } from '../../utils/permissions'
 
-import ReportsHome from './components/ReportsHome'
-import AssigneeWorkload from './components/AssigneeWorkload'
-import AreaHeatmap from './components/AreaHeatmap'
-import MonthlyTrend from './components/MonthlyTrend'
-import ClosureEfficiency from './components/ClosureEfficiency'
-import SatisfactionRanking from './components/SatisfactionRanking'
-import VoterActivity from './components/VoterActivity'
-import NoContactVoters from './components/NoContactVoters'
-import HighRiskPetitions from './components/HighRiskPetitions'
-import AreaGapAnalysis from './components/AreaGapAnalysis'
-import WeeklyReport from './components/WeeklyReport'
-import TypeAreaCross from './components/TypeAreaCross'
-import VoterLifecycleFunnel from './components/VoterLifecycleFunnel'
-import EventROIReport from './components/EventROIReport'
-import NotificationReachRate from './components/NotificationReachRate'
-import IssueTrendChart from './components/IssueTrendChart'
-import TeamEfficiency from './components/TeamEfficiency'
-import SurveyCrossAnalysis from './components/SurveyCrossAnalysis'
-import AssigneeLoadIndex from './components/AssigneeLoadIndex'
+// Lazy-load each report tab — they all pull recharts (chart-vendor).
+// They only load when the user clicks into that tab.
+const ReportsHome = React.lazy(() => import('./components/ReportsHome'))
+const AssigneeWorkload = React.lazy(() => import('./components/AssigneeWorkload'))
+const AreaHeatmap = React.lazy(() => import('./components/AreaHeatmap'))
+const MonthlyTrend = React.lazy(() => import('./components/MonthlyTrend'))
+const ClosureEfficiency = React.lazy(() => import('./components/ClosureEfficiency'))
+const SatisfactionRanking = React.lazy(() => import('./components/SatisfactionRanking'))
+const VoterActivity = React.lazy(() => import('./components/VoterActivity'))
+const NoContactVoters = React.lazy(() => import('./components/NoContactVoters'))
+const HighRiskPetitions = React.lazy(() => import('./components/HighRiskPetitions'))
+const AreaGapAnalysis = React.lazy(() => import('./components/AreaGapAnalysis'))
+const WeeklyReport = React.lazy(() => import('./components/WeeklyReport'))
+const TypeAreaCross = React.lazy(() => import('./components/TypeAreaCross'))
+const VoterLifecycleFunnel = React.lazy(() => import('./components/VoterLifecycleFunnel'))
+const EventROIReport = React.lazy(() => import('./components/EventROIReport'))
+const NotificationReachRate = React.lazy(() => import('./components/NotificationReachRate'))
+const IssueTrendChart = React.lazy(() => import('./components/IssueTrendChart'))
+const TeamEfficiency = React.lazy(() => import('./components/TeamEfficiency'))
+const SurveyCrossAnalysis = React.lazy(() => import('./components/SurveyCrossAnalysis'))
+const AssigneeLoadIndex = React.lazy(() => import('./components/AssigneeLoadIndex'))
+
+function TabFallback() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+      <Spin size="large" />
+    </div>
+  )
+}
 
 const { Option } = Select
 
@@ -172,26 +182,30 @@ ${eData.map((r: any) => `<tr><td>${r.category || '未分類'}</td><td>${r.total_
     } catch { message.error('匯出失敗') }
   }
 
+  function wrap(el: React.ReactNode) {
+    return <Suspense fallback={<TabFallback />}>{el}</Suspense>
+  }
+
   const tabItems = [
-    { key: 'home', label: '報表首頁', children: <ReportsHome onNavigate={setActiveTab} /> },
-    { key: 'workload', label: '承辦人工作量', children: <AssigneeWorkload year={year} /> },
-    { key: 'area', label: '選區熱點', children: <AreaHeatmap year={year} /> },
-    { key: 'trend', label: '月份趨勢', children: <MonthlyTrend year={year} /> },
-    { key: 'efficiency', label: '結案效率', children: <ClosureEfficiency year={year} /> },
-    { key: 'satisfaction', label: '滿意度排行', children: <SatisfactionRanking year={year} /> },
-    { key: 'activity', label: '選民活躍度', children: <VoterActivity /> },
-    { key: 'no-contact', label: '未接觸選民', children: <NoContactVoters /> },
-    { key: 'high-risk', label: '高風險案件', children: <HighRiskPetitions /> },
-    { key: 'area-gap', label: '選區缺口', children: <AreaGapAnalysis /> },
-    { key: 'weekly', label: '週報', children: <WeeklyReport /> },
-    { key: 'type-area', label: '類型×選區', children: <TypeAreaCross year={year} /> },
-    { key: 'lifecycle', label: '選民生命週期', children: <VoterLifecycleFunnel /> },
-    { key: 'event-roi', label: '活動效益', children: <EventROIReport /> },
-    { key: 'notif-reach', label: '通知觸及率', children: <NotificationReachRate /> },
-    { key: 'issue-trend', label: '議題趨勢', children: <IssueTrendChart /> },
-    { key: 'team-efficiency', label: '團隊效率', children: <TeamEfficiency /> },
-    { key: 'survey-cross', label: '問卷交叉分析', children: <SurveyCrossAnalysis /> },
-    { key: 'assignee-load', label: '負載指數', children: <AssigneeLoadIndex /> },
+    { key: 'home', label: '報表首頁', children: wrap(<ReportsHome onNavigate={setActiveTab} />) },
+    { key: 'workload', label: '承辦人工作量', children: wrap(<AssigneeWorkload year={year} />) },
+    { key: 'area', label: '選區熱點', children: wrap(<AreaHeatmap year={year} />) },
+    { key: 'trend', label: '月份趨勢', children: wrap(<MonthlyTrend year={year} />) },
+    { key: 'efficiency', label: '結案效率', children: wrap(<ClosureEfficiency year={year} />) },
+    { key: 'satisfaction', label: '滿意度排行', children: wrap(<SatisfactionRanking year={year} />) },
+    { key: 'activity', label: '選民活躍度', children: wrap(<VoterActivity />) },
+    { key: 'no-contact', label: '未接觸選民', children: wrap(<NoContactVoters />) },
+    { key: 'high-risk', label: '高風險案件', children: wrap(<HighRiskPetitions />) },
+    { key: 'area-gap', label: '選區缺口', children: wrap(<AreaGapAnalysis />) },
+    { key: 'weekly', label: '週報', children: wrap(<WeeklyReport />) },
+    { key: 'type-area', label: '類型×選區', children: wrap(<TypeAreaCross year={year} />) },
+    { key: 'lifecycle', label: '選民生命週期', children: wrap(<VoterLifecycleFunnel />) },
+    { key: 'event-roi', label: '活動效益', children: wrap(<EventROIReport />) },
+    { key: 'notif-reach', label: '通知觸及率', children: wrap(<NotificationReachRate />) },
+    { key: 'issue-trend', label: '議題趨勢', children: wrap(<IssueTrendChart />) },
+    { key: 'team-efficiency', label: '團隊效率', children: wrap(<TeamEfficiency />) },
+    { key: 'survey-cross', label: '問卷交叉分析', children: wrap(<SurveyCrossAnalysis />) },
+    { key: 'assignee-load', label: '負載指數', children: wrap(<AssigneeLoadIndex />) },
   ]
 
   return (

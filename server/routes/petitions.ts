@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+import { PETITION_LOG_ACTION_TYPES } from '../../shared/types'
 
 function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
@@ -264,9 +265,8 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
     const { id } = request.params as any
     const { action_type, content, referred_to } = request.body as any
     if (!action_type) return reply.code(400).send({ success: false, error: '處理方式為必填' })
-    const VALID_ACTION_TYPES = ['受理', '轉介', '回覆', '結案', '追蹤', '重新分派', '備註', '補充', '電話聯絡', '親訪']
-    if (!VALID_ACTION_TYPES.includes(action_type)) {
-      return reply.code(400).send({ success: false, error: `無效的處理方式，允許值：${VALID_ACTION_TYPES.join('、')}` })
+    if (!PETITION_LOG_ACTION_TYPES.includes(action_type)) {
+      return reply.code(400).send({ success: false, error: `無效的處理方式，允許值：${PETITION_LOG_ACTION_TYPES.join('、')}` })
     }
     if (!content || !String(content).trim()) return reply.code(400).send({ success: false, error: '處理內容為必填' })
     const petition = db.prepare('SELECT * FROM petitions WHERE id=?').get(Number(id)) as any

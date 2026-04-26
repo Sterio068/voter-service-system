@@ -97,7 +97,7 @@ export default function VoterDetailPage() {
     }
   }
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>
+  if (loading) return <div role="status" aria-live="polite" aria-label="選民資料載入中" style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>
   if (!voter) return <EmptyState title="選民不存在" description="這筆資料可能已被刪除或目前沒有讀取權限。" />
 
   const voterId = Number(id)

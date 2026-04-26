@@ -9,6 +9,7 @@ import api from '../../utils/api'
 import { useDataSync } from '../../hooks/useDataSync'
 import AttachmentUpload from '../../components/AttachmentUpload'
 import AIButton from '../../components/ai/AIButton'
+import { PETITION_LOG_ACTION_TYPES } from '../../../shared/types'
 import PageScaffold from '../../components/ui/PageScaffold'
 import dayjs from 'dayjs'
 
@@ -171,7 +172,7 @@ export default function PetitionDetailPage() {
     }
   }
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>
+  if (loading) return <div role="status" aria-live="polite" aria-label="案件資料載入中" style={{ textAlign: 'center', padding: 100 }}><Spin size="large" /></div>
   if (!petition) return <Empty description="陳情案件不存在" />
 
   const timelineItems = (petition.logs || []).map((log: any) => ({
@@ -365,7 +366,7 @@ export default function PetitionDetailPage() {
         <Form form={logForm} layout="vertical" onFinish={handleAddLog}>
           <Form.Item name="action_type" label="處理方式" rules={[{ required: true }]}>
             <Select>
-              {['電話', '會勘', '發文', '轉介', '回覆', '結案', '其他'].map(t => <Option key={t} value={t}>{t}</Option>)}
+              {PETITION_LOG_ACTION_TYPES.map(t => <Option key={t} value={t}>{t}</Option>)}
             </Select>
           </Form.Item>
           <Form.Item name="content" label="處理內容" rules={[{ required: true }]}>

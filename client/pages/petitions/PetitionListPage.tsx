@@ -386,10 +386,14 @@ export default function PetitionListPage() {
         )
         return (
           <span
+            role={canEditPetition ? 'button' : undefined}
+            tabIndex={canEditPetition ? 0 : undefined}
+            aria-label={canEditPetition ? `編輯承辦人 ${v || '未指派'}` : undefined}
             style={{ cursor: canEditPetition ? 'pointer' : 'default' }}
             onClick={() => { if (canEditPetition) setEditingPetitionId(row.id) }}
+            onKeyDown={(e) => { if (canEditPetition && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setEditingPetitionId(row.id) } }}
           >
-            {v || '—'} {canEditPetition ? <EditOutlined style={{ fontSize: 11, color: '#999' }} /> : null}
+            {v || '—'} {canEditPetition ? <EditOutlined style={{ fontSize: 11, color: '#999' }} aria-hidden /> : null}
           </span>
         )
       },
@@ -477,23 +481,24 @@ export default function PetitionListPage() {
           ))}
           {(startDate || endDate) && <Button size="small" onClick={() => { setStartDate(''); setEndDate(''); setPage(1) }}>清除</Button>}
         </Space>
-        <Space wrap>
+        <Space wrap role="search" aria-label="陳情案件篩選">
           <Input.Search
             placeholder="搜尋陳情內容"
+            aria-label="搜尋陳情內容"
             allowClear
             style={{ width: 200 }}
             value={search}
             onChange={(e) => { if (!e.target.value) { setSearch(''); setPage(1) } }}
             onSearch={(v) => { setSearch(v); setPage(1) }}
-            prefix={<SearchOutlined />}
+            prefix={<SearchOutlined aria-hidden />}
           />
-          <Select placeholder="狀態篩選" allowClear style={{ width: 110 }} onChange={(v) => { setFilterStatus(v || ''); setPage(1) }} value={filterStatus || undefined}>
+          <Select placeholder="狀態篩選" aria-label="狀態篩選" allowClear style={{ width: 110 }} onChange={(v) => { setFilterStatus(v || ''); setPage(1) }} value={filterStatus || undefined}>
             {Object.entries(STATUS_LABELS).map(([v, l]) => <Option key={v} value={v}>{l}</Option>)}
           </Select>
-          <Select placeholder="類別篩選" allowClear style={{ width: 120 }} onChange={(v) => { setFilterCategory(v || ''); setPage(1) }} value={filterCategory || undefined}>
+          <Select placeholder="類別篩選" aria-label="類別篩選" allowClear style={{ width: 120 }} onChange={(v) => { setFilterCategory(v || ''); setPage(1) }} value={filterCategory || undefined}>
             {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
           </Select>
-          <Select placeholder="緊急程度" allowClear style={{ width: 100 }} onChange={(v) => { setFilterUrgency(v || ''); setPage(1) }} value={filterUrgency || undefined}>
+          <Select placeholder="緊急程度" aria-label="緊急程度篩選" allowClear style={{ width: 100 }} onChange={(v) => { setFilterUrgency(v || ''); setPage(1) }} value={filterUrgency || undefined}>
             {Object.entries(URGENCY_LABELS).map(([v, l]) => <Option key={v} value={v}>{l}</Option>)}
           </Select>
           {(search || filterStatus || filterCategory || filterUrgency) && (
@@ -745,7 +750,7 @@ export default function PetitionListPage() {
             <p className="ant-upload-text">點擊或拖曳 Excel 檔案至此上傳</p>
             <p className="ant-upload-hint">僅支援 .xlsx / .xls 格式</p>
           </Upload.Dragger>
-          {importing && <div style={{ textAlign: 'center' }}>匯入中，請稍候...</div>}
+          {importing && <div role="status" aria-live="polite" style={{ textAlign: 'center' }}>匯入中，請稍候...</div>}
           {importResult && (
             <Alert
               type={importResult.failed > 0 ? 'warning' : 'success'}

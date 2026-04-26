@@ -108,6 +108,26 @@ export interface PetitionLog {
   created_at: string
 }
 
+/**
+ * Allowed values for `petition_log.action_type`.
+ * SHARED so the UI dropdown and the server validation never drift apart.
+ * If you change this, also bump the server's VALID_ACTION_TYPES (which now
+ * imports from this constant) and the corresponding e2e test fixture.
+ */
+export const PETITION_LOG_ACTION_TYPES = [
+  '受理',
+  '轉介',
+  '回覆',
+  '結案',
+  '追蹤',
+  '重新分派',
+  '備註',
+  '補充',
+  '電話聯絡',
+  '親訪',
+] as const
+export type PetitionLogActionType = typeof PETITION_LOG_ACTION_TYPES[number]
+
 // 公文類型
 export type DocType = 'incoming' | 'outgoing'
 export type DocStatus = 'pending' | 'processing' | 'replied' | 'archived'

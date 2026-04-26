@@ -105,8 +105,10 @@ export default function HelpHero({ searchValue, onSearchChange }: Props) {
         <Input
           allowClear
           size="large"
-          prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+          prefix={<SearchOutlined aria-hidden style={{ color: '#bfbfbf' }} />}
           placeholder="搜尋模組、情境、關鍵字（例如：陳情、Google、備份）"
+          aria-label="搜尋使用說明模組或情境"
+          type="search"
           value={searchValue}
           onChange={(e) => onSearchChange(e.target.value)}
           style={{

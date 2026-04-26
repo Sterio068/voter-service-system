@@ -50,17 +50,23 @@ function NavItem({ icon, label, path, collapsed, badge }: NavItemProps) {
     (path !== '/' && location.pathname.startsWith(path + '/') &&
      !/^[a-zA-Z]/.test(location.pathname.slice(path.length + 1)))
 
+  const ariaLabel = badge && badge > 0 ? `${label}，${badge > 99 ? '超過 99' : badge} 筆未處理` : label
   return (
     <Tooltip title={collapsed ? label : ''} placement="right">
       <div
+        role="link"
+        tabIndex={0}
+        aria-label={ariaLabel}
+        aria-current={isActive ? 'page' : undefined}
         className={`mac-nav-item${isActive ? ' active' : ''}`}
         onClick={() => navigate(path)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(path) } }}
         style={collapsed ? { justifyContent: 'center', padding: '0 6px' } : {}}
       >
-        <span className="mac-nav-icon">{icon}</span>
+        <span className="mac-nav-icon" aria-hidden>{icon}</span>
         {!collapsed && <span style={{ flex: 1 }}>{label}</span>}
         {!collapsed && badge != null && badge > 0 && (
-          <span style={{
+          <span aria-hidden style={{
             background: '#ff3b30', color: '#fff', fontSize: 10, fontWeight: 600,
             borderRadius: 10, minWidth: 16, height: 16, lineHeight: '16px',
             textAlign: 'center', padding: '0 4px',
@@ -240,7 +246,7 @@ export default function MainLayout() {
   ]
 
   const navItems = (
-    <>
+    <nav aria-label="主選單">
       <NavItem icon={<DashboardOutlined />} label="儀表板" path="/" collapsed={collapsed} />
       <SectionLabel label="陳情" collapsed={collapsed} />
       <NavItem icon={<FileTextOutlined />} label="案件列表" path="/petitions" collapsed={collapsed} badge={pendingCount} />
@@ -278,7 +284,7 @@ export default function MainLayout() {
       )}
       <SectionLabel label="說明" collapsed={collapsed} />
       <NavItem icon={<BookOutlined />} label="使用說明" path="/help" collapsed={collapsed} />
-    </>
+    </nav>
   )
 
   if (isMobile) {
@@ -323,7 +329,7 @@ export default function MainLayout() {
         </Content>
 
         {/* Bottom nav bar */}
-        <div style={{
+        <nav aria-label="底部主選單" style={{
           position: 'fixed', bottom: 0, left: 0, right: 0, height: 60,
           background: headerBg, backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
           borderTop: headerBorder, display: 'flex', alignItems: 'stretch',
@@ -338,9 +344,15 @@ export default function MainLayout() {
           ].map(item => {
             const location = window.location
             const isActive = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path))
+            const itemAria = item.badge && item.badge > 0 ? `${item.label}，${item.badge > 99 ? '超過 99' : item.badge} 筆未處理` : item.label
             return (
               <div key={item.path}
+                role="link"
+                tabIndex={0}
+                aria-label={itemAria}
+                aria-current={isActive ? 'page' : undefined}
                 onClick={() => navigate(item.path)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(item.path) } }}
                 style={{
                   flex: 1, display: 'flex', flexDirection: 'column',
                   alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
@@ -349,13 +361,13 @@ export default function MainLayout() {
                   position: 'relative',
                 }}>
                 <Badge count={item.badge} overflowCount={99} size="small" offset={[6, -2]}>
-                  <span style={{ fontSize: 20 }}>{item.icon}</span>
+                  <span style={{ fontSize: 20 }} aria-hidden>{item.icon}</span>
                 </Badge>
                 <span>{item.label}</span>
               </div>
             )
           })}
-        </div>
+        </nav>
       </Layout>
 
       {/* Mobile full menu drawer */}
@@ -456,11 +468,16 @@ export default function MainLayout() {
           flexShrink: 0,
         }}>
           <div
+            role="button"
+            tabIndex={0}
+            aria-label={collapsed ? '展開側邊欄' : '收合側邊欄'}
+            aria-expanded={!collapsed}
             className="mac-nav-item"
             onClick={() => setCollapsed(c => !c)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setCollapsed(c => !c) } }}
             style={collapsed ? { justifyContent: 'center', padding: '0 6px' } : {}}
           >
-            <span className="mac-nav-icon" style={{ opacity: 0.5 }}>
+            <span className="mac-nav-icon" aria-hidden style={{ opacity: 0.5 }}>
               {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             </span>
             {!collapsed && <Text style={{ fontSize: 12, color: '#8e8e93' }}>收合</Text>}
@@ -519,7 +536,8 @@ export default function MainLayout() {
             <div style={{ width: 1, height: 20, background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', margin: '0 4px' }} />
 
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '4px 8px', borderRadius: 8, transition: 'background 0.15s' }}
+              <div role="button" tabIndex={0} aria-haspopup="menu" aria-label={`使用者選單：${user?.name || ''}`}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '4px 8px', borderRadius: 8, transition: 'background 0.15s' }}
                 onMouseEnter={e => (e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                 <Avatar

@@ -51,8 +51,8 @@ export default function TasksPage() {
     }
   }, [searchParams, canCreateTask, form])
 
+  // Load auxiliary data (users + voters) only once on mount — not on every filter change.
   useEffect(() => {
-    fetchTasks()
     setAuxError(null)
     Promise.allSettled([
       api.get('/users/list').then(r => setUsers(r.data.data || [])),
@@ -63,6 +63,10 @@ export default function TasksPage() {
         setAuxError('部分輔助資料（承辦人或選民清單）載入失敗，仍可建立任務但選項可能不完整。')
       }
     })
+  }, [])
+
+  useEffect(() => {
+    fetchTasks()
   }, [page, statusFilter, todayFocus])
 
   useDataSync((events) => {
