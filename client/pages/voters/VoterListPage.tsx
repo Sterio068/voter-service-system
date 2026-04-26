@@ -601,7 +601,9 @@ export default function VoterListPage() {
         <Space wrap role="search" aria-label="選民篩選">
           <Input.Search
             placeholder="姓名/手機/地址搜尋"
-            aria-label="搜尋選民（姓名、手機或地址）"
+            // 簡化 aria-label，避免和表單「姓名」欄位的 accessible name
+            // 在 Playwright getByLabel 命中重複（placeholder 已說明搜尋對象）。
+            aria-label="搜尋選民"
             allowClear
             style={{ width: 220 }}
             value={search}
