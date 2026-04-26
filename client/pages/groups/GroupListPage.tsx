@@ -113,10 +113,10 @@ export default function GroupListPage() {
       title: '操作', width: 100,
       render: (_, r) => (
         <Space>
-          <Button size="small" icon={<EyeOutlined />} onClick={() => navigate(`/groups/${r.id}`)} />
-          <Button size="small" icon={<EditOutlined />} onClick={() => { setEditingGroup(r); form.setFieldsValue(r); setDrawerOpen(true) }} />
+          <Button size="small" icon={<EyeOutlined />} aria-label={`檢視團體 ${r.name}`} onClick={() => navigate(`/groups/${r.id}`)} />
+          <Button size="small" icon={<EditOutlined />} aria-label={`編輯團體 ${r.name}`} onClick={() => { setEditingGroup(r); form.setFieldsValue(r); setDrawerOpen(true) }} />
           <Popconfirm title={`確定停用「${r.name}」？`} onConfirm={() => handleDelete(r.id, r.name)}>
-            <Button size="small" icon={<DeleteOutlined />} danger />
+            <Button size="small" icon={<DeleteOutlined />} aria-label={`停用團體 ${r.name}`} danger />
           </Popconfirm>
         </Space>
       ),

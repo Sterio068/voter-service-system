@@ -159,12 +159,12 @@ export default function TasksPage() {
       <Space>
         {canEditTask && r.status !== 'done' && (
           <Tooltip title="標記完成">
-            <Button size="small" icon={<CheckOutlined />} aria-label="完成待辦" type="primary" ghost
+            <Button size="small" icon={<CheckOutlined />} aria-label={`完成待辦 ${r.title}`} type="primary" ghost
               onClick={() => handleStatus(r.id, 'done')} />
           </Tooltip>
         )}
         {canEditTask && r.status === 'done' && (
-          <Button size="small" aria-label="重啟待辦" onClick={() => handleStatus(r.id, 'pending')}>重啟</Button>
+          <Button size="small" aria-label={`重啟待辦 ${r.title}`} onClick={() => handleStatus(r.id, 'pending')}>重啟</Button>
         )}
         {canDeleteTask && (
           <Popconfirm
@@ -174,7 +174,7 @@ export default function TasksPage() {
             okButtonProps={{ danger: true }}
             onConfirm={() => handleDelete(r.id)}
           >
-            <Button size="small" danger icon={<DeleteOutlined />} aria-label="刪除待辦" />
+            <Button size="small" danger icon={<DeleteOutlined />} aria-label={`刪除待辦 ${r.title}`} />
           </Popconfirm>
         )}
       </Space>

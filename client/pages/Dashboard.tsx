@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Col, List, Progress, Row, Space, Spin, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Col, List, Progress, Row, Skeleton, Space, Tag, Typography } from 'antd'
 import {
   AlertOutlined,
   ArrowRightOutlined,
@@ -297,9 +297,50 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: 100 }}>
-        <Spin size="large" />
-      </div>
+      <PageScaffold
+        eyebrow="Today Command Center"
+        title={`${dayjs().format('M月D日')} ${dayjs().format('dddd')}工作台`}
+        description="把待分派、逾期、回訪、行程與系統健康集中在同一個入口，讓服務處一開工就能判斷今天先處理什麼。"
+      >
+        <div role="status" aria-live="polite" aria-label="工作台資料載入中">
+          <Row gutter={[12, 12]} style={{ marginBottom: 14 }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Col key={i} xs={12} md={8} xl={4}>
+                <Card className="vss-metric-card">
+                  <Skeleton active title={{ width: '60%' }} paragraph={{ rows: 2, width: ['40%', '70%'] }} />
+                </Card>
+              </Col>
+            ))}
+          </Row>
+          <Row gutter={[12, 12]}>
+            <Col xs={24} xl={14}>
+              <Card>
+                <Skeleton active title={{ width: '30%' }} paragraph={{ rows: 5 }} />
+              </Card>
+            </Col>
+            <Col xs={24} xl={10}>
+              <Card>
+                <Skeleton active title={{ width: '40%' }} paragraph={{ rows: 4 }} />
+              </Card>
+            </Col>
+            <Col xs={24} lg={12} xl={8}>
+              <Card>
+                <Skeleton active title={{ width: '40%' }} paragraph={{ rows: 4 }} />
+              </Card>
+            </Col>
+            <Col xs={24} lg={12} xl={8}>
+              <Card>
+                <Skeleton active title={{ width: '40%' }} paragraph={{ rows: 4 }} />
+              </Card>
+            </Col>
+            <Col xs={24} lg={12} xl={8}>
+              <Card>
+                <Skeleton active title={{ width: '40%' }} paragraph={{ rows: 4 }} />
+              </Card>
+            </Col>
+          </Row>
+        </div>
+      </PageScaffold>
     )
   }
 
@@ -390,7 +431,13 @@ export default function Dashboard() {
             title="今日焦點"
             subtitle={`${totalActionCount} 個訊號需要判斷優先序`}
             items={focusItems}
-            emptyText="今天沒有高風險、待分派或緊急項目。可以從回訪或資料整理開始。"
+            emptyText="今天沒有高風險、待分派或緊急項目"
+            emptyDescription="可以從回訪追蹤或資料整理開始建立今天的節奏。"
+            emptyAction={canCreatePetition ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/petitions?action=new')}>
+                新增第一筆陳情
+              </Button>
+            ) : undefined}
             extra={<Button type="link" onClick={() => navigate('/petitions')}>案件列表</Button>}
             limit={8}
           />
@@ -432,6 +479,12 @@ export default function Dashboard() {
             subtitle="行程、諮詢與服務安排"
             items={scheduleItems}
             emptyText="今日尚無行程安排"
+            emptyDescription="把選民拜訪、會議或活動加入行事曆，與團隊同步今天的去向。"
+            emptyAction={(
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/schedules?action=new')}>
+                新增今日行程
+              </Button>
+            )}
             extra={<Button type="link" onClick={() => navigate('/schedules')}>管理</Button>}
           />
         </Col>
@@ -441,6 +494,12 @@ export default function Dashboard() {
             subtitle="最新進件與狀態"
             items={petitionItems}
             emptyText="尚無陳情案件"
+            emptyDescription="收到第一筆民眾陳情後會即時呈現於此。"
+            emptyAction={canCreatePetition ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/petitions?action=new')}>
+                建立首筆陳情
+              </Button>
+            ) : undefined}
             extra={<Button type="link" onClick={() => navigate('/petitions')}>查看全部</Button>}
           />
         </Col>

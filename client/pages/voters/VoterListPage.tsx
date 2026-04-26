@@ -524,20 +524,20 @@ export default function VoterListPage() {
           <Button
             size="small"
             icon={<EyeOutlined />}
-            aria-label="查看選民"
+            aria-label={`查看選民 ${record.name}`}
             onClick={() => navigate(`/voters/${record.id}`)}
           />
           {canEditVoter && (
             <Button
               size="small"
               icon={<EditOutlined />}
-              aria-label="編輯選民"
+              aria-label={`編輯選民 ${record.name}`}
               onClick={() => handleEdit(record)}
             />
           )}
           {canDeleteVoter && (
             <Popconfirm title={`確定停用「${record.name}」？`} onConfirm={() => handleDelete(record.id, record.name)}>
-              <Button size="small" icon={<DeleteOutlined />} aria-label="停用選民" danger />
+              <Button size="small" icon={<DeleteOutlined />} aria-label={`停用選民 ${record.name}`} danger />
             </Popconfirm>
           )}
         </Space>

@@ -955,7 +955,7 @@ export default function SchedulePage() {
                       />
                     </Col>
                     <Col>
-                      <Button size="small" danger icon={<DeleteOutlined />} onClick={() => setCeremonyItems(prev => prev.filter((_, i) => i !== idx))} />
+                      <Button size="small" danger icon={<DeleteOutlined />} aria-label={`移除品項 ${idx + 1}`} onClick={() => setCeremonyItems(prev => prev.filter((_, i) => i !== idx))} />
                     </Col>
                   </Row>
                   <Row gutter={8} style={{ marginTop: 6 }}>
@@ -1074,7 +1074,7 @@ export default function SchedulePage() {
               title: '刪除', width: 60,
               render: (_: any, r: any) => (
                 <Popconfirm title="確定刪除此時段？" onConfirm={() => handleDeleteSlot(r.id)}>
-                  <Button size="small" danger icon={<DeleteOutlined />} />
+                  <Button size="small" danger icon={<DeleteOutlined />} aria-label={`刪除時段 ${r.slot_time || ''}`} />
                 </Popconfirm>
               ),
             }] : []),
@@ -1184,7 +1184,7 @@ export default function SchedulePage() {
                               {c.status === 'paid' ? '已付款' : c.status === 'cancelled' ? '已取消' : '計畫中'}
                             </Tag>
                             {canEditCeremony && (
-                              <Button size="small" icon={<EditOutlined />} onClick={() => {
+                              <Button size="small" icon={<EditOutlined />} aria-label={`編輯禮儀記錄 ${c.recipient_name || c.id}`} onClick={() => {
                                 setEditingCeremony(c)
                                 setEditingCeremonyItems(c.items || [])
                                 ceremonyForm.setFieldsValue({
@@ -1209,7 +1209,7 @@ export default function SchedulePage() {
                                   setDetailCeremonies(r.data.data || [])
                                 } catch { message.error('刪除失敗') }
                               }}>
-                                <Button size="small" danger icon={<DeleteOutlined />} />
+                                <Button size="small" danger icon={<DeleteOutlined />} aria-label={`刪除禮儀記錄 ${c.recipient_name || c.id}`} />
                               </Popconfirm>
                             )}
                           </Space>
@@ -1377,7 +1377,7 @@ export default function SchedulePage() {
                     onChange={e => setEditingCeremonyItems(prev => prev.map((it, i) => i === idx ? { ...it, item_name: e.target.value } : it))} />
                 </Col>
                 <Col>
-                  <Button size="small" danger icon={<DeleteOutlined />} onClick={() => setEditingCeremonyItems(prev => prev.filter((_, i) => i !== idx))} />
+                  <Button size="small" danger icon={<DeleteOutlined />} aria-label={`移除編輯品項 ${idx + 1}`} onClick={() => setEditingCeremonyItems(prev => prev.filter((_, i) => i !== idx))} />
                 </Col>
               </Row>
               <Row gutter={8} style={{ marginTop: 6 }}>

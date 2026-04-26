@@ -31,6 +31,8 @@ interface ActionQueueProps {
   subtitle?: React.ReactNode
   items: ActionQueueItem[]
   emptyText?: React.ReactNode
+  emptyDescription?: React.ReactNode
+  emptyAction?: React.ReactNode
   extra?: React.ReactNode
   limit?: number
 }
@@ -40,6 +42,8 @@ export default function ActionQueue({
   subtitle,
   items,
   emptyText = '目前沒有待處理項目',
+  emptyDescription,
+  emptyAction,
   extra,
   limit = 6,
 }: ActionQueueProps) {
@@ -57,7 +61,12 @@ export default function ActionQueue({
       extra={extra}
     >
       {visibleItems.length === 0 ? (
-        <EmptyState variant="compact" title={emptyText} />
+        <EmptyState
+          variant="compact"
+          title={emptyText}
+          description={emptyDescription}
+          action={emptyAction}
+        />
       ) : (
         <List
           dataSource={visibleItems}

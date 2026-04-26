@@ -403,28 +403,31 @@ export default function PetitionListPage() {
     {
       title: '操作',
       width: 120,
-      render: (_, r) => (
-        <Space size={4}>
-          <Button
-            size="small"
-            icon={<EyeOutlined />}
-            aria-label="查看陳情"
-            onClick={() => navigate(`/petitions/${r.id}`)}
-          />
-          {canDeletePetition && (
-            <Popconfirm
-              title="確定刪除此陳情案件？"
-              description="刪除後將無法復原。"
-              okText="確定刪除"
-              cancelText="取消"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => handleDelete(r.id)}
-            >
-              <Button size="small" danger icon={<DeleteOutlined />} aria-label="刪除陳情" />
-            </Popconfirm>
-          )}
-        </Space>
-      ),
+      render: (_, r) => {
+        const caseLabel = r.case_number || `案件 ${r.id}`
+        return (
+          <Space size={4}>
+            <Button
+              size="small"
+              icon={<EyeOutlined />}
+              aria-label={`查看陳情 ${caseLabel}`}
+              onClick={() => navigate(`/petitions/${r.id}`)}
+            />
+            {canDeletePetition && (
+              <Popconfirm
+                title="確定刪除此陳情案件？"
+                description="刪除後將無法復原。"
+                okText="確定刪除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => handleDelete(r.id)}
+              >
+                <Button size="small" danger icon={<DeleteOutlined />} aria-label={`刪除陳情 ${caseLabel}`} />
+              </Popconfirm>
+            )}
+          </Space>
+        )
+      },
     },
   ]
 
