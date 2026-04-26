@@ -18,9 +18,14 @@ export default async function searchRoutes(fastify: FastifyInstance) {
     const results: Record<string, any[]> = {}
 
     if (typeList.includes('voter')) {
+      // support_level lives in voter_engagement, not voters; LEFT JOIN so voters
+      // without engagement still appear in results with NULL support_level.
       results.voters = db.prepare(`
-        SELECT id, name, mobile, addr_district, support_level, 'voter' as type
-        FROM voters WHERE is_active=1 AND (name LIKE ? ESCAPE '\\' OR mobile LIKE ? ESCAPE '\\' OR id_number LIKE ? ESCAPE '\\')
+        SELECT v.id, v.name, v.mobile, v.addr_district, ve.support_level, 'voter' as type
+        FROM voters v
+        LEFT JOIN voter_engagement ve ON ve.voter_id = v.id
+        WHERE v.is_active=1
+          AND (v.name LIKE ? ESCAPE '\\' OR v.mobile LIKE ? ESCAPE '\\' OR v.id_number LIKE ? ESCAPE '\\')
         LIMIT 10
       `).all(keyword, keyword, keyword)
     }

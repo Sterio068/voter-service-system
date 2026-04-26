@@ -29,6 +29,7 @@ export default function GroupListPage() {
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<any>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => { fetchCategories() }, [])
   useEffect(() => { fetchGroups() }, [page, search, filterCategory])
@@ -37,11 +38,14 @@ export default function GroupListPage() {
     try {
       const res = await api.get('/admin/categories?type=group_category')
       setCategories(res.data.data?.map((c: any) => c.name) || [])
-    } catch {}
+    } catch (err: any) {
+      setError(err?.response?.data?.error || '載入團體類別失敗，篩選選項可能不完整。')
+    }
   }
 
   const fetchGroups = async () => {
     setLoading(true)
+    setError(null)
     try {
       const params: any = { page, pageSize }
       if (search) params.search = search
@@ -49,7 +53,9 @@ export default function GroupListPage() {
       const res = await api.get('/groups', { params })
       setData(res.data.data || [])
       setTotal(res.data.total || 0)
-    } catch { message.error('載入失敗') }
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err?.message || '載入團體資料失敗，請重試')
+    }
     finally { setLoading(false) }
   }
 
@@ -143,6 +149,17 @@ export default function GroupListPage() {
           </Select>
         </Space>
       </WorkspaceToolbar>
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          closable
+          message={error}
+          action={<Button size="small" onClick={() => { fetchCategories(); fetchGroups() }}>重試</Button>}
+          style={{ marginBottom: 12 }}
+          onClose={() => setError(null)}
+        />
+      )}
       <Card>
         <Table columns={columns} dataSource={data} rowKey="id" loading={loading} size="small"
           pagination={{ current: page, pageSize, total, showTotal: t => `共 ${t} 筆`, onChange: setPage }} scroll={{ x: 800 }} />

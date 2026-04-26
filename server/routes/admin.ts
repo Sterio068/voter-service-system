@@ -326,16 +326,27 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     // Tables by row count — batch in a read transaction for speed
     const tableNames = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as any[]).map(r => r.name)
     const tableRows: Array<{ name: string; rows: number }> = []
+    const failedTables: string[] = []
     try {
       db.exec('BEGIN')
       for (const tname of tableNames) {
         try {
           const cnt = (db.prepare(`SELECT COUNT(*) as c FROM "${tname}"`).get() as any).c
           tableRows.push({ name: tname, rows: cnt })
-        } catch {}
+        } catch (e) {
+          failedTables.push(tname)
+          console.warn(`[SystemHealth] count failed for table ${tname}:`, e instanceof Error ? e.message : e)
+        }
       }
       db.exec('COMMIT')
-    } catch { try { db.exec('ROLLBACK') } catch {} }
+    } catch (e) {
+      console.warn('[SystemHealth] table-count transaction failed:', e instanceof Error ? e.message : e)
+      try {
+        db.exec('ROLLBACK')
+      } catch (rollbackErr) {
+        console.warn('[SystemHealth] rollback failed:', rollbackErr instanceof Error ? rollbackErr.message : rollbackErr)
+      }
+    }
     tableRows.sort((a, b) => b.rows - a.rows)
     const topTables = tableRows.slice(0, 8)
 
@@ -358,7 +369,10 @@ export default async function adminRoutes(fastify: FastifyInstance) {
           const sorted = files.map(f => ({ f, mtime: fs.statSync(path.join(bDir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime)
           lastBackup = new Date(sorted[0].mtime).toISOString()
         }
-      } catch {}
+      } catch (e) {
+        failedTables.push('backup_directory')
+        console.warn('[SystemHealth] backup directory scan failed:', e instanceof Error ? e.message : e)
+      }
     }
     const lastBackupSetting = (db.prepare("SELECT value FROM settings WHERE key='last_auto_backup'").get() as any)?.value ?? null
     if (!lastBackup && lastBackupSetting) lastBackup = lastBackupSetting
@@ -377,7 +391,10 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     try {
       const sv = db.prepare("SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1").get() as any
       schemaVersion = sv?.version ?? null
-    } catch {}
+    } catch (e) {
+      failedTables.push('schema_migrations')
+      console.warn('[SystemHealth] schema_migrations lookup failed:', e instanceof Error ? e.message : e)
+    }
 
     // Errors last 24h
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
@@ -397,6 +414,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
         },
         schema: { version: schemaVersion },
         errors: { last_24h_count: errorCount, last_error: lastError },
+        failed_tables: failedTables,
       }
     })
   })
@@ -483,18 +501,53 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     const issueCount = checks.reduce((sum, check) => sum + check.count, 0)
     const highIssueCount = checks.filter(check => check.severity === 'high').reduce((sum, check) => sum + check.count, 0)
 
-    return reply.send({
-      success: true,
-      data: {
-        checked_at: new Date().toISOString(),
-        summary: {
-          issue_count: issueCount,
-          high_issue_count: highIssueCount,
-          status: issueCount === 0 ? 'ok' : highIssueCount > 0 ? 'attention' : 'warning',
-        },
-        checks,
+    const responseBody = {
+      checked_at: new Date().toISOString(),
+      summary: {
+        issue_count: issueCount,
+        high_issue_count: highIssueCount,
+        status: issueCount === 0 ? 'ok' : highIssueCount > 0 ? 'attention' : 'warning',
       },
-    })
+      checks,
+    }
+
+    // CSV mode: ?format=csv triggers download of a flat CSV report so the
+    // user can paste into Excel for cleanup work without copy-paste from UI.
+    const fmt = (_request.query as any)?.format
+    if (fmt === 'csv') {
+      const escape = (v: unknown): string => {
+        const s = v == null ? '' : String(v)
+        if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+        return s
+      }
+      const safeCsvCell = (v: unknown): string => {
+        const s = v == null ? '' : String(v)
+        return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s
+      }
+      const lines: string[] = []
+      lines.push(['檢查項目', '嚴重度', '計數', '範例詳情'].map(escape).join(','))
+      for (const c of checks) {
+        const baseRow = [c.label, c.severity, c.count]
+        if (!c.sample || c.sample.length === 0) {
+          lines.push(baseRow.map(v => escape(safeCsvCell(v))).join(',') + ',')
+          continue
+        }
+        for (const item of c.sample) {
+          // Flatten sample object to "key=value; key=value"
+          const detail = Object.entries(item)
+            .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`)
+            .join('; ')
+          lines.push([...baseRow, detail].map(v => escape(safeCsvCell(v))).join(','))
+        }
+      }
+      const csv = '﻿' + lines.join('\n') // BOM for Excel UTF-8
+      const fname = `data-quality-${new Date().toISOString().slice(0, 10)}.csv`
+      reply.header('Content-Type', 'text/csv; charset=utf-8')
+      reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fname)}`)
+      return reply.send(csv)
+    }
+
+    return reply.send({ success: true, data: responseBody })
   })
 
   // ===== Data Retention =====

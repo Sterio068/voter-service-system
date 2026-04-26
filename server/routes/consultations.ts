@@ -1,7 +1,32 @@
 import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
+
+const CreateConsultationSchema = z.object({
+  voter_id: z.number().int().positive().nullable().optional(),
+  voter_name: z.string().min(1, '姓名為必填').max(100, '姓名過長'),
+  voter_phone: z.string().max(30, '電話過長').nullable().optional(),
+  appointment_date: z.string().min(1, '日期為必填').max(20, '日期格式不正確'),
+  time_slot: z.string().min(1, '時段為必填').max(20, '時段格式不正確'),
+  issue_summary: z.string().max(2000, '問題摘要過長').nullable().optional(),
+})
+
+const UpdateConsultationSchema = z.object({
+  status: z.string().max(30, '狀態過長').optional(),
+  attorney_note: z.string().max(2000, '律師備註過長').nullable().optional(),
+  issue_summary: z.string().max(2000, '問題摘要過長').nullable().optional(),
+  related_petition_id: z.number().int().positive().nullable().optional(),
+  voter_phone: z.string().max(30, '電話過長').nullable().optional(),
+}).passthrough()
+
+const CreateSlotSchema = z.object({
+  slot_date: z.string().min(1, '日期為必填').max(20, '日期格式不正確'),
+  slot_time: z.string().min(1, '時段為必填').max(20, '時段格式不正確'),
+  max_capacity: z.number().int().min(1).max(1000).optional(),
+  note: z.string().max(500, '備註過長').nullable().optional(),
+})
 
 export default async function consultationRoutes(fastify: FastifyInstance) {
   // GET /api/consultations?date=YYYY-MM-DD&status=pending
@@ -49,10 +74,11 @@ export default async function consultationRoutes(fastify: FastifyInstance) {
   // POST /api/consultations
   fastify.post('/api/consultations', { preHandler: [requirePermission('schedules','create')] }, async (req, reply) => {
     const cu = (req as any).currentUser
-    const body = req.body as any
-    if (!body.voter_name || !body.appointment_date || !body.time_slot) {
-      return reply.code(400).send({ success: false, error: '姓名、日期、時段為必填' })
+    const parsed = CreateConsultationSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
     }
+    const body = parsed.data
     // 以 IMMEDIATE 交易保護容量檢查與寫入，避免 TOCTOU 超額預約
     try {
       const txn = db.transaction(() => {
@@ -77,7 +103,11 @@ export default async function consultationRoutes(fastify: FastifyInstance) {
   fastify.put('/api/consultations/:id', { preHandler: [requirePermission('schedules','edit')] }, async (req, reply) => {
     const cu = (req as any).currentUser
     const { id } = req.params as any
-    const body = req.body as any
+    const parsed = UpdateConsultationSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
+    const body = parsed.data as Record<string, any>
     const appt = db.prepare('SELECT * FROM consultation_appointments WHERE id=?').get(Number(id)) as any
     if (!appt) return reply.code(404).send({ success: false, error: '預約不存在' })
     const allowed = ['status','attorney_note','issue_summary','related_petition_id','voter_phone']
@@ -92,8 +122,11 @@ export default async function consultationRoutes(fastify: FastifyInstance) {
 
   // POST /api/consultations/slots — create time slot
   fastify.post('/api/consultations/slots', { preHandler: [requirePermission('admin','edit')] }, async (req, reply) => {
-    const body = req.body as any
-    if (!body.slot_date || !body.slot_time) return reply.code(400).send({ success: false, error: '日期時段為必填' })
+    const parsed = CreateSlotSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ success: false, error: parsed.error.issues[0].message })
+    }
+    const body = parsed.data
     const r = db.prepare('INSERT OR IGNORE INTO consultation_time_slots (slot_date,slot_time,max_capacity,note) VALUES (?,?,?,?)').run(body.slot_date, body.slot_time, body.max_capacity ?? 3, body.note ?? null)
     return reply.code(201).send({ success: true, data: { id: r.lastInsertRowid } })
   })

@@ -541,15 +541,17 @@ api.get('/admin/categories?type=schedule_type')
 
 ## 22. 前端路徑（絕對 vs 相對）
 
-Electron production 模式下頁面是 `file://`，不能用絕對路徑 `/assets/`。  
-**務必確保 `vite.config.ts` 用相對路徑**：
+> **更新（v1.0.6+）**：production 模式不再用 `file://`。Electron 主進程啟動內嵌 Fastify 監聽 `127.0.0.1:8080`，視窗載入 `http://localhost:8080`。Fastify 會 serve `dist/` 靜態資源。所以絕對路徑 `/assets/` 在這個架構下其實是 OK 的。
+
+仍保留 `base: './'` 與 `package.json` 的 `"homepage": "./"`，是因為：
+1. 若日後切回 `file://` 模式（例如離線單機部署），相對路徑可立即生效，無需另行配置。
+2. Vite preview / dev `npm run dev:client` 仍用 5173，相對路徑不影響開發。
+
 ```typescript
 export default defineConfig({
-  base: './',  // 或 vite 預設的 relative
+  base: './',
 })
 ```
-
-package.json 的 `"homepage": "./"` 也是必要的。
 
 ---
 

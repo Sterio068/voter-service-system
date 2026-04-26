@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Table, Button, Space, Select, Typography, Card, DatePicker, Tag } from 'antd'
+import { Table, Button, Space, Select, Typography, Card, DatePicker, Tag, Alert } from 'antd'
 import api from '../../utils/api'
 import PageScaffold from '../../components/ui/PageScaffold'
 import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
@@ -27,11 +27,13 @@ export default function AuditLogPage() {
   const [filterModule, setFilterModule] = useState('')
   const [dateRange, setDateRange] = useState<[string, string] | null>(null)
   const [modules, setModules] = useState<string[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => { fetchLogs() }, [page, filterAction, filterModule, dateRange])
 
   const fetchLogs = async () => {
     setLoading(true)
+    setError(null)
     try {
       const params: any = { page, pageSize: 30 }
       if (filterAction) params.action = filterAction
@@ -44,7 +46,9 @@ export default function AuditLogPage() {
       // 收集模組
       const mods = [...new Set((res.data.data || []).map((r: any) => r.module))] as string[]
       if (mods.length > 0) setModules(prev => [...new Set([...prev, ...mods])])
-    } catch {}
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err?.message || '載入操作紀錄失敗，請重試')
+    }
     finally { setLoading(false) }
   }
 
@@ -68,6 +72,17 @@ export default function AuditLogPage() {
       variant="compact"
       description="查詢登入、匯出、異動與刪除紀錄，支援資安稽核追蹤。"
     >
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          closable
+          message={error}
+          action={<Button size="small" onClick={fetchLogs}>重試</Button>}
+          style={{ marginBottom: 12 }}
+          onClose={() => setError(null)}
+        />
+      )}
       <WorkspaceToolbar
         title="稽核篩選"
         description="依操作類型、模組與日期區間查詢敏感操作紀錄。"

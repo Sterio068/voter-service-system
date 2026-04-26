@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import {
   Card, Table, Button, Space, Tag, Typography, Modal, Form, Input,
-  Select, DatePicker, message, Badge, Tooltip, Progress, Popconfirm
+  Select, DatePicker, message, Badge, Tooltip, Progress, Popconfirm, Alert
 } from 'antd'
 import { PlusOutlined, CheckOutlined, CalendarOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
@@ -34,6 +34,8 @@ export default function TasksPage() {
   const [form] = Form.useForm()
   const [users, setUsers] = useState<any[]>([])
   const [voters, setVoters] = useState<any[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [auxError, setAuxError] = useState<string | null>(null)
 
   // U-9: Today focus
   const [todayFocus, setTodayFocus] = useState(searchParams.get('focus') === 'today')
@@ -51,8 +53,16 @@ export default function TasksPage() {
 
   useEffect(() => {
     fetchTasks()
-    api.get('/users/list').then(r => setUsers(r.data.data || [])).catch(() => {})
-    api.get('/voters?pageSize=200').then(r => setVoters(r.data.data || [])).catch(() => {})
+    setAuxError(null)
+    Promise.allSettled([
+      api.get('/users/list').then(r => setUsers(r.data.data || [])),
+      api.get('/voters?pageSize=200').then(r => setVoters(r.data.data || [])),
+    ]).then(results => {
+      const failed = results.filter(r => r.status === 'rejected')
+      if (failed.length > 0) {
+        setAuxError('部分輔助資料（承辦人或選民清單）載入失敗，仍可建立任務但選項可能不完整。')
+      }
+    })
   }, [page, statusFilter, todayFocus])
 
   useDataSync((events) => {
@@ -62,12 +72,15 @@ export default function TasksPage() {
 
   const fetchTasks = async () => {
     setLoading(true)
+    setError(null)
     try {
       const effectiveStatus = todayFocus ? '' : statusFilter
       const res = await api.get(`/tasks?page=${page}&pageSize=${todayFocus ? 200 : 20}${effectiveStatus ? '&status=' + effectiveStatus : ''}`)
       setTasks(res.data.data || [])
       setTotal(res.data.total || 0)
-    } catch { message.error('載入失敗') }
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err?.message || '載入待辦事項失敗')
+    }
     setLoading(false)
   }
 
@@ -201,6 +214,27 @@ export default function TasksPage() {
         </>
       }
     >
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          closable
+          message={error}
+          action={<Button size="small" onClick={fetchTasks}>重試</Button>}
+          style={{ marginBottom: 12 }}
+          onClose={() => setError(null)}
+        />
+      )}
+      {auxError && (
+        <Alert
+          type="warning"
+          showIcon
+          closable
+          message={auxError}
+          style={{ marginBottom: 12 }}
+          onClose={() => setAuxError(null)}
+        />
+      )}
 
       {todayFocus && todayTotalCount > 0 && (
         <Card size="small" style={{ marginBottom: 12, background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.2)' }}>

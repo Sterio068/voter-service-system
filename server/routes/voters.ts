@@ -732,7 +732,11 @@ export default async function voterRoutes(fastify: FastifyInstance) {
       anonymizeVoter(db, Number(id), mode === 'full' ? 'full' : 'anonymize')
       db.exec('COMMIT')
     } catch (error) {
-      try { db.exec('ROLLBACK') } catch {}
+      try {
+        db.exec('ROLLBACK')
+      } catch (rollbackErr) {
+        console.error('[Voters] rollback failed:', rollbackErr)
+      }
       throw error
     }
 

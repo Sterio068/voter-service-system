@@ -44,7 +44,9 @@ export default function ExpensePage() {
     try {
       const res = await api.get('/expenses/summary', { params: { year, month: month || undefined } })
       setSummary(res.data.data || {})
-    } catch {}
+    } catch (err: any) {
+      message.error(err?.response?.data?.error || '載入收支統計失敗')
+    }
     finally { setLoading(false) }
   }
 
@@ -52,7 +54,9 @@ export default function ExpensePage() {
     try {
       const res = await api.get('/expenses/budgets', { params: { year } })
       setBudgets(res.data.data || [])
-    } catch {}
+    } catch (err: any) {
+      message.error(err?.response?.data?.error || '載入預算資料失敗')
+    }
   }
 
   const totalAmount = summary.total?.total || 0

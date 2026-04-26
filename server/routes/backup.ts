@@ -87,7 +87,11 @@ function runIntegrityCheck(filePath: string): { ok: boolean; messages: string[] 
     const messages = rows.map(row => String(row.integrity_check || 'unknown'))
     return { ok: messages.length === 1 && messages[0] === 'ok', messages }
   } finally {
-    try { backupDb?.close() } catch {}
+    try {
+      backupDb?.close()
+    } catch (closeErr) {
+      console.warn(`[Backup] close failed for ${filePath}:`, closeErr instanceof Error ? closeErr.message : closeErr)
+    }
   }
 }
 
@@ -116,7 +120,11 @@ function validateApplicationBackup(filePath: string): { ok: boolean; missingTabl
       : !!backupDb.prepare('SELECT version FROM schema_migrations ORDER BY rowid DESC LIMIT 1').get()
     return { ok: missingTables.length === 0 && hasSchemaVersion, missingTables, hasSchemaVersion }
   } finally {
-    try { backupDb?.close() } catch {}
+    try {
+      backupDb?.close()
+    } catch (closeErr) {
+      console.warn(`[Backup] close failed for ${filePath}:`, closeErr instanceof Error ? closeErr.message : closeErr)
+    }
   }
 }
 
@@ -141,7 +149,11 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     try {
       buf = fs.readFileSync(tmpPath)
     } finally {
-      try { fs.unlinkSync(tmpPath) } catch {}
+      try {
+        fs.unlinkSync(tmpPath)
+      } catch (cleanupErr) {
+        console.warn(`[Backup] cleanup failed for ${tmpPath}:`, cleanupErr instanceof Error ? cleanupErr.message : cleanupErr)
+      }
     }
     const fname = path.basename(tmpPath)
     createAuditLog(request, cu.id, { action: 'export', module: '系統備份', target_name: fname })
@@ -444,6 +456,31 @@ export default async function backupRoutes(fastify: FastifyInstance) {
       console.warn('[Backup] Verification failed:', e)
       return reply.code(500).send({ success: false, error: '無法開啟備份檔案' })
     }
+  })
+
+  // ===== 下載指定本機備份的 .meta.json sidecar =====
+  // 配合 /api/admin/backup/list 的檔名，讓使用者可以把 .db + .meta.json
+  // 一起搬到外部儲存，方便日後 restore 時通過 HMAC 驗證。
+  fastify.get('/api/admin/backup/download-meta', {
+    preHandler: [requirePermission('system', 'view')],
+    config: { rateLimit: { max: 30, timeWindow: '1 hour' } },
+  }, async (request, reply) => {
+    const { file } = request.query as { file?: string }
+    if (!file) return reply.code(400).send({ success: false, error: 'file 參數為必填' })
+    const safeName = path.basename(file)
+    const dbPath = resolveBackupPath(safeName)
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return reply.code(404).send({ success: false, error: '備份不存在' })
+    }
+    const metaPath = getBackupMetadataPath(dbPath)
+    if (!fs.existsSync(metaPath)) {
+      return reply.code(404).send({ success: false, error: '此備份沒有對應的 .meta.json sidecar' })
+    }
+    const buf = fs.readFileSync(metaPath)
+    const metaName = path.basename(metaPath)
+    reply.header('Content-Type', 'application/json; charset=utf-8')
+    reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(metaName)}`)
+    return reply.send(buf)
   })
 
   // ===== 刪除本機備份 =====

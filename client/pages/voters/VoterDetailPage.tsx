@@ -149,11 +149,11 @@ export default function VoterDetailPage() {
       description={voter.household_address || voter.mobile || '選民完整互動檢視'}
       actions={
         <>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>返回</Button>
+          <Button icon={<ArrowLeftOutlined />} aria-label="返回上一頁" onClick={() => navigate(-1)}>返回</Button>
           {(voter.tags || []).map((tag: string) => (
             <Tag key={tag} color={TAG_COLORS[tag] || 'blue'}>{tag}</Tag>
           ))}
-          <Button icon={<EditOutlined />} type="primary" onClick={handleEdit}>編輯</Button>
+          <Button icon={<EditOutlined />} aria-label="編輯選民資料" type="primary" onClick={handleEdit}>編輯</Button>
         </>
       }
     >

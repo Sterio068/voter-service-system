@@ -384,7 +384,7 @@ export default function SettingsPage() {
     },
     { title: '建立時間', dataIndex: 'created_at', width: 150, render: (d: string) => dayjs(d).format('YYYY-MM-DD HH:mm') },
     {
-      title: '操作', width: 100,
+      title: '操作', width: 130,
       render: (_: any, r: any) => (
         <Space size={4}>
           <Button
@@ -393,7 +393,30 @@ export default function SettingsPage() {
             loading={verifyingBackup === r.name}
             onClick={() => handleVerifyBackup(r.name)}
             type="text"
+            title="驗證簽章"
           />
+          {r.signed && (
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              type="text"
+              title="下載 .meta.json sidecar（搬到外部儲存時請和 .db 一起留存）"
+              onClick={async () => {
+                try {
+                  const res = await api.get('/admin/backup/download-meta', { params: { file: r.name }, responseType: 'blob' })
+                  const blob = new Blob([res.data], { type: 'application/json;charset=utf-8' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `${r.name}.meta.json`
+                  document.body.appendChild(a); a.click(); a.remove()
+                  URL.revokeObjectURL(url)
+                } catch (e: any) {
+                  message.error(e?.response?.data?.error || 'sidecar 下載失敗')
+                }
+              }}
+            />
+          )}
           <Popconfirm title="確定刪除此備份？" onConfirm={() => handleDeleteBackup(r.name)}>
             <Button size="small" icon={<DeleteOutlined />} danger type="text" />
           </Popconfirm>
@@ -835,7 +858,32 @@ export default function SettingsPage() {
       <Card
         title={<><DatabaseOutlined /> 資料品質掃描</>}
         style={{ marginTop: 16 }}
-        extra={<Button size="small" icon={<ReloadOutlined />} loading={dataQualityLoading} onClick={loadDataQuality}>開始掃描</Button>}
+        extra={
+          <Space>
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              disabled={!dataQuality}
+              onClick={async () => {
+                try {
+                  const res = await api.get('/admin/data-quality', { params: { format: 'csv' }, responseType: 'blob' })
+                  const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `data-quality-${dayjs().format('YYYY-MM-DD')}.csv`
+                  document.body.appendChild(a); a.click(); a.remove()
+                  URL.revokeObjectURL(url)
+                } catch (e: any) {
+                  message.error(e?.response?.data?.error || '匯出失敗')
+                }
+              }}
+            >
+              下載 CSV
+            </Button>
+            <Button size="small" icon={<ReloadOutlined />} loading={dataQualityLoading} onClick={loadDataQuality}>開始掃描</Button>
+          </Space>
+        }
       >
         {dataQuality ? (
           <Space direction="vertical" style={{ width: '100%' }} size="middle">

@@ -55,7 +55,19 @@ export async function syncScheduleToGCal(scheduleId: number, action: 'create' | 
     if (!accounts.length) return
 
     let syncData: Record<string, string> = {}
-    try { syncData = JSON.parse(schedule.gcal_sync_data || '{}') } catch {}
+    try {
+      syncData = JSON.parse(schedule.gcal_sync_data || '{}')
+    } catch (parseErr) {
+      const rawSnippet = String(schedule.gcal_sync_data ?? '').slice(0, 200)
+      const msg = parseErr instanceof Error ? parseErr.message : String(parseErr)
+      console.error(`[GCal] gcal_sync_data parse failed for schedule ${scheduleId}: ${msg}; payload[:200]=${rawSnippet}`)
+      try {
+        db.prepare(
+          `INSERT INTO audit_logs(user_id,action,module,target_type,target_id,target_name,detail,ip_address,created_at)
+           VALUES(0,'gcal_sync_data_parse_failed','Google日曆同步','schedule',?,?,?,?,datetime('now','localtime'))`
+        ).run(scheduleId, schedule.title ?? null, `${msg} | payload[:200]=${rawSnippet}`, '')
+      } catch {}
+    }
 
     for (const account of accounts) {
       try {
@@ -171,7 +183,17 @@ export default async function googleCalendarRoutes(fastify: FastifyInstance) {
         const oauth2Info = google.oauth2({ version: 'v2', auth: oauth2 })
         const info = await oauth2Info.userinfo.get()
         email = info.data.email || ''
-      } catch {}
+      } catch (userinfoErr) {
+        const raw = userinfoErr instanceof Error ? userinfoErr.message : String(userinfoErr)
+        const snippet = raw.slice(0, 200)
+        console.error(`[GCal] userinfo fetch/parse failed: ${snippet}`)
+        try {
+          db.prepare(
+            `INSERT INTO audit_logs(user_id,action,module,target_type,target_id,target_name,detail,ip_address,created_at)
+             VALUES(0,'gcal_sync_data_parse_failed','Google日曆同步','gcal_userinfo',?,?,?,?,datetime('now','localtime'))`
+          ).run(0, 'oauth_callback', snippet, request.ip || '')
+        } catch {}
+      }
 
       const label = decodeURIComponent(state || '我的日曆')
       const safeLabel = escapeHtml(label)

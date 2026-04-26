@@ -1870,22 +1870,25 @@ test('LINE webhook secrets encrypt at rest and signature verification can read t
     url: '/api/admin/settings',
     headers: bearer(adminToken),
   }))
+  assert.equal(settings.statusCode, 200)
+  assert.equal(settings.body.success, true)
   assert.equal(settings.body.data.line_channel_access_token, undefined)
   assert.equal(settings.body.data.line_channel_secret, undefined)
   assert.equal(settings.body.data.line_channel_access_token_configured, true)
   assert.equal(settings.body.data.line_channel_secret_configured, true)
 
-  // line/status 應反映已設定
+  // line/status：路由 query 改用 voter_tags 子表 join 後，預期回 200，
+  // 並回報 channel_secret_configured=true 與 webhook_active=true。
   const status = parseJsonResponse(await ctx.app.inject({
     method: 'GET',
     url: '/api/line/status',
     headers: bearer(adminToken),
   }))
-  // line/status 內部會跑 SELECT COUNT(*) FROM voters WHERE tags LIKE '%LINE:%'，
-  // 可能在某些 schema 變化下回 500；至少驗證 secret 正確 round-trip 即可
-  if (status.statusCode === 200) {
-    assert.equal(status.body.data.channel_secret_configured, true)
-  }
+  assert.equal(status.statusCode, 200, 'line/status 預期回 200')
+  assert.equal(status.body.success, true)
+  assert.equal(status.body.data.channel_secret_configured, true)
+  assert.equal(status.body.data.webhook_active, true)
+  assert.equal(typeof status.body.data.linked_voters, 'number')
 })
 
 // ===================== Groups import round-trip =====================
@@ -1983,4 +1986,217 @@ test('groups import rejects unauthorized roles', async () => {
     payload: upload.payload,
   }))
   assert.equal(resp.statusCode, 403, 'volunteer 不應能匯入團體')
+})
+
+// ===================== Global search =====================
+
+test('global search returns matching voters by name and rejects empty queries with empty result set', async () => {
+  // 建一筆容易識別的選民，避免與其它測試衝突
+  const created = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/voters',
+    headers: bearer(adminToken),
+    payload: {
+      name: '搜尋測試專用選民',
+      mobile: '0933000888',
+      household_city: '臺北市',
+      household_district: '大安區',
+    },
+  }))
+  assert.equal(created.statusCode, 201)
+  const voterId = created.body.data.id
+
+  // 1. 有效關鍵字 → 應在 voters bucket 內找到
+  const found = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: `/api/search?q=${encodeURIComponent('搜尋測試專用')}&types=voter`,
+    headers: bearer(adminToken),
+  }))
+  assert.equal(found.statusCode, 200)
+  assert.equal(found.body.success, true)
+  assert.ok(Array.isArray(found.body.data.voters), 'voters bucket should be returned')
+  const hit = found.body.data.voters.find((v: any) => v.id === voterId)
+  assert.ok(hit, '建立的選民應出現在搜尋結果中')
+  assert.equal(hit.name, '搜尋測試專用選民')
+  assert.equal(hit.type, 'voter')
+  assert.ok(found.body.total >= 1, 'total 應 ≥ 1')
+
+  // 2. 空字串 q → 路由直接回傳空 data 物件，total 不存在或為 0
+  const empty = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/search?q=',
+    headers: bearer(adminToken),
+  }))
+  assert.equal(empty.statusCode, 200)
+  assert.equal(empty.body.success, true)
+  assert.deepEqual(empty.body.data, {}, '空查詢應回空 data 物件')
+
+  // 3. 無權限角色不可用 → 必須阻擋（route 需 voters:view）
+  // volunteer 有 voters:view 權限，因此 200；改用 anonymous 驗證 401
+  const anon = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/search?q=測試',
+  }))
+  assert.equal(anon.statusCode, 401)
+})
+
+// ===================== Election areas =====================
+
+test('election areas endpoints list and create with admin-only role enforcement', async () => {
+  // 1. admin 可建立
+  const created = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/election-areas',
+    headers: bearer(adminToken),
+    payload: {
+      name: '第一選區-API測試',
+      city: '臺北市',
+      district: '中正區',
+      area_code: 'TPE-01-T',
+      note: 'integration test',
+    },
+  }))
+  assert.equal(created.statusCode, 201)
+  assert.equal(created.body.success, true)
+  assert.ok(typeof created.body.data.id === 'number' || typeof created.body.data.id === 'bigint')
+
+  // 2. admin 可列出，且新建的選區應出現
+  const list = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/election-areas',
+    headers: bearer(adminToken),
+  }))
+  assert.equal(list.statusCode, 200)
+  assert.equal(list.body.success, true)
+  assert.ok(Array.isArray(list.body.data))
+  const found = list.body.data.find((a: any) => a.name === '第一選區-API測試')
+  assert.ok(found, '新建選區應出現在 list')
+  assert.equal(found.city, '臺北市')
+  assert.equal(found.area_code, 'TPE-01-T')
+
+  // 3. 缺 name 應 400
+  const badCreate = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/election-areas',
+    headers: bearer(adminToken),
+    payload: { city: '臺北市' },
+  }))
+  assert.equal(badCreate.statusCode, 400)
+  assert.match(String(badCreate.body.error), /名稱/)
+
+  // 4. assistant / volunteer 沒有 admin 模組權限 → 403
+  const assistantList = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/election-areas',
+    headers: bearer(assistantToken),
+  }))
+  assert.equal(assistantList.statusCode, 403, 'assistant 不應能列選區')
+
+  const assistantCreate = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/election-areas',
+    headers: bearer(assistantToken),
+    payload: { name: 'assistant 不應建立' },
+  }))
+  assert.equal(assistantCreate.statusCode, 403, 'assistant 不應能建立選區')
+
+  const volunteerCreate = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/election-areas',
+    headers: bearer(volunteerToken),
+    payload: { name: 'volunteer 不應建立' },
+  }))
+  assert.equal(volunteerCreate.statusCode, 403, 'volunteer 不應能建立選區')
+})
+
+// ===================== Daily logs =====================
+
+test('daily log upsert by admin persists fields and is retrievable by date', async () => {
+  const date = '2026-04-26'
+
+  // 1. admin upsert
+  const upsert = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: `/api/daily-logs/${date}`,
+    headers: bearer(adminToken),
+    payload: {
+      highlights: '完成 API 整合測試',
+      new_cases_summary: '新增陳情 3 件',
+      completed_summary: '結案 2 件',
+      pending_handover: '無',
+      director_note: 'integration test',
+    },
+  }))
+  assert.equal(upsert.statusCode, 200)
+  assert.equal(upsert.body.success, true)
+
+  // 2. GET 同日 → 應回傳剛剛 upsert 的內容（非 auto-generate）
+  const fetched = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: `/api/daily-logs/${date}`,
+    headers: bearer(adminToken),
+  }))
+  assert.equal(fetched.statusCode, 200)
+  assert.equal(fetched.body.success, true)
+  assert.equal(fetched.body.data.log_date, date)
+  assert.equal(fetched.body.data.highlights, '完成 API 整合測試')
+  assert.equal(fetched.body.data.new_cases_summary, '新增陳情 3 件')
+  assert.equal(fetched.body.data.completed_summary, '結案 2 件')
+  assert.equal(fetched.body.data.director_note, 'integration test')
+
+  // 3. list 應包含這筆
+  const list = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/daily-logs',
+    headers: bearer(adminToken),
+  }))
+  assert.equal(list.statusCode, 200)
+  assert.equal(list.body.success, true)
+  assert.ok(list.body.data.some((row: any) => row.log_date === date), 'list 應包含剛建立的日誌')
+
+  // 4. 日期格式錯誤 → 400
+  const badDate = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: '/api/daily-logs/2026-13-40',
+    headers: bearer(adminToken),
+    payload: { highlights: 'x' },
+  }))
+  assert.equal(badDate.statusCode, 400)
+  assert.match(String(badDate.body.error), /日期格式/)
+})
+
+test('daily log writes are blocked for volunteer and assistant roles', async () => {
+  const date = '2026-04-27'
+
+  const volunteerWrite = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: `/api/daily-logs/${date}`,
+    headers: bearer(volunteerToken),
+    payload: { highlights: 'volunteer 不應寫入' },
+  }))
+  assert.equal(volunteerWrite.statusCode, 403, 'volunteer 不應能 upsert daily log')
+
+  const volunteerRead = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: `/api/daily-logs/${date}`,
+    headers: bearer(volunteerToken),
+  }))
+  assert.equal(volunteerRead.statusCode, 403, 'volunteer 在 admin 模組無 view 權限')
+
+  const assistantWrite = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: `/api/daily-logs/${date}`,
+    headers: bearer(assistantToken),
+    payload: { highlights: 'assistant 不應寫入' },
+  }))
+  assert.equal(assistantWrite.statusCode, 403, 'assistant 在 admin 模組無 edit 權限')
+
+  // 確認 admin 仍可寫入此日期（隔離測試之間的副作用）
+  const adminWrite = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: `/api/daily-logs/${date}`,
+    headers: bearer(adminToken),
+    payload: { highlights: 'admin 寫入', new_cases_summary: '0', completed_summary: '0' },
+  }))
+  assert.equal(adminWrite.statusCode, 200)
 })

@@ -83,6 +83,7 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
     `).run(sentCount, Number(id))
 
     // Bulk insert contact_records scoped to actual recipients
+    let partialFailures = 0
     if (notification.target_type === 'all') {
       try {
         const today = new Date().toISOString().slice(0, 10)
@@ -94,11 +95,32 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
             FROM voters WHERE is_active=1
           `).run(today, content, cu.id)
         })()
-      } catch {}
+      } catch (e) {
+        partialFailures = sentCount
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error('[Notifications] contact_records bulk insert failed:', msg)
+        try {
+          db.prepare(
+            `INSERT INTO audit_logs(user_id,action,module,target_type,target_id,target_name,detail,ip_address,created_at)
+             VALUES(?,?,?,?,?,?,?,?,datetime('now','localtime'))`
+          ).run(
+            cu.id,
+            'notification_recipient_insert_failed',
+            '通知管理',
+            'notification',
+            Number(id),
+            notification.title,
+            msg,
+            request.ip || ''
+          )
+        } catch {}
+      }
     }
 
     createAuditLog(request, cu.id, { action: 'update', module: '通知管理', target_type: 'notification', target_id: Number(id), target_name: notification.title })
-    return reply.send({ success: true, message: '通知已標記為已發送', sent_count: sentCount })
+    const responseBody: Record<string, any> = { success: true, message: '通知已標記為已發送', sent_count: sentCount }
+    if (partialFailures > 0) responseBody.partial_failures = partialFailures
+    return reply.send(responseBody)
   })
 
   // DELETE /api/notifications/:id (only if draft)

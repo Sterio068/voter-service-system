@@ -158,12 +158,21 @@ export default async function attachmentRoutes(fastify: FastifyInstance) {
 
     const base = process.env.UPLOADS_PATH || path.join(process.cwd(), 'uploads')
     const filePath = path.join(base, att.file_path)
+    let cleanupWarning: string | null = null
     if (fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath) } catch {}
+      try {
+        fs.unlinkSync(filePath)
+      } catch (cleanupErr) {
+        const msg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
+        console.warn(`[Attachments] file delete failed for ${filePath}:`, msg)
+        cleanupWarning = `檔案實體刪除失敗（資料庫記錄已移除）：${msg}`
+      }
     }
 
     db.prepare('DELETE FROM attachments WHERE id=?').run(Number(id))
     createAuditLog(request, cu.id, { action: 'delete', module: '附件', target_type: att.ref_type, target_id: att.ref_id, target_name: att.file_name })
-    return reply.send({ success: true, message: '附件已刪除' })
+    const responseBody: Record<string, any> = { success: true, message: '附件已刪除' }
+    if (cleanupWarning) responseBody.cleanup_warning = cleanupWarning
+    return reply.send(responseBody)
   })
 }
