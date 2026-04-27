@@ -56,7 +56,8 @@ test('voter create smoke flow works from the UI', async ({ page, request }) => {
   await expect(page.getByText('戶籍資料', { exact: true })).toBeVisible()
   await page.getByLabel('姓名').fill(voterName)
   await page.getByLabel('手機').fill(voterMobile)
-  await page.getByRole('button', { name: '儲存' }).click()
+  // exact: true 才能避開新加的 SavedFiltersBar「儲存目前篩選」按鈕。
+  await page.getByRole('button', { name: '儲存', exact: true }).click()
   await expect(page.getByText('選民資料已建立')).toBeVisible()
   await expect(page.getByText(voterName, { exact: true }).first()).toBeVisible()
 })
