@@ -16,8 +16,8 @@ export const BASIC_MODULES: HelpModule[] = [
     icon: <TeamOutlined />,
     color: '#34C759',
     category: 'basics',
-    keywords: '選民 voter 匯入 匯出 標籤 頭銜 詳細頁 團體',
-    summary: '建立並管理選民基本資料、標籤、頭銜，支援批次匯入與匯出',
+    keywords: '選民 voter 匯入 匯出 標籤 頭銜 詳細頁 團體 批次 時間軸 timeline 篩選',
+    summary: '建立並管理選民基本資料、標籤、頭銜，支援批次操作、活動時間軸、儲存常用篩選',
     content: () => (
       <>
         <SubSection title="新增選民">
@@ -34,15 +34,39 @@ export const BASIC_MODULES: HelpModule[] = [
             匯入格式請參考下載的範本與欄位說明工作表。
           </Paragraph>
         </SubSection>
+        <SubSection title="批次操作（v1.0.20+）">
+          <Paragraph>
+            勾選列表中的多筆選民後，下方會出現操作列：
+          </Paragraph>
+          <ul>
+            <li><strong>批次加標籤</strong>：一次套用多個標籤到所有選取選民（例如標記「樁腳」、「捐款者」）。</li>
+            <li><strong>批次匯出選取的選民</strong>：只匯出勾選的部分，避免匯出全表後手動篩選。</li>
+          </ul>
+        </SubSection>
+        <SubSection title="活動時間軸（v1.0.21+）">
+          <Paragraph>
+            點選民姓名進詳細頁 → 切到「<strong>活動時間軸</strong>」分頁，會把這位選民的所有互動依時間倒序整合呈現：
+          </Paragraph>
+          <ul>
+            <li>陳情案件、聯絡記錄、行程、禮儀、待辦、通知收件 — 6 個來源合一</li>
+            <li>點任一事件可直接跳到原始紀錄</li>
+            <li>50k 選民資料下查詢仍 &lt; 100ms</li>
+          </ul>
+        </SubSection>
         <SubSection title="選民詳細頁">
           <Paragraph>
-            點選選民姓名可進入詳細頁，可在此頁查看該選民所有陳情紀錄、備註、歷史修改紀錄。詳細頁編輯表單包含：
+            詳細頁編輯表單包含：
           </Paragraph>
           <ul>
             <li><strong>頭銜</strong>：記錄選民在地方的正式稱謂（如里長、社區主委、協會理事長）</li>
             <li><strong>標籤</strong>：樁腳、志工、捐款者等分類標籤</li>
             <li><strong>關注議題</strong>：標記選民關心的政策議題，便於精準服務</li>
           </ul>
+        </SubSection>
+        <SubSection title="儲存常用篩選（v1.0.23+）">
+          <Paragraph>
+            篩選列上方有「<strong>儲存目前篩選</strong>」按鈕：把目前的搜尋詞 + 縣市 + 區 + 里 + 標籤組合命名儲存（如「我的樁腳」），下次點下拉選單即可一鍵套用。可勾「設為預設」讓進頁時自動載入。每使用者最多 20 組。
+          </Paragraph>
         </SubSection>
         <SubSection title="團體管理">
           <Paragraph>
@@ -59,8 +83,8 @@ export const BASIC_MODULES: HelpModule[] = [
     icon: <FileTextOutlined />,
     color: '#FF9500',
     category: 'basics',
-    keywords: '陳情 petition 案件 進度 附件 統計',
-    summary: '記錄與追蹤陳情案件，從受理到結案的完整流程',
+    keywords: '陳情 petition 案件 進度 附件 統計 批次 PDF 篩選',
+    summary: '陳情受理 → 結案完整流程，支援批次轉派/結案、PDF 匯出、儲存常用篩選',
     content: () => (
       <>
         <SubSection title="新增陳情">
@@ -77,17 +101,36 @@ export const BASIC_MODULES: HelpModule[] = [
             案件狀態分為：<Tag color="orange">待處理</Tag><Tag color="blue">處理中</Tag><Tag color="cyan">已回覆</Tag><Tag>已結案</Tag>
           </Paragraph>
           <Paragraph>
-            可在案件詳細頁新增處理進度記錄，每筆紀錄會自動記錄時間與操作人員。
+            可在案件詳細頁新增處理進度記錄，每筆紀錄會自動記錄時間與操作人員。處理方式有 10 種預設值（受理 / 轉介 / 回覆 / 結案 / 追蹤 / 重新分派 / 備註 / 補充 / 電話聯絡 / 親訪），UI 與後端共用同一份常數確保不會漂移。
           </Paragraph>
         </SubSection>
-        <SubSection title="附件上傳">
+        <SubSection title="批次操作（v1.0.22+）">
           <Paragraph>
-            進入案件詳細頁後，在「附件」區塊可上傳相關文件（圖片、PDF、Word 等），每個附件限 20MB。
+            勾選清單中多筆案件後，操作列出現三組批次動作（最多 1000 筆/次）：
+          </Paragraph>
+          <ul>
+            <li><strong>批次轉派</strong>：人事異動時一次把多案改派給接手者</li>
+            <li><strong>批次結案</strong>：年底清案時把已處理完的批次標為「已結案」（會自動寫入 closed_at）</li>
+            <li><strong>批次設定優先級</strong>：選舉前把選定案件升為「急件」/「特急」</li>
+          </ul>
+          <Alert message="所有批次動作都寫入操作紀錄，可在「稽核紀錄」頁追蹤。" type="info" showIcon style={{ marginTop: 8 }} />
+        </SubSection>
+        <SubSection title="附件 + PDF 匯出">
+          <Paragraph>
+            詳細頁「附件」區可上傳相關文件（圖片、PDF、Word 等），每個附件限 20MB。
+          </Paragraph>
+          <Paragraph>
+            <strong>匯出 PDF（v1.0.23+）</strong>：詳細頁右上「匯出 PDF」按鈕可下載含完整資訊（案號、選民、類別、狀態、內容、處理紀錄時間軸）的 A4 PDF，內嵌 Noto Sans TC 中文字型，無網路也能正常顯示中文。
+          </Paragraph>
+        </SubSection>
+        <SubSection title="儲存常用篩選（v1.0.23+）">
+          <Paragraph>
+            篩選列上方有「<strong>儲存目前篩選</strong>」按鈕：例如「我的待處理急件」（assignee=我 + status=待處理 + urgency=急件），下次一鍵套用。
           </Paragraph>
         </SubSection>
         <SubSection title="統計報表">
           <Paragraph>
-            「統計報表」頁面提供案件數量、類別分布、承辦人工作量、處理時效等圖表。
+            「統計報表」頁面提供案件數量、類別分布、承辦人工作量、處理時效等圖表。月報可匯出 Excel 或 PDF。
           </Paragraph>
         </SubSection>
       </>

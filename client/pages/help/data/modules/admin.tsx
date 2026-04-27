@@ -120,8 +120,8 @@ export const ADMIN_MODULES: HelpModule[] = [
     icon: <InfoCircleOutlined />,
     color: '#5AC8FA',
     category: 'admin',
-    keywords: '區網 LAN IP 多人 連線 port',
-    summary: '同辦公室多台電腦透過瀏覽器連線同一主機',
+    keywords: '區網 LAN IP 多人 連線 port WebSocket 即時 推送',
+    summary: '同辦公室多台電腦透過瀏覽器連線同一主機，含 WebSocket 即時推送',
     content: () => (
       <>
         <SubSection title="連線方式">
@@ -133,6 +133,21 @@ export const ADMIN_MODULES: HelpModule[] = [
           </div>
           <Paragraph>
             主機 IP 可在「系統設定」頁面查看，或在主機電腦的終端機輸入 <Text code>ifconfig</Text>（Mac）/ <Text code>ipconfig</Text>（Windows）查詢。
+          </Paragraph>
+        </SubSection>
+        <SubSection title="即時同步（v1.0.23+）">
+          <Paragraph>
+            登入後系統會維持一條 <Text code>/ws</Text> 連線，任何人改動陳情、選民、行程等資料，所有開著的客戶端 100ms 內就會看到 — 不用 F5 重整。
+          </Paragraph>
+          <ul>
+            <li>連線中斷會自動指數退避重連（1s → 30s 上限）</li>
+            <li>WebSocket 失敗時自動退回 5 秒輪詢，功能不受影響</li>
+            <li>Tailscale 外網存取也走同一條 WS，手機現場改完馬上同步回辦公室</li>
+          </ul>
+        </SubSection>
+        <SubSection title="行動裝置友善（v1.0.23+）">
+          <Paragraph>
+            主要列表頁（選民／陳情）在 768px 以下會自動切成 Card 視圖（不再橫向捲動表格），Drawer 改從底部滑入；行事曆切到 timeGridDay；表單改單欄。手機/平板瀏覽器存取直接可用，不必另外裝 App。
           </Paragraph>
         </SubSection>
         <SubSection title="注意事項">
