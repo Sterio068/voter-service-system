@@ -56,8 +56,9 @@ test('voter create smoke flow works from the UI', async ({ page, request }) => {
   await expect(page.getByText('戶籍資料', { exact: true })).toBeVisible()
   await page.getByLabel('姓名').fill(voterName)
   await page.getByLabel('手機').fill(voterMobile)
-  // exact: true 才能避開新加的 SavedFiltersBar「儲存目前篩選」按鈕。
-  await page.getByRole('button', { name: '儲存', exact: true }).click()
+  // Antd 在兩字 CJK 按鈕中間插入 space（'儲 存'），所以用 regex 容許可選
+  // 空白；anchor `^...$` 同時排除「儲存目前篩選」與「儲存並繼續新增」。
+  await page.getByRole('button', { name: /^儲\s*存$/ }).click()
   await expect(page.getByText('選民資料已建立')).toBeVisible()
   await expect(page.getByText(voterName, { exact: true }).first()).toBeVisible()
 })
