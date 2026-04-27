@@ -9,6 +9,11 @@
 
 ## [Unreleased]
 
+## [1.0.25] - 2026-04-27
+
+### Fixed
+- **CRITICAL**: 移除 electron-builder `!**/src/**` 排除規則。這個規則本意是排除專案 `src/` 但本專案根本沒有 `src/`（用 `client/` `server/` `electron/`），卻會誤殺 `node_modules/js-md5/src/md5.js`，導致 v1.0.24 安裝後啟動時 `Cannot find module 'js-md5/src/md5.js'`。js-md5 是 pdfmake 的 transitive dep，v1.0.23+ 全部受影響。
+
 ## [1.0.24] - 2026-04-27
 
 ### Fixed
