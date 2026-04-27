@@ -25,14 +25,24 @@ export function isEncryptedSecret(value: unknown): value is string {
 export function getSecretEncryptionKey(): Buffer {
   const explicit = process.env.VOTER_SERVICE_SETTINGS_KEY || process.env.SETTINGS_ENCRYPTION_KEY
 
-  // Production must supply an explicit key. Hostname + username are not
-  // secret — on a VM clone or predictable host name, an attacker with DB
-  // read access could reconstruct the key and decrypt all stored
-  // secrets. The fallback only stays available in development / test
-  // (where reproducibility matters and the threat model is local-only).
-  if (!explicit && process.env.NODE_ENV === 'production') {
+  // Cloud / headless server deployments must supply an explicit key —
+  // host name + username on a VM clone are predictable, so an attacker
+  // who reads the SQLite DB could reconstruct the key.
+  //
+  // Electron desktop installs are a different threat model: each install
+  // ships its own asar binary onto a single physical machine, the data
+  // dir lives under the user's profile, and the app already maintains a
+  // machine_fingerprint check. Stealing the DB requires physical access
+  // to the same machine, which by definition exposes the same host name
+  // anyway. So the host-derived fallback stays acceptable there, and
+  // existing installs (created before v1.0.18) keep working without a
+  // breaking config requirement.
+  const isElectron = !!(process.versions && (process.versions as Record<string, string | undefined>).electron)
+
+  if (!explicit && process.env.NODE_ENV === 'production' && !isElectron) {
     throw new Error(
-      'VOTER_SERVICE_SETTINGS_KEY (or legacy SETTINGS_ENCRYPTION_KEY) must be set in production. ' +
+      'VOTER_SERVICE_SETTINGS_KEY (or legacy SETTINGS_ENCRYPTION_KEY) must be set when ' +
+      'running the headless server in production. ' +
       'Generate one with `node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"` ' +
       'and persist it in your service configuration.'
     )

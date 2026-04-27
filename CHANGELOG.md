@@ -9,6 +9,11 @@
 
 ## [Unreleased]
 
+## [1.0.24] - 2026-04-27
+
+### Fixed
+- **CRITICAL**: Electron 桌面版啟動時不再強制要求 `VOTER_SERVICE_SETTINGS_KEY` 環境變數。v1.0.18 引入的嚴格檢查當時的設想是雲端 / 多租戶部署，但對 Electron 單機桌面版來說會擋掉所有沒設這個變數的既有安裝。改成只在 headless server（無 Electron）且 production 模式下才強制要求；Electron 桌面版照舊用 host-derived fallback（與既有資料的加密金鑰一致，不需重新加密遷移）。
+
 ## [1.0.23] - 2026-04-27
 
 ### Added
