@@ -297,7 +297,7 @@ export default function Dashboard() {
         <div role="status" aria-live="polite" aria-label="工作台資料載入中">
           <Row gutter={[12, 12]} style={{ marginBottom: 14 }}>
             {Array.from({ length: 6 }).map((_, i) => (
-              <Col key={i} xs={12} md={8} xl={4}>
+              <Col key={i} xs={24} sm={12} md={8} xl={4}>
                 <Card className="vss-metric-card">
                   <Skeleton active title={{ width: '60%' }} paragraph={{ rows: 2, width: ['40%', '70%'] }} />
                 </Card>
@@ -355,7 +355,7 @@ export default function Dashboard() {
       )}
 
       <Row gutter={[12, 12]} style={{ marginBottom: 14 }}>
-        <Col xs={12} md={8} xl={4}>
+        <Col xs={24} sm={12} md={8} xl={4}>
           <MetricCard
             label="待處理陳情"
             value={stats.pending ?? 0}
@@ -365,7 +365,7 @@ export default function Dashboard() {
             onClick={() => navigate('/petitions?status=pending')}
           />
         </Col>
-        <Col xs={12} md={8} xl={4}>
+        <Col xs={24} sm={12} md={8} xl={4}>
           <MetricCard
             label="逾期陳情"
             value={stats.overdue ?? 0}
@@ -375,7 +375,7 @@ export default function Dashboard() {
             onClick={() => navigate(canAccessReports ? '/reports' : '/petitions')}
           />
         </Col>
-        <Col xs={12} md={8} xl={4}>
+        <Col xs={24} sm={12} md={8} xl={4}>
           <MetricCard
             label="今日待辦"
             value={todayTasks.length}
@@ -385,7 +385,7 @@ export default function Dashboard() {
             onClick={() => navigate('/tasks?focus=today')}
           />
         </Col>
-        <Col xs={12} md={8} xl={4}>
+        <Col xs={24} sm={12} md={8} xl={4}>
           <MetricCard
             label="今日行程"
             value={todaySchedules.length}
@@ -395,7 +395,7 @@ export default function Dashboard() {
             onClick={() => navigate('/schedules')}
           />
         </Col>
-        <Col xs={12} md={8} xl={4}>
+        <Col xs={24} sm={12} md={8} xl={4}>
           <MetricCard
             label="選民總數"
             value={stats.totalVoters ?? 0}
@@ -405,7 +405,7 @@ export default function Dashboard() {
             onClick={() => navigate('/voters')}
           />
         </Col>
-        <Col xs={12} md={8} xl={4}>
+        <Col xs={24} sm={12} md={8} xl={4}>
           <MetricCard
             label="待處理公文"
             value={stats.pendingDocs ?? 0}

@@ -1,6 +1,19 @@
 import { FastifyInstance } from 'fastify'
 import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
+import { createAuditLog } from '../middleware/audit'
+import { buildPdf } from '../utils/pdfExport'
+import { getSetting } from '../utils/settings'
+
+const PETITION_STATUS_LABELS: Record<string, string> = {
+  pending: '待處理',
+  processing: '處理中',
+  waiting_external: '待外部回覆',
+  waiting_applicant: '待民眾補件',
+  replied: '已回覆',
+  closed: '已結案',
+  cancelled: '已取消',
+}
 
 export default async function reportRoutes(fastify: FastifyInstance) {
   // R-N1: Assignee workload
@@ -384,6 +397,138 @@ export default async function reportRoutes(fastify: FastifyInstance) {
       LIMIT 50
     `).all()
     return reply.send({ success: true, data })
+  })
+
+  // GET /api/reports/monthly?year=YYYY&month=MM&format=pdf — 月報 PDF（依狀態 / 類別 / 承辦人）
+  fastify.get('/api/reports/monthly', { preHandler: [requirePermission('reports', 'export')] }, async (request, reply) => {
+    const cu = request.currentUser!
+    const { year, month, format } = request.query as any
+
+    const yearStr = String(year ?? new Date().getFullYear())
+    const monthStr = String(month ?? new Date().getMonth() + 1).padStart(2, '0')
+    if (!/^\d{4}$/.test(yearStr)) return reply.code(400).send({ success: false, error: 'year 需為 4 位數年份' })
+    if (!/^\d{2}$/.test(monthStr) || Number(monthStr) < 1 || Number(monthStr) > 12) {
+      return reply.code(400).send({ success: false, error: 'month 需為 1–12 的月份' })
+    }
+
+    const ymPattern = `${yearStr}-${monthStr}`
+    const byStatus = db.prepare(`
+      SELECT status, COUNT(*) as count FROM petitions
+      WHERE strftime('%Y-%m', petition_date)=? AND is_active=1
+      GROUP BY status ORDER BY count DESC
+    `).all(ymPattern) as Array<{ status: string; count: number }>
+    const byCategory = db.prepare(`
+      SELECT COALESCE(category,'未分類') as category, COUNT(*) as count FROM petitions
+      WHERE strftime('%Y-%m', petition_date)=? AND is_active=1
+      GROUP BY category ORDER BY count DESC
+    `).all(ymPattern) as Array<{ category: string; count: number }>
+    const byAssignee = db.prepare(`
+      SELECT COALESCE(u.name,'未指派') as assignee, COUNT(*) as count FROM petitions p
+      LEFT JOIN users u ON u.id = p.assignee_id
+      WHERE strftime('%Y-%m', p.petition_date)=? AND p.is_active=1
+      GROUP BY u.id ORDER BY count DESC
+    `).all(ymPattern) as Array<{ assignee: string; count: number }>
+    const totalRow = db.prepare(`SELECT COUNT(*) as c FROM petitions WHERE strftime('%Y-%m', petition_date)=? AND is_active=1`).get(ymPattern) as any
+    const totalCount = totalRow?.c ?? 0
+
+    // Default to JSON if format != 'pdf' so the existing UI does not regress.
+    if (String(format).toLowerCase() !== 'pdf') {
+      return reply.send({ success: true, data: { year: yearStr, month: monthStr, total: totalCount, byStatus, byCategory, byAssignee } })
+    }
+
+    const officeName = getSetting('office_name') || '服務處'
+    const buildTableBody = (
+      headers: [string, string, string],
+      rows: Array<[string, number]>,
+    ): any[][] => {
+      const body: any[][] = [
+        headers.map((h) => ({ text: h, style: 'tableHeader' })),
+      ]
+      if (rows.length === 0) {
+        body.push([{ text: '（本月無資料）', colSpan: 3, italics: true, color: '#888', alignment: 'center' }, {}, {}])
+        return body
+      }
+      const total = rows.reduce((s, [, c]) => s + (c || 0), 0) || 1
+      rows.forEach(([label, count]) => {
+        const pct = ((count / total) * 100).toFixed(1) + '%'
+        body.push([label, { text: String(count), alignment: 'right' }, { text: pct, alignment: 'right' }])
+      })
+      return body
+    }
+
+    const docDef: Record<string, any> = {
+      info: { title: `${yearStr}年${monthStr}月 陳情月報`, author: officeName },
+      pageSize: 'A4',
+      pageMargins: [40, 60, 40, 50],
+      header: { text: officeName, alignment: 'center', margin: [0, 20, 0, 0], fontSize: 12, bold: true },
+      footer: (currentPage: number, pageCount: number) => ({
+        text: `${currentPage} / ${pageCount}`,
+        alignment: 'center',
+        margin: [0, 20, 0, 0],
+        fontSize: 9,
+        color: '#888',
+      }),
+      content: [
+        { text: `${yearStr} 年 ${Number(monthStr)} 月　陳情月報`, style: 'title' },
+        { text: `產製日期：${new Date().toISOString().slice(0, 10)}　|　本月案件總數：${totalCount} 件`, style: 'subtitle' },
+
+        { text: '一、依處理狀態統計', style: 'sectionTitle' },
+        {
+          style: 'statTable',
+          table: {
+            headerRows: 1,
+            widths: ['*', 80, 80],
+            body: buildTableBody(
+              ['處理狀態', '件數', '佔比'],
+              byStatus.map((r) => [PETITION_STATUS_LABELS[r.status] || r.status || '—', r.count]),
+            ),
+          },
+          layout: 'lightHorizontalLines',
+        },
+
+        { text: '二、依陳情類別統計', style: 'sectionTitle' },
+        {
+          style: 'statTable',
+          table: {
+            headerRows: 1,
+            widths: ['*', 80, 80],
+            body: buildTableBody(
+              ['陳情類別', '件數', '佔比'],
+              byCategory.map((r) => [r.category, r.count]),
+            ),
+          },
+          layout: 'lightHorizontalLines',
+        },
+
+        { text: '三、依承辦人統計', style: 'sectionTitle' },
+        {
+          style: 'statTable',
+          table: {
+            headerRows: 1,
+            widths: ['*', 80, 80],
+            body: buildTableBody(
+              ['承辦人', '件數', '佔比'],
+              byAssignee.map((r) => [r.assignee, r.count]),
+            ),
+          },
+          layout: 'lightHorizontalLines',
+        },
+      ],
+      styles: {
+        title: { fontSize: 18, bold: true, alignment: 'center', margin: [0, 0, 0, 6] },
+        subtitle: { fontSize: 10, alignment: 'center', color: '#555', margin: [0, 0, 0, 14] },
+        sectionTitle: { fontSize: 13, bold: true, margin: [0, 14, 0, 6], color: '#1677ff' },
+        statTable: { fontSize: 10 },
+        tableHeader: { bold: true, fillColor: '#f0f4ff' },
+      },
+    }
+
+    const buf = await buildPdf(docDef)
+    createAuditLog(request, cu.id, { action: 'export', module: '統計報表', target_type: 'monthly_report', target_id: 0, target_name: `${yearStr}-${monthStr} 月報 (PDF)` })
+    const filename = `陳情月報_${yearStr}${monthStr}.pdf`
+    reply.header('Content-Type', 'application/pdf')
+    reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`)
+    return reply.send(buf)
   })
 
   // R-13: Assignee Load Index

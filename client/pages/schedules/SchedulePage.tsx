@@ -18,11 +18,13 @@ import { SCHEDULE_TYPE_COLORS as TYPE_COLORS, SCHEDULE_TYPE_LABELS as TYPE_LABEL
 import dayjs from 'dayjs'
 import { useThemeStore } from '../../stores/themeStore'
 import { useAuthStore } from '../../stores/authStore'
+import { useIsMobile } from '../../components/Layout/MainLayout'
 import PageScaffold from '../../components/ui/PageScaffold'
 import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
 import FormFooter from '../../components/ui/FormFooter'
 import EmptyState from '../../components/ui/EmptyState'
 import FormSection from '../../components/ui/FormSection'
+import SavedFiltersBar from '../../components/SavedFiltersBar'
 import { hasModulePermission } from '../../utils/permissions'
 
 const { Text } = Typography
@@ -31,6 +33,7 @@ const { RangePicker } = DatePicker
 
 export default function SchedulePage() {
   const { user } = useAuthStore()
+  const isMobile = useIsMobile()
   const canCreateSchedule = hasModulePermission(user?.role, 'schedules', 'create')
   const canEditSchedule = hasModulePermission(user?.role, 'schedules', 'edit')
   const canDeleteSchedule = hasModulePermission(user?.role, 'schedules', 'delete')
@@ -713,6 +716,17 @@ export default function SchedulePage() {
           ? <Text type="secondary">顯示 {filteredSchedules.length} / {schedules.length} 筆</Text>
           : <Text type="secondary">共 {schedules.length} 筆</Text>}
       >
+        <div style={{ marginBottom: 8 }}>
+          <SavedFiltersBar
+            scope="schedule"
+            currentFilters={{ searchKeyword, filterType, filterStatus }}
+            onApply={(f) => {
+              setSearchKeyword(typeof f.searchKeyword === 'string' ? f.searchKeyword : '')
+              setFilterType(typeof f.filterType === 'string' ? f.filterType : '')
+              setFilterStatus(typeof f.filterStatus === 'string' ? f.filterStatus : '')
+            }}
+          />
+        </div>
         <Space wrap role="search" aria-label="行程篩選">
           <Input.Search
             placeholder="搜尋行程標題、地點、備註"
@@ -739,22 +753,25 @@ export default function SchedulePage() {
         </Space>
       </WorkspaceToolbar>
 
-      <Card>
+      <Card styles={{ body: isMobile ? { padding: 8 } : undefined }}>
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-          initialView="dayGridMonth"
+          initialView={isMobile ? 'timeGridDay' : 'dayGridMonth'}
           locale={zhTW}
           events={calendarEvents}
           selectable={canCreateSchedule}
           select={handleDateSelect}
           eventClick={handleEventClick}
-          headerToolbar={{
-            left: 'prev,next today',
-            center: 'title',
-            right: 'dayGridMonth,timeGridWeek,timeGridDay',
-          }}
+          headerToolbar={isMobile
+            ? { left: 'prev,next', center: 'title', right: 'today' }
+            : { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' }
+          }
+          footerToolbar={isMobile
+            ? { center: 'timeGridDay,timeGridWeek,dayGridMonth' }
+            : undefined
+          }
           height="auto"
-          aspectRatio={1.8}
+          aspectRatio={isMobile ? 0.85 : 1.8}
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
         />
       </Card>
@@ -817,7 +834,10 @@ export default function SchedulePage() {
       {/* 新增行程 */}
       <Drawer title={editingScheduleId ? '編輯行程' : '新增行程'} open={drawerOpen}
         onClose={closeScheduleDrawer}
-        width={560} destroyOnClose
+        placement={isMobile ? 'bottom' : 'right'}
+        height={isMobile ? '90vh' : undefined}
+        width={isMobile ? '100%' : 560}
+        destroyOnClose
         footer={<FormFooter onCancel={closeScheduleDrawer} onSubmit={() => form.submit()} />}>
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <FormSection title="行程基本資料" description="設定時間、類型、地點與相關團體，避免跨日與同時段衝突。">
@@ -826,7 +846,7 @@ export default function SchedulePage() {
               <RangePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm" minuteStep={15} />
             </Form.Item>
             <Row gutter={12}>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="schedule_type" label="行程類型">
                   <Select allowClear onChange={v => setDrawerScheduleType(v || '')}>
                     {(scheduleTypes.length > 0
@@ -843,7 +863,7 @@ export default function SchedulePage() {
                   </Select>
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="location" label="地點"><Input /></Form.Item>
               </Col>
             </Row>
@@ -858,24 +878,24 @@ export default function SchedulePage() {
           {isPublicMemorial && (
             <FormSection title="公祭資訊" description="記錄家祭、公祭時間與地點，方便列印與現場支援。">
               <Row gutter={12}>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="family_ceremony_time" label="家祭時間">
                     <TimePicker style={{ width: '100%' }} format="HH:mm" minuteStep={5} />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="public_ceremony_time" label="公祭時間">
                     <TimePicker style={{ width: '100%' }} format="HH:mm" minuteStep={5} />
                   </Form.Item>
                 </Col>
               </Row>
               <Row gutter={12}>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="mourning_hall_location" label="靈堂地點">
                     <Input placeholder="靈堂所在地址" />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="public_ceremony_location" label="公祭地點">
                     <Input placeholder="公祭舉行地址" />
                   </Form.Item>
@@ -891,26 +911,26 @@ export default function SchedulePage() {
           {isCeremonyType && canCreateScheduleCeremony && (
             <FormSection title="禮儀資訊" description="禮儀性質、受贈人與品項會同步形成支出紀錄。">
               <Row gutter={12}>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="ceremony_type" label="禮儀性質">
                     <Select>
                       {Object.entries(CEREMONY_TYPE_LABELS).map(([k, v]) => <Option key={k} value={k}>{v}</Option>)}
                     </Select>
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="event_date" label="活動日期">
                     <DatePicker style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
               </Row>
               <Row gutter={12}>
-                <Col span={14}>
+                <Col xs={24} sm={14}>
                   <Form.Item name="recipient_name" label="受贈人／主家姓名" rules={[{ required: isCeremonyType, message: '請輸入受贈人姓名' }]}>
                     <Input placeholder="姓名" />
                   </Form.Item>
                 </Col>
-                <Col span={10}>
+                <Col xs={24} sm={10}>
                   <Form.Item name="recipient_relation" label="關係">
                     <Select allowClear>
                       {['選民','親屬','里長','議員','同事','廠商','朋友','其他'].map(r => <Option key={r} value={r}>{r}</Option>)}
@@ -919,12 +939,12 @@ export default function SchedulePage() {
                 </Col>
               </Row>
               <Row gutter={12}>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="is_joint" valuePropName="checked" style={{ marginBottom: 4 }}>
                     <Checkbox>聯合致贈</Checkbox>
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="joint_note" style={{ marginBottom: 4 }}>
                     <Input placeholder="聯合人說明（如有）" />
                   </Form.Item>
@@ -1313,24 +1333,24 @@ export default function SchedulePage() {
           } catch { message.error('儲存失敗') }
         }}>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="ceremony_type" label="禮儀性質" rules={[{ required: true }]}>
                 <Select>
                   {Object.entries(CEREMONY_TYPE_LABELS).map(([k, v]) => <Option key={k} value={k}>{v}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="event_date" label="活動日期">
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
             </Col>
           </Row>
           <Row gutter={12}>
-            <Col span={14}>
+            <Col xs={24} sm={14}>
               <Form.Item name="recipient_name" label="受贈人姓名" rules={[{ required: true }]}><Input /></Form.Item>
             </Col>
-            <Col span={10}>
+            <Col xs={24} sm={10}>
               <Form.Item name="recipient_relation" label="關係">
                 <Select allowClear>
                   {['選民','親屬','里長','議員','同事','廠商','朋友','其他'].map(r => <Option key={r} value={r}>{r}</Option>)}
@@ -1339,10 +1359,10 @@ export default function SchedulePage() {
             </Col>
           </Row>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="event_location" label="地點"><Input /></Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="status" label="狀態" initialValue="planned">
                 <Select>
                   <Option value="planned">計畫中</Option>
@@ -1353,12 +1373,12 @@ export default function SchedulePage() {
             </Col>
           </Row>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="is_joint" valuePropName="checked" style={{ marginBottom: 4 }}>
                 <Checkbox>聯合致贈</Checkbox>
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="joint_note" style={{ marginBottom: 4 }}>
                 <Input placeholder="聯合人說明（如有）" />
               </Form.Item>

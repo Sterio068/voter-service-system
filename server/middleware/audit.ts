@@ -1,5 +1,6 @@
 import { FastifyRequest } from 'fastify'
 import { db } from '../db/index'
+import { publish as publishRealtime } from '../utils/realtimeBus'
 
 export interface AuditOptions {
   action: 'login' | 'logout' | 'create' | 'update' | 'delete' | 'export' | 'import' | 'print' | 'query' | 'merge' | 'check'
@@ -14,6 +15,8 @@ export interface AuditOptions {
 
 // Keep backward-compat alias
 export type AuditParams = AuditOptions
+
+const REALTIME_ACTIONS = new Set(['create', 'update', 'delete', 'merge'])
 
 export function createAuditLog(request: FastifyRequest, userId: number, opts: AuditOptions) {
   const ip = request.ip || (request.headers['x-forwarded-for'] as string) || 'unknown'
@@ -34,4 +37,19 @@ export function createAuditLog(request: FastifyRequest, userId: number, opts: Au
     detail,
     ip
   )
+
+  // Realtime fan-out — must never throw past the audit insert. We only push
+  // mutating actions; logins/exports/etc. don't need to invalidate caches.
+  if (opts.target_type && REALTIME_ACTIONS.has(opts.action)) {
+    try {
+      publishRealtime({
+        target_type: opts.target_type,
+        target_id: opts.target_id ?? null,
+        action: opts.action,
+        user_id: userId,
+      })
+    } catch {
+      // Silently swallow — audit log already persisted.
+    }
+  }
 }

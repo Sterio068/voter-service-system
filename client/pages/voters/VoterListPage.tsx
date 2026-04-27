@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
-  Table, Button, Space, Input, Select, Tag, Typography, Card,
+  Table, Button, Space, Input, Select, Tag, Typography, Card, List,
   Modal, Form, DatePicker, Radio, Drawer, Row, Col, message, Popconfirm, Upload, Alert, Progress, notification, Popover, Spin
 } from 'antd'
 import {
@@ -11,12 +11,14 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useDataSync } from '../../hooks/useDataSync'
+import { useIsMobile } from '../../components/Layout/MainLayout'
 import PageScaffold from '../../components/ui/PageScaffold'
 import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
 import EmptyState from '../../components/ui/EmptyState'
 import FormFooter from '../../components/ui/FormFooter'
 import SelectionActionBar from '../../components/ui/SelectionActionBar'
 import FormSection from '../../components/ui/FormSection'
+import SavedFiltersBar from '../../components/SavedFiltersBar'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import type { UploadFile } from 'antd/es/upload'
@@ -33,6 +35,7 @@ export default function VoterListPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuthStore()
+  const isMobile = useIsMobile()
   const canCreateVoter = hasModulePermission(user?.role, 'voters', 'create')
   const canEditVoter = hasModulePermission(user?.role, 'voters', 'edit')
   const canDeleteVoter = hasModulePermission(user?.role, 'voters', 'delete')
@@ -620,6 +623,20 @@ export default function VoterListPage() {
         description="以姓名、電話、戶籍區域與標籤快速縮小選民名單。"
         meta={<Text type="secondary">共 {total} 筆</Text>}
       >
+        <div style={{ marginBottom: 8 }}>
+          <SavedFiltersBar
+            scope="voter"
+            currentFilters={{ search, filterCity, filterDistrict, filterVillage, filterTag }}
+            onApply={(f) => {
+              setSearch(typeof f.search === 'string' ? f.search : '')
+              setFilterCity(typeof f.filterCity === 'string' ? f.filterCity : '')
+              setFilterDistrict(typeof f.filterDistrict === 'string' ? f.filterDistrict : '')
+              setFilterVillage(typeof f.filterVillage === 'string' ? f.filterVillage : '')
+              setFilterTag(typeof f.filterTag === 'string' ? f.filterTag : '')
+              setPage(1)
+            }}
+          />
+        </div>
         <Space wrap role="search" aria-label="選民篩選">
           <Input.Search
             placeholder="姓名/手機/地址搜尋"
@@ -668,31 +685,115 @@ export default function VoterListPage() {
         </Space>
       </WorkspaceToolbar>
 
-      <Card>
-        <Table
-          columns={columns}
-          dataSource={data}
-          rowKey="id"
-          loading={loading}
-          size="small"
-          rowSelection={canEditVoter ? {
-            selectedRowKeys,
-            onChange: (keys) => setSelectedRowKeys(keys),
-          } : undefined}
-          locale={{
-            emptyText: (search || filterCity || filterDistrict || filterVillage || filterTag)
-              ? <EmptyState variant="search" title="查無符合條件的選民" description="試著放寬姓名、區域或標籤條件。" />
-              : <EmptyState title="尚無選民資料" description="新增第一筆選民後，名冊、標籤與互動紀錄會在這裡彙整。" />,
-          }}
-          pagination={{
-            current: page, pageSize, total,
-            showSizeChanger: true,
-            showTotal: (t) => `共 ${t} 筆`,
-            onChange: (p, ps) => { setPage(p); setPageSize(ps) },
-          }}
-          virtual={total > 100}
-          scroll={{ x: 900, y: total > 100 ? 600 : undefined }}
-        />
+      <Card styles={{ body: isMobile ? { padding: 8 } : undefined }}>
+        {isMobile ? (
+          <List
+            loading={loading}
+            dataSource={data}
+            locale={{
+              emptyText: (search || filterCity || filterDistrict || filterVillage || filterTag)
+                ? <EmptyState variant="search" title="查無符合條件的選民" description="試著放寬姓名、區域或標籤條件。" />
+                : <EmptyState title="尚無選民資料" description="新增第一筆選民後，名冊、標籤與互動紀錄會在這裡彙整。" />,
+            }}
+            pagination={{
+              current: page,
+              pageSize,
+              total,
+              simple: true,
+              onChange: (p, ps) => { setPage(p); setPageSize(ps) },
+            }}
+            renderItem={(record: any) => {
+              const address = [record.household_city, record.household_district, record.household_village, record.household_address].filter(Boolean).join(' ')
+              return (
+                <List.Item
+                  key={record.id}
+                  style={{ padding: '10px 8px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}
+                  actions={[
+                    <Button
+                      key="view"
+                      size="small"
+                      type="text"
+                      icon={<EyeOutlined />}
+                      aria-label={`查看選民 ${record.name}`}
+                      onClick={() => navigate(`/voters/${record.id}`)}
+                    />,
+                    ...(canEditVoter ? [
+                      <Button
+                        key="edit"
+                        size="small"
+                        type="text"
+                        icon={<EditOutlined />}
+                        aria-label={`編輯選民 ${record.name}`}
+                        onClick={() => handleEdit(record)}
+                      />,
+                    ] : []),
+                    ...(canDeleteVoter ? [
+                      <Popconfirm key="del" title={`確定停用「${record.name}」？`} onConfirm={() => handleDelete(record.id, record.name)}>
+                        <Button size="small" type="text" icon={<DeleteOutlined />} aria-label={`停用選民 ${record.name}`} danger />
+                      </Popconfirm>,
+                    ] : []),
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={
+                      <Space size={6} wrap>
+                        <a
+                          role="link"
+                          tabIndex={0}
+                          aria-label={`查看選民 ${record.name} 詳情`}
+                          onClick={() => navigate(`/voters/${record.id}`)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/voters/${record.id}`) } }}
+                          style={{ fontWeight: 600, fontSize: 14 }}
+                        >
+                          {record.name}
+                        </a>
+                        {record.gender && <Text type="secondary" style={{ fontSize: 12 }}>{record.gender}</Text>}
+                      </Space>
+                    }
+                    description={
+                      <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                        {record.mobile && <Text style={{ fontSize: 12 }}>📱 {record.mobile}</Text>}
+                        {address && <Text type="secondary" style={{ fontSize: 12 }}>{address}</Text>}
+                        {(record.tags || []).length > 0 && (
+                          <Space size={2} wrap>
+                            {(record.tags || []).map((tag: string) => (
+                              <Tag key={tag} color={TAG_COLORS[tag]} style={{ fontSize: 10, padding: '0 4px', marginRight: 0 }}>{tag}</Tag>
+                            ))}
+                          </Space>
+                        )}
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )
+            }}
+          />
+        ) : (
+          <Table
+            columns={columns}
+            dataSource={data}
+            rowKey="id"
+            loading={loading}
+            size="small"
+            rowSelection={canEditVoter ? {
+              selectedRowKeys,
+              onChange: (keys) => setSelectedRowKeys(keys),
+            } : undefined}
+            locale={{
+              emptyText: (search || filterCity || filterDistrict || filterVillage || filterTag)
+                ? <EmptyState variant="search" title="查無符合條件的選民" description="試著放寬姓名、區域或標籤條件。" />
+                : <EmptyState title="尚無選民資料" description="新增第一筆選民後，名冊、標籤與互動紀錄會在這裡彙整。" />,
+            }}
+            pagination={{
+              current: page, pageSize, total,
+              showSizeChanger: true,
+              showTotal: (t) => `共 ${t} 筆`,
+              onChange: (p, ps) => { setPage(p); setPageSize(ps) },
+            }}
+            virtual={total > 100}
+            scroll={{ x: 900, y: total > 100 ? 600 : undefined }}
+          />
+        )}
       </Card>
 
       {canEditVoter && (
@@ -949,7 +1050,9 @@ export default function VoterListPage() {
         title={editingVoter ? '編輯選民' : '新增選民'}
         open={drawerOpen}
         onClose={() => { setDrawerOpen(false); form.resetFields(); setDuplicateWarning(''); setMobileDupWarning(''); setIdNumberDupWarning('') }}
-        width={600}
+        placement={isMobile ? 'bottom' : 'right'}
+        height={isMobile ? '90vh' : undefined}
+        width={isMobile ? '100%' : 600}
         destroyOnClose
         footer={
           <FormFooter
@@ -983,12 +1086,12 @@ export default function VoterListPage() {
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <FormSection title="基本資料" description="姓名與聯絡方式是服務追蹤、匯出與重複檢查的核心欄位。">
             <Row gutter={12}>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="name" label="姓名" rules={[{ required: true, message: '請輸入姓名' }]}>
                   <Input />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="gender" label="性別">
                   <Radio.Group>
                     <Radio value="男">男</Radio>
@@ -997,12 +1100,12 @@ export default function VoterListPage() {
                   </Radio.Group>
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="birth_date" label="出生日期">
                   <DatePicker style={{ width: '100%' }} />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item
                   name="mobile"
                   label="手機"
@@ -1019,17 +1122,17 @@ export default function VoterListPage() {
                   />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="phone" label="市話">
                   <Input />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="line_id" label="LINE ID">
                   <Input />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item
                   name="id_number"
                   label="身分證號"
@@ -1053,17 +1156,17 @@ export default function VoterListPage() {
 
           <FormSection title="戶籍資料" description="完整區域資訊可支援選區篩選、地址標籤與地理分析。">
             <Row gutter={12}>
-              <Col span={8}>
+              <Col xs={24} sm={8}>
                 <Form.Item name="household_city" label="縣市">
                   <Input />
                 </Form.Item>
               </Col>
-              <Col span={8}>
+              <Col xs={24} sm={8}>
                 <Form.Item name="household_district" label="鄉鎮區">
                   <Input />
                 </Form.Item>
               </Col>
-              <Col span={8}>
+              <Col xs={24} sm={8}>
                 <Form.Item name="household_village" label="村里">
                   <Input />
                 </Form.Item>
@@ -1078,17 +1181,17 @@ export default function VoterListPage() {
 
           <FormSection title="職業與標籤" description="標籤與職業資訊會影響分眾服務、活動邀請與關係經營。">
             <Row gutter={12}>
-              <Col span={8}>
+              <Col xs={24} sm={8}>
                 <Form.Item name="occupation" label="職業">
                   <Input />
                 </Form.Item>
               </Col>
-              <Col span={8}>
+              <Col xs={24} sm={8}>
                 <Form.Item name="company" label="服務單位">
                   <Input />
                 </Form.Item>
               </Col>
-              <Col span={8}>
+              <Col xs={24} sm={8}>
                 <Form.Item name="job_title" label="職稱">
                   <Input />
                 </Form.Item>
@@ -1103,7 +1206,7 @@ export default function VoterListPage() {
 
           <FormSection title="其他資訊" description="補充來源、介紹人與備註，讓後續交接更有脈絡。">
             <Row gutter={12}>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="source" label="認識來源">
                   <Select allowClear>
                     <Option value="activity">活動認識</Option>
@@ -1115,7 +1218,7 @@ export default function VoterListPage() {
                   </Select>
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="referrer_id" label="介紹人">
                   <Select allowClear showSearch placeholder="搜尋介紹人（選民）"
                     filterOption={(input, opt) => String(opt?.children || '').toLowerCase().includes(input.toLowerCase())}>

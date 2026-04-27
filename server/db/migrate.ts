@@ -898,6 +898,26 @@ export async function runMigrations() {
     db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('5.6.0', 'Security: JWT 撤銷清單 + 登入失敗鎖定持久化（M-1 / M-2）')
   } catch {}
 
+  // F-N12: Saved filter combinations per user / scope
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS saved_filters (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL,
+      scope       TEXT NOT NULL,
+      name        TEXT NOT NULL,
+      filters     TEXT NOT NULL,
+      is_default  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, scope, name)
+    )`)
+    db.exec('CREATE INDEX IF NOT EXISTS idx_saved_filters_user_scope ON saved_filters(user_id, scope)')
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('5.7.0', 'F-N12: 使用者儲存的篩選組合（saved_filters）')
+  } catch (e: any) {
+    if (!e.message?.includes('already exists')) console.error('saved_filters migration:', e.message)
+  }
+
   await seedDefaultData()
 }
 

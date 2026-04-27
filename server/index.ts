@@ -5,6 +5,8 @@ import fastifyCookie from '@fastify/cookie'
 import fastifyMultipart from '@fastify/multipart'
 import fastifyRateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
+import fastifyWebsocket from '@fastify/websocket'
+import { subscribe as wsSubscribe, unsubscribe as wsUnsubscribe } from './utils/realtimeBus'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -43,6 +45,7 @@ import ceremonyRoutes from './routes/ceremonies'
 import expenseRoutes from './routes/expenses'
 import proposalRoutes from './routes/proposals'
 import aiRoutes from './routes/ai'
+import savedFiltersRoutes from './routes/savedFilters'
 
 const PORT = parseInt(process.env.PORT || '8080')
 const HOST = process.env.HOST || '0.0.0.0'
@@ -169,6 +172,75 @@ export async function buildServer() {
     })
   }
 
+  // WebSocket：即時推播 audit 事件，取代輪詢
+  await fastify.register(fastifyWebsocket, {
+    options: {
+      maxPayload: 64 * 1024, // 64KB upper-bound on incoming frames
+    },
+  })
+
+  fastify.get('/ws', { websocket: true }, (socket, request) => {
+    // JWT 驗證：優先讀 ?token= query；保留 Authorization header 作為相容後援
+    const tokenFromQuery = (request.query as any)?.token as string | undefined
+    const authHeader = request.headers['authorization']
+    const headerToken = typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : undefined
+    const rawToken = tokenFromQuery || headerToken
+
+    if (!rawToken) {
+      try { socket.close(1008, 'unauthorized') } catch {}
+      return
+    }
+
+    try {
+      ;(fastify as any).jwt.verify(rawToken)
+    } catch {
+      try { socket.close(1008, 'unauthorized') } catch {}
+      return
+    }
+
+    wsSubscribe(socket as any)
+
+    // Heartbeat：每 30s ping 一次；若 60s 內未收到 pong 視為失聯。
+    let alive = true
+    const heartbeat = setInterval(() => {
+      if (!alive) {
+        try { socket.terminate() } catch { try { socket.close() } catch {} }
+        return
+      }
+      alive = false
+      try {
+        if (typeof (socket as any).ping === 'function') {
+          ;(socket as any).ping()
+        } else {
+          socket.send(JSON.stringify({ type: 'ping' }))
+        }
+      } catch {}
+    }, 30000)
+
+    if (typeof (socket as any).on === 'function') {
+      ;(socket as any).on('pong', () => { alive = true })
+      ;(socket as any).on('message', (raw: any) => {
+        // 任何下行訊息都視為仍然活著；客戶端可選擇回 'pong' 字串。
+        alive = true
+        try {
+          const text = typeof raw === 'string' ? raw : raw.toString()
+          if (text === 'pong' || text === '"pong"') return
+        } catch {}
+      })
+    }
+
+    socket.on('close', () => {
+      clearInterval(heartbeat)
+      wsUnsubscribe(socket as any)
+    })
+    socket.on('error', () => {
+      clearInterval(heartbeat)
+      wsUnsubscribe(socket as any)
+    })
+  })
+
   // 路由
   await fastify.register(authRoutes)
   await fastify.register(adminRoutes)
@@ -197,6 +269,7 @@ export async function buildServer() {
   await fastify.register(expenseRoutes)
   await fastify.register(proposalRoutes)
   await fastify.register(aiRoutes)
+  await fastify.register(savedFiltersRoutes)
 
   // 全域錯誤處理
   fastify.setErrorHandler((error: FastifyError, request, reply) => {

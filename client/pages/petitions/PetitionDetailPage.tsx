@@ -3,10 +3,11 @@ import {
   Card, Tabs, Descriptions, Tag, Button, Space, Typography, Timeline,
   Form, Input, Select, Modal, message, Breadcrumb, Spin, Empty, Badge, Divider, Row, Col, Rate, Popconfirm, DatePicker
 } from 'antd'
-import { ArrowLeftOutlined, PlusOutlined, CheckCircleOutlined, CheckSquareOutlined, PaperClipOutlined, EditOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, PlusOutlined, CheckCircleOutlined, CheckSquareOutlined, PaperClipOutlined, EditOutlined, DeleteOutlined, RobotOutlined, FilePdfOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../../utils/api'
 import { useDataSync } from '../../hooks/useDataSync'
+import { useIsMobile } from '../../components/Layout/MainLayout'
 import AttachmentUpload from '../../components/AttachmentUpload'
 import AIButton from '../../components/ai/AIButton'
 import { PETITION_LOG_ACTION_TYPES } from '../../../shared/types'
@@ -41,6 +42,7 @@ const URGENCY_COLORS: Record<string, string> = { normal: 'default', urgent: 'ora
 export default function PetitionDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const [loading, setLoading] = useState(true)
   const [petition, setPetition] = useState<any>(null)
   const [logModalOpen, setLogModalOpen] = useState(false)
@@ -146,6 +148,20 @@ export default function PetitionDetailPage() {
     } catch (err: any) { message.error(err.response?.data?.error || '刪除失敗') }
   }
 
+  const handleExportPdf = async () => {
+    try {
+      const res = await api.get(`/petitions/${id}/export-pdf`, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `陳情案件_${petition?.case_number || id}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      message.error(err.response?.data?.error || 'PDF 匯出失敗')
+    }
+  }
+
   const searchVoters = async (q: string) => {
     if (!q) return
     try {
@@ -229,6 +245,9 @@ export default function PetitionDetailPage() {
           <Button onClick={() => navigate('/documents')}>
             產生公文
           </Button>
+          <Button icon={<FilePdfOutlined />} onClick={handleExportPdf}>
+            匯出 PDF
+          </Button>
           {petition?.status === 'closed' && (
             <Popconfirm title="確定要重啟此案件？" onConfirm={async () => {
               try {
@@ -263,13 +282,13 @@ export default function PetitionDetailPage() {
         style={{ marginBottom: 16 }}
       />
 
-      <Card>
-        <Tabs defaultActiveKey="info" items={[
+      <Card styles={{ body: isMobile ? { padding: 8 } : undefined }}>
+        <Tabs defaultActiveKey="info" size={isMobile ? 'small' : 'middle'} items={[
           {
             key: 'info',
             label: '案件資訊',
             children: (
-              <Descriptions bordered column={2} size="small">
+              <Descriptions bordered column={isMobile ? 1 : 2} size="small">
                 <Descriptions.Item label="案件編號">{petition.case_number}</Descriptions.Item>
                 <Descriptions.Item label="陳情日期">{petition.petition_date}</Descriptions.Item>
                 <Descriptions.Item label="陳情人">{petition.voter_name || '未登記'}</Descriptions.Item>
@@ -478,12 +497,12 @@ export default function PetitionDetailPage() {
             <Input.TextArea rows={4} />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="petition_date" label="陳情日期" rules={[{ required: true }]}>
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="urgency" label="急迫程度">
                 <Select>
                   <Option value="normal">一般</Option>
@@ -494,14 +513,14 @@ export default function PetitionDetailPage() {
             </Col>
           </Row>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="channel" label="陳情方式">
                 <Select allowClear>
                   {['電話','親訪','書信','Email','Line','網路','法律諮詢','其他'].map(c => <Option key={c} value={c}>{c}</Option>)}
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="category" label={
                 <Space>
                   <span>陳情類別</span>
@@ -522,12 +541,12 @@ export default function PetitionDetailPage() {
             </Col>
           </Row>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="contact_phone" label="聯絡電話">
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="voter_id" label="陳情人（選民）">
                 <Select allowClear showSearch filterOption={false} onSearch={searchVoters} placeholder="搜尋選民">
                   {voters.map(v => <Option key={v.id} value={v.id}>{v.name}{v.mobile ? ` (${v.mobile})` : ''}</Option>)}
@@ -539,13 +558,13 @@ export default function PetitionDetailPage() {
             </Col>
           </Row>
           <Row gutter={12}>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item name="area_city" label="縣市"><Input /></Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item name="area_district" label="區域"><Input /></Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item name="area_address" label="地址"><Input /></Form.Item>
             </Col>
           </Row>

@@ -1,6 +1,6 @@
 import React, { Suspense, useState, useEffect } from 'react'
-import { Card, Tabs, Select, Button, Alert, Modal, Form, Input, message, Row, Col, Spin } from 'antd'
-import { FileTextOutlined, AlertOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
+import { Card, Tabs, Select, Button, Alert, Modal, Form, Input, message, Row, Col, Spin, Dropdown } from 'antd'
+import { FileTextOutlined, AlertOutlined, CheckCircleOutlined, ClockCircleOutlined, DownOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import api from '../../utils/api'
 import { useThemeStore } from '../../stores/themeStore'
@@ -98,6 +98,26 @@ export default function ReportsPage() {
       })
     })
   }, [year])
+
+  // 伺服器產出 PDF（月報）— 呼叫後端 /api/reports/monthly?format=pdf，由 pdfmake 產生具 CJK 字型的真 PDF。
+  const handleExportMonthlyServerPdf = async () => {
+    try {
+      const now = new Date()
+      const m = String(now.getMonth() + 1).padStart(2, '0')
+      const res = await api.get(`/reports/monthly`, {
+        params: { year, month: m, format: 'pdf' },
+        responseType: 'blob',
+      })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `陳情月報_${year}${m}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      message.error(err.response?.data?.error || 'PDF 匯出失敗')
+    }
+  }
 
   const handleExportPDF = async (narrativeText: string = '') => {
     try {
@@ -230,7 +250,16 @@ ${eData.map((r: any) => `<tr><td>${r.category || '未分類'}</td><td>${r.total_
           {canExportReports && (
             <>
               <Button onClick={() => setNarrativeOpen(true)}>匯出月報</Button>
-              <Button onClick={() => handleExportPDF(narrative)}>匯出 PDF</Button>
+              <Dropdown
+                menu={{
+                  items: [
+                    { key: 'monthly-pdf', label: '伺服器產出 PDF（月報）', onClick: handleExportMonthlyServerPdf },
+                    { key: 'browser-pdf', label: '瀏覽器列印 PDF（年度概要）', onClick: () => handleExportPDF(narrative) },
+                  ],
+                }}
+              >
+                <Button>匯出 PDF <DownOutlined /></Button>
+              </Dropdown>
               <Modal
                 title="月報匯出設定"
                 open={narrativeOpen}

@@ -6,6 +6,7 @@ import {
 import { ArrowLeftOutlined, EditOutlined, StarFilled, PhoneOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../../utils/api'
+import { useIsMobile } from '../../components/Layout/MainLayout'
 import PageScaffold from '../../components/ui/PageScaffold'
 import EmptyState from '../../components/ui/EmptyState'
 import FormFooter from '../../components/ui/FormFooter'
@@ -30,6 +31,7 @@ const TAG_COLORS: Record<string, string> = {
 export default function VoterDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const [loading, setLoading] = useState(true)
   const [voter, setVoter] = useState<any>(null)
   const [contacts, setContacts] = useState<any[]>([])
@@ -173,8 +175,8 @@ export default function VoterDetailPage() {
 
       {/* U-10: Summary header bar */}
       <Card size="small" style={{ marginBottom: 12, background: '#fafafa' }}>
-        <Row gutter={24} align="middle">
-          <Col>
+        <Row gutter={[12, 8]} align="middle">
+          <Col xs={24} sm={12} md={6}>
             <Space size={4}>
               <PhoneOutlined style={{ color: '#888' }} />
               <Text type="secondary" style={{ fontSize: 12 }}>最後聯絡日</Text>
@@ -183,7 +185,7 @@ export default function VoterDetailPage() {
               </Text>
             </Space>
           </Col>
-          <Col>
+          <Col xs={24} sm={12} md={6}>
             <Space size={4}>
               <Text type="secondary" style={{ fontSize: 12 }}>支持度</Text>
               <Space size={2}>
@@ -193,14 +195,14 @@ export default function VoterDetailPage() {
               </Space>
             </Space>
           </Col>
-          <Col>
+          <Col xs={24} sm={12} md={6}>
             <Space size={4}>
               <ThunderboltOutlined style={{ color: '#888' }} />
               <Text type="secondary" style={{ fontSize: 12 }}>活躍分數</Text>
               <Text strong style={{ fontSize: 13 }}>{engagement?.score ?? '—'}</Text>
             </Space>
           </Col>
-          <Col>
+          <Col xs={24} sm={12} md={6}>
             <Space size={4} wrap>
               <Text type="secondary" style={{ fontSize: 12 }}>標籤</Text>
               {(voter.tags || []).length > 0
@@ -217,7 +219,9 @@ export default function VoterDetailPage() {
         title="編輯選民"
         open={drawerOpen}
         onClose={() => { setDrawerOpen(false); form.resetFields() }}
-        width={600}
+        placement={isMobile ? 'bottom' : 'right'}
+        height={isMobile ? '90vh' : undefined}
+        width={isMobile ? '100%' : 600}
         destroyOnClose
         footer={
           <FormFooter
@@ -230,12 +234,12 @@ export default function VoterDetailPage() {
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Divider orientation="left" orientationMargin={0}>基本資料</Divider>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="name" label="姓名" rules={[{ required: true, message: '請輸入姓名' }]}>
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="gender" label="性別">
                 <Radio.Group>
                   <Radio value="男">男</Radio>
@@ -244,22 +248,22 @@ export default function VoterDetailPage() {
                 </Radio.Group>
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="birth_date" label="出生日期">
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="mobile" label="手機">
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="phone" label="市話">
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="line_id" label="LINE ID">
                 <Input />
               </Form.Item>
@@ -272,18 +276,18 @@ export default function VoterDetailPage() {
           </Row>
           <Divider orientation="left" orientationMargin={0}>戶籍資料</Divider>
           <Row gutter={12}>
-            <Col span={8}><Form.Item name="household_city" label="縣市"><Input /></Form.Item></Col>
-            <Col span={8}><Form.Item name="household_district" label="鄉鎮區"><Input /></Form.Item></Col>
-            <Col span={8}><Form.Item name="household_village" label="村里"><Input /></Form.Item></Col>
+            <Col xs={24} sm={8}><Form.Item name="household_city" label="縣市"><Input /></Form.Item></Col>
+            <Col xs={24} sm={8}><Form.Item name="household_district" label="鄉鎮區"><Input /></Form.Item></Col>
+            <Col xs={24} sm={8}><Form.Item name="household_village" label="村里"><Input /></Form.Item></Col>
             <Col span={24}><Form.Item name="household_address" label="詳細地址"><Input /></Form.Item></Col>
           </Row>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="title" label="頭銜">
                 <Input placeholder="如：里長、社區主委" />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="tags" label="標籤">
                 <Select mode="multiple" placeholder="選擇標籤">
                   {tags.map(t => <Option key={t} value={t}>{t}</Option>)}
@@ -297,8 +301,8 @@ export default function VoterDetailPage() {
         </Form>
       </Drawer>
 
-      <Card>
-        <Tabs defaultActiveKey="basic" type="card" items={tabItems} />
+      <Card styles={{ body: isMobile ? { padding: 8 } : undefined }}>
+        <Tabs defaultActiveKey="basic" type="card" size={isMobile ? 'small' : 'middle'} items={tabItems} />
       </Card>
     </PageScaffold>
   )

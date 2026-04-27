@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import AttachmentUpload from '../../components/AttachmentUpload'
 import { Table, Button, Space, Input, Select, Tag, Typography, Card, Drawer, Form, DatePicker, message, Tabs, Row, Col, Divider, Descriptions, Popconfirm } from 'antd'
-import { PlusOutlined, SearchOutlined, PrinterOutlined, FileWordOutlined, EyeOutlined, FilterOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, PrinterOutlined, FileWordOutlined, FilePdfOutlined, EyeOutlined, FilterOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
 import AIButton from '../../components/ai/AIButton'
 import PageScaffold from '../../components/ui/PageScaffold'
@@ -528,6 +528,25 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
                   onClick={() => selectedDoc && exportDocumentWord(selectedDoc, officeName, officeInfo)}
                 >
                   匯出 Word
+                </Button>
+                <Button
+                  icon={<FilePdfOutlined />}
+                  onClick={async () => {
+                    if (!selectedDoc) return
+                    try {
+                      const res = await api.get(`/documents/${selectedDoc.id}/export-pdf`, { responseType: 'blob' })
+                      const url = URL.createObjectURL(res.data)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `${selectedDoc.doc_number || '公文'}.pdf`
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    } catch (err: any) {
+                      message.error(err.response?.data?.error || 'PDF 匯出失敗')
+                    }
+                  }}
+                >
+                  匯出 PDF
                 </Button>
               </>
             )}

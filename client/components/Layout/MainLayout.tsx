@@ -11,8 +11,8 @@ import {
   ProfileOutlined, FormOutlined, PhoneOutlined, MergeCellsOutlined
 } from '@ant-design/icons'
 
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+export function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768)
     window.addEventListener('resize', handler)

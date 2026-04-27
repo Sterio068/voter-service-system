@@ -14,6 +14,7 @@ import dayjs from 'dayjs'
 import AIButton from '../../components/ai/AIButton'
 import PageScaffold from '../../components/ui/PageScaffold'
 import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
+import SavedFiltersBar from '../../components/SavedFiltersBar'
 import { SCROLLABLE_FORM_MODAL_STYLE, SCROLLABLE_FORM_MODAL_STYLES } from '../../components/ui/modalStyles'
 
 const { Text, Paragraph } = Typography
@@ -270,6 +271,18 @@ export default function ProposalsPage() {
           description="依關鍵字、審查狀態與提案類型整理追蹤清單。"
           meta={<Text type="secondary">共 {total} 筆</Text>}
         >
+        <div style={{ marginBottom: 8 }}>
+          <SavedFiltersBar
+            scope="proposal"
+            currentFilters={{ search, filterStatus, filterType }}
+            onApply={(f) => {
+              setSearch(typeof f.search === 'string' ? f.search : '')
+              setFilterStatus(typeof f.filterStatus === 'string' ? f.filterStatus : '')
+              setFilterType(typeof f.filterType === 'string' ? f.filterType : '')
+              setPage(1)
+            }}
+          />
+        </div>
         <Space wrap>
           <Input
             placeholder="搜尋主旨、提案編號、內容"

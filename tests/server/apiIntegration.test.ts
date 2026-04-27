@@ -1390,6 +1390,167 @@ test('document numbers increase sequentially per type', async () => {
   assert.equal(firstIncomingSequence, 1)
 })
 
+test('petition PDF export requires auth, returns application/pdf, and emits a %PDF- signature', async () => {
+  // 建立一筆測試陳情案件並補一筆處理紀錄，確保 timeline 區塊有內容可渲染
+  const created = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/petitions',
+    headers: bearer(adminToken),
+    payload: {
+      petition_date: '2026-04-26',
+      contact_name: 'PDF 匯出測試陳情人',
+      contact_phone: '0961234567',
+      channel: '電話',
+      category: '道路交通',
+      urgency: 'urgent',
+      content: 'PDF 匯出測試陳情內容（含 CJK 字元）',
+    },
+  }))
+  assert.equal(created.statusCode, 201)
+  const petitionId = created.body.data.id
+
+  await ctx.app.inject({
+    method: 'POST',
+    url: `/api/petitions/${petitionId}/logs`,
+    headers: bearer(adminToken),
+    payload: { action_type: '追蹤', content: '已通知權責單位排查' },
+  })
+
+  // (a) 未帶 token → 401
+  const unauthorized = await ctx.app.inject({
+    method: 'GET',
+    url: `/api/petitions/${petitionId}/export-pdf`,
+  })
+  assert.equal(unauthorized.statusCode, 401)
+
+  // (b) volunteer 沒有 petitions:export → 403
+  const forbidden = await ctx.app.inject({
+    method: 'GET',
+    url: `/api/petitions/${petitionId}/export-pdf`,
+    headers: bearer(volunteerToken),
+  })
+  assert.equal(forbidden.statusCode, 403)
+
+  // (c) admin 取得 PDF → 200 + application/pdf + %PDF- 開頭
+  const exported = await ctx.app.inject({
+    method: 'GET',
+    url: `/api/petitions/${petitionId}/export-pdf`,
+    headers: bearer(adminToken),
+  })
+  assert.equal(exported.statusCode, 200)
+  assert.match(String(exported.headers['content-type'] ?? ''), /application\/pdf/)
+  const buf = Buffer.from((exported as any).rawPayload)
+  assert.equal(buf.subarray(0, 5).toString('ascii'), '%PDF-')
+
+  // 確認 export 動作有寫入 audit log
+  const audit = ctx.db.prepare(
+    "SELECT action, module FROM audit_logs WHERE target_type='petition' AND target_id=? AND action='export' ORDER BY id DESC LIMIT 1"
+  ).get(petitionId) as any
+  assert.ok(audit, 'PDF 匯出應寫入 audit log')
+  assert.equal(audit.module, '陳情管理')
+})
+
+test('document PDF export requires auth, returns application/pdf, and emits a %PDF- signature', async () => {
+  const created = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/documents',
+    headers: bearer(adminToken),
+    payload: {
+      doc_type: 'outgoing',
+      doc_date: '2026-04-26',
+      subject: 'PDF 匯出公文測試（含 CJK）',
+      content_summary: '第一行說明內容\n第二行說明內容',
+      org_name: '臺北市政府',
+    },
+  }))
+  assert.equal(created.statusCode, 201)
+  const docId = created.body.data.id
+
+  // 未授權
+  const unauthorized = await ctx.app.inject({
+    method: 'GET',
+    url: `/api/documents/${docId}/export-pdf`,
+  })
+  assert.equal(unauthorized.statusCode, 401)
+
+  // volunteer 無 documents:export
+  const forbidden = await ctx.app.inject({
+    method: 'GET',
+    url: `/api/documents/${docId}/export-pdf`,
+    headers: bearer(volunteerToken),
+  })
+  assert.equal(forbidden.statusCode, 403)
+
+  // admin → 200 PDF
+  const exported = await ctx.app.inject({
+    method: 'GET',
+    url: `/api/documents/${docId}/export-pdf`,
+    headers: bearer(adminToken),
+  })
+  assert.equal(exported.statusCode, 200)
+  assert.match(String(exported.headers['content-type'] ?? ''), /application\/pdf/)
+  const buf = Buffer.from((exported as any).rawPayload)
+  assert.equal(buf.subarray(0, 5).toString('ascii'), '%PDF-')
+
+  const audit = ctx.db.prepare(
+    "SELECT action, module FROM audit_logs WHERE target_type='document' AND target_id=? AND action='export' ORDER BY id DESC LIMIT 1"
+  ).get(docId) as any
+  assert.ok(audit)
+  assert.equal(audit.module, '公文管理')
+})
+
+test('monthly report PDF export requires auth, returns application/pdf, and emits a %PDF- signature', async () => {
+  // 未授權
+  const unauthorized = await ctx.app.inject({
+    method: 'GET',
+    url: '/api/reports/monthly?year=2026&month=04&format=pdf',
+  })
+  assert.equal(unauthorized.statusCode, 401)
+
+  // volunteer 無 reports:export
+  const forbidden = await ctx.app.inject({
+    method: 'GET',
+    url: '/api/reports/monthly?year=2026&month=04&format=pdf',
+    headers: bearer(volunteerToken),
+  })
+  assert.equal(forbidden.statusCode, 403)
+
+  // admin: 預設不帶 format → 回 JSON（避免破壞既有呼叫端）
+  const json = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/reports/monthly?year=2026&month=04',
+    headers: bearer(adminToken),
+  }))
+  assert.equal(json.statusCode, 200)
+  assert.equal(json.body.success, true)
+  assert.ok(Array.isArray(json.body.data.byStatus))
+
+  // admin + format=pdf → 200 PDF
+  const exported = await ctx.app.inject({
+    method: 'GET',
+    url: '/api/reports/monthly?year=2026&month=04&format=pdf',
+    headers: bearer(adminToken),
+  })
+  assert.equal(exported.statusCode, 200)
+  assert.match(String(exported.headers['content-type'] ?? ''), /application\/pdf/)
+  const buf = Buffer.from((exported as any).rawPayload)
+  assert.equal(buf.subarray(0, 5).toString('ascii'), '%PDF-')
+
+  const audit = ctx.db.prepare(
+    "SELECT action, module FROM audit_logs WHERE target_type='monthly_report' AND action='export' ORDER BY id DESC LIMIT 1"
+  ).get() as any
+  assert.ok(audit)
+  assert.equal(audit.module, '統計報表')
+
+  // 邊界：month 超過 12 → 400
+  const badMonth = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/reports/monthly?year=2026&month=13&format=pdf',
+    headers: bearer(adminToken),
+  }))
+  assert.equal(badMonth.statusCode, 400)
+})
+
 test('petition Excel import maps urgency and export includes imported petitions', async () => {
   const voter = parseJsonResponse(await ctx.app.inject({
     method: 'POST',
@@ -2395,4 +2556,183 @@ test('daily log writes are blocked for volunteer and assistant roles', async () 
     payload: { highlights: 'admin 寫入', new_cases_summary: '0', completed_summary: '0' },
   }))
   assert.equal(adminWrite.statusCode, 200)
+})
+
+test('saved-filters CRUD scopes data per user, enforces unique names and single default', async () => {
+  // 未授權呼叫應被擋下
+  const unauthorized = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/saved-filters?scope=voter',
+  }))
+  assert.equal(unauthorized.statusCode, 401)
+
+  // 無效的 scope → 400
+  const badScope = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/saved-filters?scope=invalid',
+    headers: bearer(adminToken),
+  }))
+  assert.equal(badScope.statusCode, 400)
+
+  // 建立第一筆並設為預設
+  const created = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/saved-filters',
+    headers: bearer(adminToken),
+    payload: {
+      scope: 'voter',
+      name: '預設名單',
+      filters: { search: 'foo', filterCity: '臺北市' },
+      is_default: true,
+    },
+  }))
+  assert.equal(created.statusCode, 201)
+  assert.equal(created.body.success, true)
+  assert.equal(created.body.data.is_default, true)
+  assert.equal(created.body.data.scope, 'voter')
+  assert.deepEqual(created.body.data.filters, { search: 'foo', filterCity: '臺北市' })
+  const filterId = created.body.data.id as number
+
+  // 同名應 409
+  const dup = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/saved-filters',
+    headers: bearer(adminToken),
+    payload: { scope: 'voter', name: '預設名單', filters: {} },
+  }))
+  assert.equal(dup.statusCode, 409)
+
+  // 建立第二筆並標為預設 → 第一筆應自動取消預設
+  const second = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/saved-filters',
+    headers: bearer(adminToken),
+    payload: {
+      scope: 'voter',
+      name: '高雄樁腳',
+      filters: { filterCity: '高雄市', filterTag: '樁腳' },
+      is_default: true,
+    },
+  }))
+  assert.equal(second.statusCode, 201)
+  assert.equal(second.body.data.is_default, true)
+
+  const listAdmin = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/saved-filters?scope=voter',
+    headers: bearer(adminToken),
+  }))
+  assert.equal(listAdmin.statusCode, 200)
+  const adminItems = listAdmin.body.data as Array<{ id: number; name: string; is_default: boolean }>
+  const defaults = adminItems.filter((row) => row.is_default)
+  assert.equal(defaults.length, 1, '同 scope 只能有一筆預設')
+  assert.equal(defaults[0].name, '高雄樁腳')
+
+  // 不同使用者無法看到別人的篩選（資料隔離）
+  const listAssistant = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/saved-filters?scope=voter',
+    headers: bearer(assistantToken),
+  }))
+  assert.equal(listAssistant.statusCode, 200)
+  assert.equal((listAssistant.body.data as any[]).length, 0)
+
+  // 別人不能改/刪你的篩選
+  const foreignDelete = parseJsonResponse(await ctx.app.inject({
+    method: 'DELETE',
+    url: `/api/saved-filters/${filterId}`,
+    headers: bearer(assistantToken),
+  }))
+  assert.equal(foreignDelete.statusCode, 404)
+
+  // PUT 重新命名與 filters 更新
+  const updated = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: `/api/saved-filters/${filterId}`,
+    headers: bearer(adminToken),
+    payload: { name: '台北常用', filters: { filterCity: '臺北市' } },
+  }))
+  assert.equal(updated.statusCode, 200)
+  assert.equal(updated.body.data.name, '台北常用')
+  assert.deepEqual(updated.body.data.filters, { filterCity: '臺北市' })
+
+  // 同 scope 改成已存在的名稱應 409
+  const renameConflict = parseJsonResponse(await ctx.app.inject({
+    method: 'PUT',
+    url: `/api/saved-filters/${filterId}`,
+    headers: bearer(adminToken),
+    payload: { name: '高雄樁腳' },
+  }))
+  assert.equal(renameConflict.statusCode, 409)
+
+  // DELETE
+  const deleted = parseJsonResponse(await ctx.app.inject({
+    method: 'DELETE',
+    url: `/api/saved-filters/${filterId}`,
+    headers: bearer(adminToken),
+  }))
+  assert.equal(deleted.statusCode, 200)
+
+  // 收尾：刪除剩餘的篩選避免污染後續測試
+  const remaining = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/saved-filters?scope=voter',
+    headers: bearer(adminToken),
+  }))
+  for (const row of remaining.body.data as Array<{ id: number }>) {
+    await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/saved-filters/${row.id}`,
+      headers: bearer(adminToken),
+    })
+  }
+})
+
+test('saved-filters enforces 20 per scope per user limit', async () => {
+  // 預先確保乾淨 — 刪除 admin 名下 schedule scope 的所有篩選
+  const existing = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/saved-filters?scope=schedule',
+    headers: bearer(adminToken),
+  }))
+  for (const row of existing.body.data as Array<{ id: number }>) {
+    await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/saved-filters/${row.id}`,
+      headers: bearer(adminToken),
+    })
+  }
+
+  for (let i = 0; i < 20; i++) {
+    const r = parseJsonResponse(await ctx.app.inject({
+      method: 'POST',
+      url: '/api/saved-filters',
+      headers: bearer(adminToken),
+      payload: { scope: 'schedule', name: `行程篩選 ${i}`, filters: { filterType: String(i) } },
+    }))
+    assert.equal(r.statusCode, 201, `第 ${i + 1} 筆應允許`)
+  }
+
+  const overflow = parseJsonResponse(await ctx.app.inject({
+    method: 'POST',
+    url: '/api/saved-filters',
+    headers: bearer(adminToken),
+    payload: { scope: 'schedule', name: '第 21 筆應被擋', filters: {} },
+  }))
+  assert.equal(overflow.statusCode, 400)
+  assert.match(String(overflow.body.error), /20/)
+
+  // 收尾
+  const cleanup = parseJsonResponse(await ctx.app.inject({
+    method: 'GET',
+    url: '/api/saved-filters?scope=schedule',
+    headers: bearer(adminToken),
+  }))
+  for (const row of cleanup.body.data as Array<{ id: number }>) {
+    await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/saved-filters/${row.id}`,
+      headers: bearer(adminToken),
+    })
+  }
 })

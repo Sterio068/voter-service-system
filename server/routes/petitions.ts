@@ -4,6 +4,23 @@ import { db } from '../db/index'
 import { requirePermission } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
 import { PETITION_LOG_ACTION_TYPES } from '../../shared/types'
+import { buildPdf } from '../utils/pdfExport'
+import { getSetting } from '../utils/settings'
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: '待處理',
+  processing: '處理中',
+  waiting_external: '待外部回覆',
+  waiting_applicant: '待民眾補件',
+  replied: '已回覆',
+  closed: '已結案',
+  cancelled: '已取消',
+}
+const URGENCY_LABELS: Record<string, string> = {
+  normal: '一般',
+  urgent: '急件',
+  critical: '特急',
+}
 
 function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
@@ -381,6 +398,92 @@ export default async function petitionRoutes(fastify: FastifyInstance) {
       ORDER BY p.follow_up_date ASC LIMIT 50
     `).all(today)
     return reply.send({ success: true, data })
+  })
+
+  // GET /api/petitions/:id/export-pdf — 單筆陳情案件 PDF 匯出（含處理紀錄時間軸）
+  fastify.get('/api/petitions/:id/export-pdf', { preHandler: [requirePermission('petitions', 'export')] }, async (request, reply) => {
+    const cu = request.currentUser!
+    const { id } = request.params as any
+    const petition = db.prepare(`
+      SELECT p.*, v.name as voter_name, u.name as assignee_name
+      FROM petitions p LEFT JOIN voters v ON p.voter_id=v.id LEFT JOIN users u ON p.assignee_id=u.id
+      WHERE p.id=? AND p.is_active=1
+    `).get(Number(id)) as any
+    if (!petition) return reply.code(404).send({ success: false, error: '陳情案件不存在' })
+    const logs = db.prepare(`
+      SELECT pl.*, u.name as created_by_name FROM petition_logs pl LEFT JOIN users u ON pl.created_by=u.id
+      WHERE pl.petition_id=? ORDER BY pl.created_at
+    `).all(Number(id)) as any[]
+
+    const officeName = getSetting('office_name') || '服務處'
+    const statusLabel = STATUS_LABELS[petition.status] || petition.status || '—'
+    const urgencyLabel = URGENCY_LABELS[petition.urgency] || petition.urgency || '—'
+
+    const infoRows: any[] = [
+      [{ text: '案件編號', style: 'tableLabel' }, petition.case_number || '—', { text: '陳情日期', style: 'tableLabel' }, petition.petition_date || '—'],
+      [{ text: '陳情人', style: 'tableLabel' }, petition.voter_name || '未登記', { text: '聯絡電話', style: 'tableLabel' }, petition.contact_phone || '—'],
+      [{ text: '陳情類別', style: 'tableLabel' }, petition.category || '—', { text: '子分類', style: 'tableLabel' }, petition.subcategory || '—'],
+      [{ text: '處理狀態', style: 'tableLabel' }, statusLabel, { text: '急迫程度', style: 'tableLabel' }, urgencyLabel],
+      [{ text: '承辦人', style: 'tableLabel' }, petition.assignee_name || '未指派', { text: '結案時間', style: 'tableLabel' }, petition.closed_at || '—'],
+      [{ text: '處理區域', style: 'tableLabel' }, { text: [petition.area_city, petition.area_district, petition.area_village, petition.area_address].filter(Boolean).join(' ') || '—', colSpan: 3 }, {}, {}],
+    ]
+
+    // Logs timeline — render as a stacked list (or empty-state row)
+    const logBlocks = logs.length === 0
+      ? [{ text: '（尚無處理紀錄）', italics: true, color: '#888' }]
+      : logs.map((log) => ({
+          stack: [
+            { text: `[${log.action_type}] ${log.created_at}　承辦：${log.created_by_name || '—'}`, style: 'logHeader' },
+            { text: log.content || '', style: 'logBody' },
+            ...(log.referred_to ? [{ text: `轉介：${log.referred_to}`, style: 'logRefer' }] : []),
+          ],
+          margin: [0, 0, 0, 8],
+        }))
+
+    const docDef: Record<string, any> = {
+      info: { title: `陳情案件 ${petition.case_number}`, author: officeName },
+      pageSize: 'A4',
+      pageMargins: [40, 60, 40, 50],
+      header: { text: officeName, alignment: 'center', margin: [0, 20, 0, 0], fontSize: 12, bold: true },
+      footer: (currentPage: number, pageCount: number) => ({
+        text: `${currentPage} / ${pageCount}`,
+        alignment: 'center',
+        margin: [0, 20, 0, 0],
+        fontSize: 9,
+        color: '#888',
+      }),
+      content: [
+        { text: '陳情案件報告', style: 'title' },
+        { text: `案件編號：${petition.case_number}`, style: 'subtitle' },
+        {
+          style: 'infoTable',
+          table: { widths: [70, '*', 70, '*'], body: infoRows },
+          layout: 'lightHorizontalLines',
+        },
+        { text: '陳情內容', style: 'sectionTitle' },
+        { text: petition.content || '—', style: 'bodyText' },
+        { text: '處理紀錄', style: 'sectionTitle' },
+        ...logBlocks,
+      ],
+      styles: {
+        title: { fontSize: 18, bold: true, alignment: 'center', margin: [0, 0, 0, 6] },
+        subtitle: { fontSize: 11, alignment: 'center', color: '#555', margin: [0, 0, 0, 14] },
+        sectionTitle: { fontSize: 13, bold: true, margin: [0, 14, 0, 6] },
+        bodyText: { fontSize: 11, lineHeight: 1.5 },
+        infoTable: { fontSize: 10 },
+        tableLabel: { bold: true, fillColor: '#f5f5f5' },
+        logHeader: { fontSize: 10, bold: true, color: '#1677ff' },
+        logBody: { fontSize: 10, margin: [0, 2, 0, 0] },
+        logRefer: { fontSize: 9, color: '#666', italics: true, margin: [0, 2, 0, 0] },
+      },
+    }
+
+    const buf = await buildPdf(docDef)
+    createAuditLog(request, cu.id, { action: 'export', module: '陳情管理', target_type: 'petition', target_id: Number(id), target_name: `${petition.case_number} (PDF)` })
+    const filename = `陳情案件_${petition.case_number}.pdf`
+    reply.header('Content-Type', 'application/pdf')
+    reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`)
+    return reply.send(buf)
   })
 
   // 刪除陳情案件（軟刪除，保留紀錄與關聯資料）

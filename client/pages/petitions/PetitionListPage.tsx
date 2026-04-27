@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
-  Table, Button, Space, Input, Select, Tag, Typography, Card,
+  Table, Button, Space, Input, Select, Tag, Typography, Card, List,
   Drawer, Form, DatePicker, message, Popconfirm, Row, Col, Modal, Upload, Alert, AutoComplete, Radio
 } from 'antd'
 import { PlusOutlined, SearchOutlined, EyeOutlined, DownloadOutlined, FilterOutlined, EditOutlined, DeleteOutlined, UploadOutlined, SwapOutlined, CheckCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
@@ -8,12 +8,14 @@ import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import api from '../../utils/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useDataSync } from '../../hooks/useDataSync'
+import { useIsMobile } from '../../components/Layout/MainLayout'
 import PageScaffold from '../../components/ui/PageScaffold'
 import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
 import EmptyState from '../../components/ui/EmptyState'
 import FormFooter from '../../components/ui/FormFooter'
 import SelectionActionBar from '../../components/ui/SelectionActionBar'
 import FormSection from '../../components/ui/FormSection'
+import SavedFiltersBar from '../../components/SavedFiltersBar'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import { hasModulePermission } from '../../utils/permissions'
@@ -53,6 +55,7 @@ export default function PetitionListPage() {
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const { user } = useAuthStore()
+  const isMobile = useIsMobile()
   const canCreatePetition = hasModulePermission(user?.role, 'petitions', 'create')
   const canEditPetition = hasModulePermission(user?.role, 'petitions', 'edit')
   const canDeletePetition = hasModulePermission(user?.role, 'petitions', 'delete')
@@ -513,6 +516,21 @@ export default function PetitionListPage() {
         description="用快選日期、狀態、類別與緊急程度定位待處理案件。"
         meta={<Text type="secondary">共 {total} 筆</Text>}
       >
+        <div style={{ marginBottom: 8 }}>
+          <SavedFiltersBar
+            scope="petition"
+            currentFilters={{ search, filterStatus, filterCategory, filterUrgency, startDate, endDate }}
+            onApply={(f) => {
+              setSearch(typeof f.search === 'string' ? f.search : '')
+              setFilterStatus(typeof f.filterStatus === 'string' ? f.filterStatus : '')
+              setFilterCategory(typeof f.filterCategory === 'string' ? f.filterCategory : '')
+              setFilterUrgency(typeof f.filterUrgency === 'string' ? f.filterUrgency : '')
+              setStartDate(typeof f.startDate === 'string' ? f.startDate : '')
+              setEndDate(typeof f.endDate === 'string' ? f.endDate : '')
+              setPage(1)
+            }}
+          />
+        </div>
         <Space size={4} style={{ marginBottom: 8 }}>
           <Text type="secondary" style={{ fontSize: 12 }}>快選：</Text>
           {[
@@ -578,35 +596,124 @@ export default function PetitionListPage() {
           </Button>
         </SelectionActionBar>
       )}
-      <Card>
-        <Table
-          columns={columns}
-          dataSource={data}
-          rowKey="id"
-          loading={loading}
-          size="small"
-          rowSelection={canEditPetition ? { selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys as number[]) } : undefined}
-          locale={{
-            emptyText: (search || filterStatus || filterCategory || filterUrgency)
-              ? <EmptyState variant="search" title="查無符合條件的案件" description="試著放寬日期、狀態或類別條件。" />
-              : <EmptyState title="尚無陳情案件" description="新增第一筆陳情後，SLA、承辦與處理紀錄會在這裡追蹤。" />,
-          }}
-          pagination={{
-            current: page, pageSize, total,
-            showSizeChanger: true,
-            showTotal: (t) => `共 ${t} 筆`,
-            onChange: (p, ps) => { setPage(p); setPageSize(ps) },
-          }}
-          virtual={total > 100}
-          scroll={{ x: 900, y: total > 100 ? 600 : undefined }}
-        />
+      <Card styles={{ body: isMobile ? { padding: 8 } : undefined }}>
+        {isMobile ? (
+          <List
+            loading={loading}
+            dataSource={data}
+            locale={{
+              emptyText: (search || filterStatus || filterCategory || filterUrgency)
+                ? <EmptyState variant="search" title="查無符合條件的案件" description="試著放寬日期、狀態或類別條件。" />
+                : <EmptyState title="尚無陳情案件" description="新增第一筆陳情後，SLA、承辦與處理紀錄會在這裡追蹤。" />,
+            }}
+            pagination={{
+              current: page,
+              pageSize,
+              total,
+              simple: true,
+              onChange: (p, ps) => { setPage(p); setPageSize(ps) },
+            }}
+            renderItem={(record: any) => {
+              const caseLabel = record.case_number || `案件 ${record.id}`
+              return (
+                <List.Item
+                  key={record.id}
+                  style={{ padding: '10px 8px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}
+                  actions={[
+                    <Button
+                      key="view"
+                      size="small"
+                      type="text"
+                      icon={<EyeOutlined />}
+                      aria-label={`查看陳情 ${caseLabel}`}
+                      onClick={() => navigate(`/petitions/${record.id}`)}
+                    />,
+                    ...(canDeletePetition ? [
+                      <Popconfirm
+                        key="del"
+                        title="確定刪除此陳情案件？"
+                        description="刪除後將無法復原。"
+                        okText="確定刪除"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true }}
+                        onConfirm={() => handleDelete(record.id)}
+                      >
+                        <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label={`刪除陳情 ${caseLabel}`} />
+                      </Popconfirm>,
+                    ] : []),
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={
+                      <Space size={6} wrap>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: getSLAColor(record.created_at, record.status), display: 'inline-block', flexShrink: 0 }} aria-hidden />
+                        <a
+                          role="link"
+                          tabIndex={0}
+                          onClick={() => navigate(`/petitions/${record.id}`)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/petitions/${record.id}`) } }}
+                          style={{ fontWeight: 600, fontSize: 14 }}
+                        >
+                          {caseLabel}
+                        </a>
+                        <Tag color={STATUS_COLORS[record.status]} style={{ marginRight: 0 }}>{STATUS_LABELS[record.status]}</Tag>
+                        {record.urgency && record.urgency !== 'normal' && (
+                          <Tag color={URGENCY_COLORS[record.urgency]} style={{ marginRight: 0 }}>{URGENCY_LABELS[record.urgency]}</Tag>
+                        )}
+                      </Space>
+                    }
+                    description={
+                      <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                        {record.content && (
+                          <Text style={{ fontSize: 12 }} ellipsis>{record.content}</Text>
+                        )}
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {record.voter_name || '匿名'}
+                          {record.category ? ` · ${record.category}` : ''}
+                          {record.assignee_name ? ` · 承辦 ${record.assignee_name}` : ''}
+                        </Text>
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {record.petition_date ? dayjs(record.petition_date).format('YYYY-MM-DD') : '—'}
+                        </Text>
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )
+            }}
+          />
+        ) : (
+          <Table
+            columns={columns}
+            dataSource={data}
+            rowKey="id"
+            loading={loading}
+            size="small"
+            rowSelection={canEditPetition ? { selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys as number[]) } : undefined}
+            locale={{
+              emptyText: (search || filterStatus || filterCategory || filterUrgency)
+                ? <EmptyState variant="search" title="查無符合條件的案件" description="試著放寬日期、狀態或類別條件。" />
+                : <EmptyState title="尚無陳情案件" description="新增第一筆陳情後，SLA、承辦與處理紀錄會在這裡追蹤。" />,
+            }}
+            pagination={{
+              current: page, pageSize, total,
+              showSizeChanger: true,
+              showTotal: (t) => `共 ${t} 筆`,
+              onChange: (p, ps) => { setPage(p); setPageSize(ps) },
+            }}
+            virtual={total > 100}
+            scroll={{ x: 900, y: total > 100 ? 600 : undefined }}
+          />
+        )}
       </Card>
 
       <Drawer
         title="新增陳情案件"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        width={600}
+        placement={isMobile ? 'bottom' : 'right'}
+        height={isMobile ? '90vh' : undefined}
+        width={isMobile ? '100%' : 600}
         destroyOnClose
         footer={
           <FormFooter
@@ -621,7 +728,7 @@ export default function PetitionListPage() {
           initialValues={{ urgency: 'normal', status: 'pending', petition_date: dayjs() }}>
           <FormSection title="陳情人與案件內容" description="可連結既有選民，也可直接填寫新聯絡人資料。">
             <Row gutter={12}>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="voter_id" label="搜尋選民（選填）" tooltip="從現有選民中挑選，若為新聯絡人請留空、改填下方姓名">
                   <Select
                     showSearch
@@ -638,24 +745,24 @@ export default function PetitionListPage() {
                   </Select>
                 </Form.Item>
               </Col>
-              <Col span={6}>
+              <Col xs={12} sm={6}>
                 <Form.Item name="contact_name" label="陳情人姓名">
                   <Input placeholder="例：王小明" maxLength={50} autoComplete="off" />
                 </Form.Item>
               </Col>
-              <Col span={6}>
+              <Col xs={12} sm={6}>
                 <Form.Item name="contact_phone" label="聯絡電話">
                   <Input placeholder="0912345678" maxLength={20} autoComplete="off" />
                 </Form.Item>
               </Col>
             </Row>
             <Row gutter={12}>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="petition_date" label="陳情日期" rules={[{ required: true }]}>
                   <DatePicker style={{ width: '100%' }} />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="channel" label="陳情方式">
                   <Select>
                     {['電話', '親訪', '書信', 'LINE', '電子郵件', '轉介', '其他'].map(c =>
@@ -663,7 +770,7 @@ export default function PetitionListPage() {
                   </Select>
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="category" label="陳情類別">
                   <AutoComplete
                     allowClear
@@ -673,7 +780,7 @@ export default function PetitionListPage() {
                   />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="urgency" label="急迫程度">
                   <Select>
                     <Option value="normal">一般</Option>
@@ -682,7 +789,7 @@ export default function PetitionListPage() {
                   </Select>
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="assignee_id" label="承辦人">
                   <Select allowClear>
                     {users.map(u => <Option key={u.id} value={u.id}>{u.name}</Option>)}
@@ -724,7 +831,7 @@ export default function PetitionListPage() {
         <Form form={quickForm} layout="vertical" onFinish={handleQuickCreate} autoComplete="off"
           initialValues={QUICK_FORM_INITIAL}>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item name="voter_id" label="搜尋選民（選填）" tooltip="從現有選民中挑選，若為新聯絡人請改填下方姓名">
                 <Select
                   showSearch
@@ -741,12 +848,12 @@ export default function PetitionListPage() {
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} sm={6}>
               <Form.Item name="contact_name" label="姓名">
                 <Input placeholder="例：王小明" maxLength={50} autoComplete="off" />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} sm={6}>
               <Form.Item name="contact_phone" label="聯絡電話">
                 <Input placeholder="0912345678" maxLength={20} autoComplete="off" />
               </Form.Item>

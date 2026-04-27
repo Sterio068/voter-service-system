@@ -40,10 +40,12 @@
     "@fastify/multipart": "^9.4.0",
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/static": "^9.0.0",
+    "@fastify/websocket": "^11.2.0",
     "@fullcalendar/daygrid": "^6.1.11",
     "@fullcalendar/interaction": "^6.1.11",
     "@fullcalendar/react": "^6.1.11",
     "@fullcalendar/timegrid": "^6.1.11",
+    "@types/pdfmake": "^0.3.2",
     "@types/qrcode": "^1.5.6",
     "antd": "^5.14.0",
     "axios": "^1.6.7",
@@ -55,6 +57,7 @@
     "fastify": "^5.8.4",
     "googleapis": "^171.4.0",
     "openai": "^6.33.0",
+    "pdfmake": "^0.3.7",
     "qrcode": "^1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -97,6 +100,13 @@
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*",
       "node_modules/bcrypt/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/fonts",
+        "to": "fonts",
+        "filter": ["**/*.ttf", "**/*.otf"]
+      }
     ],
     "files": [
       "dist/**/*",
