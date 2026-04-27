@@ -9,6 +9,19 @@
 
 ## [Unreleased]
 
+## [1.0.23] - 2026-04-27
+
+### Added
+- **Mobile responsive 全面整理**：選民/陳情列表 < 768px 自動切 Card 視圖；Drawer mobile 改成 90vh 從底部滑入；Dashboard / 詳情頁 grid 全部 xs={24} sm={...}；Schedule 行事曆 mobile 切換到 timeGridDay。
+- **WebSocket 即時推送**：登入後維持 `/ws` 連線，任何 audit log 事件即時推到所有客戶端，跨人協作 < 100ms 反映變更（連線中斷自動指數退避重連，並 fallback 到原 5s 輪詢）。
+- **PDF 匯出**：陳情案件、公文、報表月報三種端點伺服器端產生 PDF（pdfmake + Noto Sans TC 嵌入字型，支援完整中文）。匯出按鈕已加到對應頁面。
+- **儲存常用篩選**：選民/陳情/行程/提案 4 個列表頁可儲存常用篩選組合，下拉一鍵套用，可標記為預設（進頁自動套用）。每使用者每範圍上限 20 組。
+
+### Changed
+- 87 → 95 server tests（+8：PDF×3、saved-filters×2、realtimeBus×1、其他）。
+- DB schema 升至 5.7.0（新增 `saved_filters` 表）。
+- electron-builder `extraResources` 把 Noto Sans TC 字型打進 Win/Mac 安裝包（讓 PDF 在無網路環境也能正常輸出中文）。
+
 ## [1.0.22] - 2026-04-27
 
 ### Added
