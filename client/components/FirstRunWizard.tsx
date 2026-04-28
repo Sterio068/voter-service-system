@@ -59,7 +59,7 @@ export default function FirstRunWizard({ open, onFinish }: Props) {
         message.error('儲存設定失敗，請重試')
       }
     } catch (err: any) {
-      message.error(err?.response?.data?.error || '首次設定尚未完成，請先修改管理員密碼')
+      message.error(err?.response?.data?.error || '首次設定儲存失敗，請重試')
     } finally {
       setSaving(false)
     }
@@ -106,13 +106,13 @@ export default function FirstRunWizard({ open, onFinish }: Props) {
           </div>
         )}
 
-        {/* Step 1: Password */}
+        {/* Step 1: Password (optional) */}
         {current === 1 && (
           <div>
             <Alert
-              type="warning"
-              message="必須完成管理員密碼修改"
-              description={<>系統預設管理員密碼為 <Text code>admin123</Text>，請先輸入目前密碼並完成修改後，才能結束首次執行精靈。</>}
+              type="info"
+              message="建議修改管理員密碼"
+              description={<>系統預設管理員密碼為 <Text code>admin123</Text>。建議修改成自訂密碼以提升安全性，但也可略過（之後在「帳號維護」頁仍可隨時修改）。</>}
               showIcon
               style={{ marginBottom: 24 }}
             />
@@ -152,7 +152,10 @@ export default function FirstRunWizard({ open, onFinish }: Props) {
                 <Input.Password size="large" placeholder="再次輸入密碼" />
               </Form.Item>
             </Form>
-            <div style={{ textAlign: 'right', marginTop: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+              <Button size="large" type="text" onClick={() => setCurrent(2)}>
+                略過此步驟
+              </Button>
               <Button type="primary" size="large" loading={saving} onClick={handleStep1}>
                 修改密碼 →
               </Button>

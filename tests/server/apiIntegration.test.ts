@@ -207,54 +207,29 @@ test('fresh install seeds first-run and baseline settings defaults', async () =>
   assert.equal(settings.body.data.idle_timeout, '30')
 })
 
-test('first_run cannot be cleared until the default admin password has been changed', async () => {
-  const blocked = parseJsonResponse(await ctx.app.inject({
-    method: 'PUT',
-    url: '/api/admin/settings',
-    headers: bearer(adminToken),
-    payload: { first_run: 'false' },
-  }))
-  assert.equal(blocked.statusCode, 400)
-  assert.match(blocked.body.error, /請先完成首次管理員密碼修改/)
+test('first_run can be cleared even with the default admin password (wizard skip path)', async () => {
+  // 自 v1.0.26 起：移除「必須先改管理員密碼才能結束首次精靈」的硬性檢查，
+  // 改成首次精靈第二步可略過、預設密碼只在 wizard 顯示為「建議修改」。
+  // 單機桌面版場景大多只有一位管理員自己用，過去這個檢查反而讓使用者
+  // 卡在精靈裡無法進系統。
 
-  const passwordChanged = parseJsonResponse(await ctx.app.inject({
-    method: 'PUT',
-    url: '/api/admin/users/1/password',
-    headers: bearer(adminToken),
-    payload: {
-      password: 'Admin12345!',
-      confirm_self_password: 'admin123',
-    },
-  }))
-  assert.equal(passwordChanged.statusCode, 200)
-
-  const rotatedAdminToken = (await loginAs(ctx.app, 'admin', 'Admin12345!')).token
+  // (1) 預設密碼狀態下，first_run='false' 應直接成功（不再 400）。
   const allowed = parseJsonResponse(await ctx.app.inject({
     method: 'PUT',
     url: '/api/admin/settings',
-    headers: bearer(rotatedAdminToken),
+    headers: bearer(adminToken),
     payload: { first_run: 'false' },
   }))
   assert.equal(allowed.statusCode, 200)
 
+  // (2) 還原為 'true' 以維持後續測試的乾淨狀態。
   const restoreFirstRun = parseJsonResponse(await ctx.app.inject({
     method: 'PUT',
     url: '/api/admin/settings',
-    headers: bearer(rotatedAdminToken),
+    headers: bearer(adminToken),
     payload: { first_run: 'true' },
   }))
   assert.equal(restoreFirstRun.statusCode, 200)
-
-  const passwordRestored = parseJsonResponse(await ctx.app.inject({
-    method: 'PUT',
-    url: '/api/admin/users/1/password',
-    headers: bearer(rotatedAdminToken),
-    payload: {
-      password: 'admin123',
-      confirm_self_password: 'Admin12345!',
-    },
-  }))
-  assert.equal(passwordRestored.statusCode, 200)
 })
 
 test('role permissions allow volunteer reads but reject voter writes', async () => {

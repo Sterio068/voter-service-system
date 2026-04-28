@@ -13,11 +13,16 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   const countRemainingActiveAdmins = (excludedUserId: number) =>
     (db.prepare("SELECT COUNT(*) as c FROM users WHERE role='admin' AND is_active=1 AND id != ?").get(excludedUserId) as any).c
 
-  const hasDefaultAdminPassword = async () => {
+  /** Reserved for diagnostics — used to be a hard gate on first-run wizard
+   *  exit, but that's been relaxed to a warning so single-machine deploys
+   *  can choose to keep the default password.
+   *  @deprecated kept only for potential audit reporting. */
+  const hasDefaultAdminPassword = async (): Promise<boolean> => {
     const adminUser = db.prepare("SELECT password FROM users WHERE username='admin' AND role='admin' AND is_active=1 LIMIT 1").get() as any
     if (!adminUser?.password) return false
     return bcrypt.compare('admin123', adminUser.password)
   }
+  void hasDefaultAdminPassword
 
   const guardProtectedUserDisable = (
     reply: FastifyReply,
@@ -242,9 +247,6 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     const illegal = Object.keys(updates).filter(k => !ALLOWED_SETTINGS.has(k))
     if (illegal.length > 0) {
       return reply.code(400).send({ success: false, error: `不允許修改的設定項目：${illegal.join(', ')}` })
-    }
-    if (updates.first_run === 'false' && await hasDefaultAdminPassword()) {
-      return reply.code(400).send({ success: false, error: '請先完成首次管理員密碼修改，才能結束首次執行精靈' })
     }
     db.exec('BEGIN')
     try {
