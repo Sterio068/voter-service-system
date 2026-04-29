@@ -186,8 +186,8 @@ type GhRelease = {
 let cachedRelease: { fetchedAt: number; data: UpdateReleaseInfo } | null = null
 const RELEASE_TTL = 60 * 60 * 1000 // 1h
 
-async function fetchLatestRelease(): Promise<UpdateReleaseInfo | null> {
-  if (cachedRelease && Date.now() - cachedRelease.fetchedAt < RELEASE_TTL) {
+async function fetchLatestRelease(options: { forceRefresh?: boolean } = {}): Promise<UpdateReleaseInfo | null> {
+  if (!options.forceRefresh && cachedRelease && Date.now() - cachedRelease.fetchedAt < RELEASE_TTL) {
     return cachedRelease.data
   }
 
@@ -281,9 +281,9 @@ function pickMacAsset(release: GhRelease): GhAsset | null {
   return intel || arm64 || dmg[0]
 }
 
-async function macCheck(): Promise<void> {
+async function macCheck(options: { forceRefresh?: boolean } = {}): Promise<void> {
   emitStatus({ phase: 'checking' })
-  const release = await fetchLatestRelease()
+  const release = await fetchLatestRelease(options)
   const updateProxyBaseUrl = getCurrentUpdateProxyBaseUrl()
   if (!release?.version) {
     emitStatus({ phase: 'error', message: updateProxyBaseUrl
@@ -312,7 +312,7 @@ async function macCheck(): Promise<void> {
 
 async function macDownload(): Promise<void> {
   if (lastStatus.phase !== 'available') {
-    await macCheck()
+    await macCheck({ forceRefresh: true })
   }
   // Re-read lastStatus after potential macCheck mutation; widen narrowing.
   const snapshot = lastStatus
@@ -401,7 +401,7 @@ export function initAutoUpdate(window: BrowserWindow): void {
 
   ipcMain.handle('update:check', async () => {
     if (process.platform === 'win32') return winCheck()
-    if (process.platform === 'darwin') return macCheck()
+    if (process.platform === 'darwin') return macCheck({ forceRefresh: true })
     emitStatus({ phase: 'error', message: '此平台不支援自動更新' })
   })
 
