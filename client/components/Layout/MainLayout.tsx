@@ -175,7 +175,7 @@ export default function MainLayout() {
     })
   }, [])
 
-  // 半自動 auto-update：登入 5 秒後檢查 GitHub Release，有新版用 notification 顯示一次
+  // 半自動 auto-update：登入 5 秒後檢查更新來源，有新版用 notification 顯示一次
   useEffect(() => {
     if (!user) return
     const dismissedKey = 'voter-update-dismissed-version'

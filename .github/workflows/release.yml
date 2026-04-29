@@ -110,8 +110,25 @@ jobs:
       - name: Build icons
         run: npm run build:icons
 
+      - name: Validate update proxy release config
+        run: |
+          if [ -z "$VOTER_SERVICE_UPDATE_PROXY_URL" ]; then
+            echo "::error::Missing VOTER_SERVICE_UPDATE_PROXY_URL repository secret."
+            exit 1
+          fi
+          if [ -z "$VOTER_SERVICE_UPDATE_PROXY_TOKEN" ]; then
+            echo "::error::Missing VOTER_SERVICE_UPDATE_PROXY_TOKEN repository secret."
+            exit 1
+          fi
+        env:
+          VOTER_SERVICE_UPDATE_PROXY_URL: ${{ secrets.VOTER_SERVICE_UPDATE_PROXY_URL }}
+          VOTER_SERVICE_UPDATE_PROXY_TOKEN: ${{ secrets.VOTER_SERVICE_UPDATE_PROXY_TOKEN }}
+
       - name: Build app
         run: npm run build
+        env:
+          VOTER_SERVICE_UPDATE_PROXY_URL: ${{ secrets.VOTER_SERVICE_UPDATE_PROXY_URL }}
+          VOTER_SERVICE_UPDATE_PROXY_TOKEN: ${{ secrets.VOTER_SERVICE_UPDATE_PROXY_TOKEN }}
 
       # electron-builder uploads .dmg / .dmg.blockmap / latest-mac.yml
       # directly to the GitHub draft release. We skip the intermediate
@@ -142,8 +159,26 @@ jobs:
       - name: Build icons
         run: npm run build:icons
 
+      - name: Validate update proxy release config
+        shell: pwsh
+        run: |
+          if (-not $env:VOTER_SERVICE_UPDATE_PROXY_URL) {
+            Write-Error "Missing VOTER_SERVICE_UPDATE_PROXY_URL repository secret."
+            exit 1
+          }
+          if (-not $env:VOTER_SERVICE_UPDATE_PROXY_TOKEN) {
+            Write-Error "Missing VOTER_SERVICE_UPDATE_PROXY_TOKEN repository secret."
+            exit 1
+          }
+        env:
+          VOTER_SERVICE_UPDATE_PROXY_URL: ${{ secrets.VOTER_SERVICE_UPDATE_PROXY_URL }}
+          VOTER_SERVICE_UPDATE_PROXY_TOKEN: ${{ secrets.VOTER_SERVICE_UPDATE_PROXY_TOKEN }}
+
       - name: Build app
         run: npm run build
+        env:
+          VOTER_SERVICE_UPDATE_PROXY_URL: ${{ secrets.VOTER_SERVICE_UPDATE_PROXY_URL }}
+          VOTER_SERVICE_UPDATE_PROXY_TOKEN: ${{ secrets.VOTER_SERVICE_UPDATE_PROXY_TOKEN }}
 
       - name: Package & publish Windows
         run: npx electron-builder --win --publish always

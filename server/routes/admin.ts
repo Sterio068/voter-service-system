@@ -8,6 +8,12 @@ import { createAuditLog } from '../middleware/audit'
 import { setSetting } from '../utils/settings'
 import { isSecretSettingKey } from '../utils/secrets'
 import { applyDataRetention, getDataRetentionPolicy, previewDataRetention } from '../utils/dataRetention'
+import {
+  buildUpdateProxyUrl,
+  compareVersion,
+  getUpdateProxyBaseUrl,
+  getUpdateProxyHeaders,
+} from '../utils/updateProxy'
 
 export default async function adminRoutes(fastify: FastifyInstance) {
   const countRemainingActiveAdmins = (excludedUserId: number) =>
@@ -638,6 +644,8 @@ export default async function adminRoutes(fastify: FastifyInstance) {
   // 緩存 1 小時避免 GitHub API rate limit
   let versionCheckCache: { fetchedAt: number; data: any } | null = null
   const VERSION_CHECK_TTL = 60 * 60 * 1000 // 1h
+  const updateProxyBaseUrl = getUpdateProxyBaseUrl(process.env)
+  const updateProxyHeaders = getUpdateProxyHeaders(process.env)
   fastify.get('/api/system/version-check', { preHandler: [authenticate] }, async (_request, reply) => {
     const currentVersion = String(process.env.npm_package_version || require('../../package.json').version || '0.0.0')
 
@@ -647,6 +655,56 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     }
 
     try {
+      if (updateProxyBaseUrl) {
+        const ctrl = new AbortController()
+        const timer = setTimeout(() => ctrl.abort(), 4000)
+        const resp = await fetch(buildUpdateProxyUrl(updateProxyBaseUrl, '/api/updates/latest', {
+          current: currentVersion,
+          platform: process.platform,
+          arch: process.arch,
+        }), {
+          headers: {
+            'User-Agent': 'voter-service-system',
+            Accept: 'application/json',
+            ...updateProxyHeaders,
+          },
+          signal: ctrl.signal,
+        }).catch(() => null)
+        clearTimeout(timer)
+
+        if (!resp || !resp.ok) {
+          return reply.send({ success: true, data: { current: currentVersion, latest: null, has_update: false, reason: 'update_proxy_unreachable' } })
+        }
+
+        const json = await resp.json() as {
+          success?: boolean
+          data?: {
+            latest?: string
+            has_update?: boolean
+            latest_published?: string
+            latest_notes?: string
+            latest_url?: string | null
+          }
+        }
+
+        const latest = String(json.data?.latest || '')
+        if (!latest) {
+          return reply.send({ success: true, data: { current: currentVersion, latest: null, has_update: false, reason: 'update_proxy_unexpected_response' } })
+        }
+
+        const data = {
+          latest,
+          latest_url: json.data?.latest_url || null,
+          latest_published: json.data?.latest_published,
+          latest_notes: String(json.data?.latest_notes || '').slice(0, 1000),
+          has_update: typeof json.data?.has_update === 'boolean'
+            ? json.data.has_update
+            : compareVersion(latest, currentVersion) > 0,
+        }
+        versionCheckCache = { fetchedAt: Date.now(), data }
+        return reply.send({ success: true, data: { current: currentVersion, ...data, cached: false, source: 'update_proxy' } })
+      }
+
       const ctrl = new AbortController()
       const timer = setTimeout(() => ctrl.abort(), 4000)
       // /releases/latest occasionally serves a stale 404 from CDN even when
@@ -676,7 +734,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       }
       const eligible = list
         .filter(r => !r.draft && !r.prerelease && typeof r.tag_name === 'string')
-        .sort((a, b) => cmpVersion(
+        .sort((a, b) => compareVersion(
           String(b.tag_name || '').replace(/^v/, ''),
           String(a.tag_name || '').replace(/^v/, ''),
         ))
@@ -685,7 +743,7 @@ export default async function adminRoutes(fastify: FastifyInstance) {
         return reply.send({ success: true, data: { current: currentVersion, latest: null, has_update: false, reason: 'no_published_release' } })
       }
       const latestTag = String(json.tag_name || '').replace(/^v/, '')
-      const has_update = !!latestTag && cmpVersion(latestTag, currentVersion) > 0
+      const has_update = !!latestTag && compareVersion(latestTag, currentVersion) > 0
       const data = {
         latest: latestTag,
         latest_url: json.html_url,
@@ -699,17 +757,4 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       return reply.send({ success: true, data: { current: currentVersion, latest: null, has_update: false, reason: 'check_failed' } })
     }
   })
-}
-
-// semver 簡化比較：只比 major.minor.patch，回 -1 / 0 / 1
-function cmpVersion(a: string, b: string): number {
-  const pa = a.split('.').map(n => parseInt(n, 10) || 0)
-  const pb = b.split('.').map(n => parseInt(n, 10) || 0)
-  for (let i = 0; i < 3; i++) {
-    const x = pa[i] ?? 0
-    const y = pb[i] ?? 0
-    if (x > y) return 1
-    if (x < y) return -1
-  }
-  return 0
 }

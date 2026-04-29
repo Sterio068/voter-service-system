@@ -126,7 +126,7 @@ export default function AppUpdater() {
         {/* phase: idle */}
         {status.phase === 'idle' && (
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            點擊下方按鈕檢查 GitHub 是否有新版本。系統每小時也會自動檢查一次。
+            點擊下方按鈕檢查更新來源是否有新版本。系統每小時也會自動檢查一次。
           </Paragraph>
         )}
 

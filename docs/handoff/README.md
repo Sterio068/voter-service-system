@@ -23,7 +23,19 @@
 | **[DATA_QUALITY.md](../runbooks/DATA_QUALITY.md)** | 重複資料、孤兒附件、壞關聯資料修復流程 |
 | **[RELEASE.md](../runbooks/RELEASE.md)** | 發布前驗證、版本、安裝檔 smoke test |
 | **[INSTALL_TROUBLESHOOTING.md](../runbooks/INSTALL_TROUBLESHOOTING.md)** | macOS/Windows 安裝與啟動疑難排解 |
+| **[UPDATE_PROXY.md](../runbooks/UPDATE_PROXY.md)** | private repo 下的自架更新代理與 metadata server |
 | **[INCIDENT_RESPONSE.md](../runbooks/INCIDENT_RESPONSE.md)** | P0/P1/P2 事故分級、復原與事後檢討 |
+
+部署範本：
+
+- `deploy/update-proxy/.env.example`
+- `deploy/update-proxy/Caddyfile`
+- `deploy/update-proxy/ecosystem.config.cjs`
+- `deploy/update-proxy/voter-service-update-proxy.service`
+
+補充：
+
+- installer 現在可內建 update proxy 設定；細節見 [UPDATE_PROXY.md](../runbooks/UPDATE_PROXY.md) 與 [RELEASE.md](../runbooks/RELEASE.md)
 
 ## 🚀 快速上手流程
 

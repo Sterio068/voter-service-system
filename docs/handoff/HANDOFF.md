@@ -24,6 +24,9 @@
 - ✅ v1.0.15：in-app 一鍵自動更新（Windows 完整／Mac 輔助）。
 - ✅ v1.0.16：silent failure 修正、error UI、lineWebhook bug fix、voter_tags migration、備份 .meta sidecar 下載、資料品質 CSV 匯出、新增 4 個 API tests + 4 個 e2e tests、antd-vendor chunk split、Mac artifactName 修正。
 - ✅ v1.0.17：92 個 currentUser as-any 移除、16 個新 Zod schema、25 個 safeParse、17 個新 DB 索引、2 個 N+1 修正、8 個死檔案移除、Dashboard Skeleton、ActionQueue 空狀態、5 個列表頁 aria-labels、5 個 e2e 邊界案例。
+- ✅ v1.0.27：加入 private repo 可用的 update proxy / metadata server 架構；Electron updater、`/api/system/version-check` 與部署 runbook 都已支援 `VOTER_SERVICE_UPDATE_PROXY_URL` / `VOTER_SERVICE_UPDATE_PROXY_TOKEN`。
+- ✅ v1.0.27：補齊 `deploy/update-proxy/` 部署範本，包含 `.env.example`、`systemd service`、`PM2 ecosystem`、`Caddyfile`。
+- ✅ v1.0.27：打包流程已支援 installer 內建 update proxy 設定；若打包時提供 `VOTER_SERVICE_UPDATE_PROXY_URL` / `VOTER_SERVICE_UPDATE_PROXY_TOKEN`，首次啟動會自動寫入本機 `app-config.json`。
 - ✅ restore-on-startup rollback 保護、voter merge 完整轉移、Electron Fastify watchdog、idempotent scheduler。
 - ✅ 測試：85 個後端測試、31 條 e2e 測試、正式版隔離驗收、本機 packaged smoke。
 - ✅ 2026-04-25 最新版正式包驗證：登入、選民列表、client-errors 權限、mode=full 匿名化。
@@ -202,6 +205,8 @@ npm run dev
 | `npm run test:e2e` | Playwright Chromium smoke / navigation / role-access 測試 |
 | `npm run audit:prod` | production dependencies audit |
 | `npm run verify` | typecheck + test + build + production audit |
+| `npm run dev:update-proxy` | 本機開發 update proxy / metadata server |
+| `npm run start:update-proxy` | 啟動 private repo 用的更新代理 |
 | `npm run dist:mac` | 產生 Mac DMG |
 | `npm run dist:win` | 產生 Windows EXE |
 | `npm run dist:all` | 兩個平台都產生（需 macOS） |

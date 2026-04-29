@@ -9,6 +9,13 @@ import {
   verifyVendorPassword,
 } from './security'
 import { initAutoUpdate } from './autoUpdate'
+import {
+  AppUpdateProxyConfig,
+  applyInstalledUpdateProxyEnv,
+  getBundledUpdateProxyConfigPaths,
+  loadBundledUpdateProxyConfig,
+  resolveInstalledUpdateProxyConfig,
+} from './updateProxyConfig'
 
 // ── 解鎖視窗：指紋不符時要求輸入密碼 ─────────────────────────────
 function showUnlockWindow(vendorPassword: string): Promise<boolean> {
@@ -104,11 +111,13 @@ interface AppConfig {
   dataPath?: string
 }
 
+type StoredAppConfig = AppConfig & AppUpdateProxyConfig
+
 function getConfigPath(): string {
   return path.join(app.getPath('userData'), 'app-config.json')
 }
 
-function loadConfig(): AppConfig {
+function loadConfig(): StoredAppConfig {
   try {
     const p = getConfigPath()
     if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
@@ -116,7 +125,7 @@ function loadConfig(): AppConfig {
   return {}
 }
 
-function saveConfig(cfg: AppConfig): void {
+function saveConfig(cfg: StoredAppConfig): void {
   try {
     const p = getConfigPath()
     fs.mkdirSync(path.dirname(p), { recursive: true })
@@ -124,6 +133,17 @@ function saveConfig(cfg: AppConfig): void {
   } catch (e) {
     console.error('saveConfig failed:', e)
   }
+}
+
+function initializeInstalledUpdateProxyConfig(): void {
+  const cfg = loadConfig()
+  const bundled = loadBundledUpdateProxyConfig(getBundledUpdateProxyConfigPaths({
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  }))
+  const resolved = resolveInstalledUpdateProxyConfig(cfg, bundled)
+  if (resolved.changed) saveConfig(resolved.nextConfig)
+  applyInstalledUpdateProxyEnv(process.env, resolved)
 }
 
 // ── 資料路徑設定精靈 ─────────────────────────────────────────────
@@ -193,7 +213,7 @@ async function initDataPath(): Promise<string> {
   fs.mkdirSync(path.join(dataPath, 'uploads'), { recursive: true })
   fs.mkdirSync(path.join(dataPath, 'backups'), { recursive: true })
 
-  saveConfig({ dataPath })
+  saveConfig({ ...cfg, dataPath })
 
   if (!isReconfig) {
     await dialog.showMessageBox({
@@ -574,6 +594,7 @@ app.whenReady().then(async () => {
   }
 
   setupIPC()
+  initializeInstalledUpdateProxyConfig()
 
   // 初始化資料路徑（生產模式才做精靈；開發模式直接用 ./data）
   if (process.env.NODE_ENV === 'production') {

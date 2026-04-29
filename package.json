@@ -1,6 +1,6 @@
 {
   "name": "voter-service-system",
-  "version": "1.0.27",
+  "version": "1.0.28",
   "description": "本地單機版選民服務管理系統",
   "license": "AGPL-3.0-only",
   "main": "dist-electron/main.js",
@@ -8,9 +8,11 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\" \"npm run dev:electron\"",
     "dev:server": "tsx watch server/index.ts",
+    "dev:update-proxy": "tsx watch server/updateProxyServer.ts",
     "dev:client": "vite",
     "dev:electron": "wait-on http://localhost:5173 && electron .",
-    "build": "npm run build:client && npm run build:main && npm run build:preload",
+    "build": "npm run build:update-proxy-config && npm run build:client && npm run build:main && npm run build:preload",
+    "build:update-proxy-config": "node scripts/generate-update-proxy-config.mjs",
     "build:client": "vite build",
     "build:main": "node scripts/build-electron.mjs",
     "build:preload": "node scripts/build-preload.mjs",
@@ -30,6 +32,7 @@
     "dist:mac": "npm run build:icons && npm run build && electron-builder --mac && npm run restore:native",
     "dist:all": "npm run build:icons && npm run build && electron-builder --win --mac && npm run restore:native",
     "db:migrate": "tsx server/db/migrate.ts",
+    "start:update-proxy": "tsx server/updateProxyServer.ts",
     "test": "node scripts/run-node-tests.mjs"
   },
   "dependencies": {
@@ -106,7 +109,17 @@
       {
         "from": "resources/fonts",
         "to": "fonts",
-        "filter": ["**/*.ttf", "**/*.otf"]
+        "filter": [
+          "**/*.ttf",
+          "**/*.otf"
+        ]
+      },
+      {
+        "from": "generated-resources/update-proxy.json",
+        "to": "update-proxy.json",
+        "filter": [
+          "update-proxy.json"
+        ]
       }
     ],
     "files": [

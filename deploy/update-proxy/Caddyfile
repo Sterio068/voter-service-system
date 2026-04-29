@@ -1,0 +1,14 @@
+updates.example.com {
+  encode zstd gzip
+
+  reverse_proxy 127.0.0.1:8787
+
+  header {
+    -Server
+  }
+
+  log {
+    output file /var/log/caddy/voter-service-update-proxy.log
+    format console
+  }
+}

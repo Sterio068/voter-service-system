@@ -8,7 +8,7 @@
 
 ### Gatekeeper 阻擋
 
-1. 確認下載來源為官方 GitHub Release。
+1. 確認下載來源為官方 GitHub Release 或自架 update proxy 提供的正式安裝檔。
 2. 若尚未 notarize，使用者可能需要在「系統設定 → 隱私權與安全性」允許開啟。
 3. 不要要求使用者關閉 Gatekeeper 或 SIP。
 4. 長期解法是 Apple Developer ID 簽署與 notarization。
@@ -16,8 +16,26 @@
 ### 啟動後白畫面
 
 1. 檢查 `dist/` 與 `dist-electron/` 是否存在於安裝包。
-2. 確認 production 使用 `file://` 路徑時前端資源可載入。
+2. 確認 production 由 `http://127.0.0.1:8080` 提供 built assets 時前端資源可載入。
 3. 檢查主程序 log 是否有 CSP、路由或 preload 錯誤。
+
+### 軟體更新失敗
+
+若 repo 是 private，桌面版不能直接匿名抓 GitHub Release。
+
+請依序確認：
+
+1. 安裝包是否已內建 `update-proxy.json`，或桌面版是否另有設定 `VOTER_SERVICE_UPDATE_PROXY_URL`
+2. 若 proxy 有保護，桌面版是否也有設定 `VOTER_SERVICE_UPDATE_PROXY_TOKEN`
+3. update proxy 是否可正常回應 `/health`
+4. update proxy 是否可取得 `/api/updates/latest`
+5. proxy 端是否有設定 `VOTER_SERVICE_UPDATE_GITHUB_TOKEN`
+
+若本機安裝包應該自動帶 proxy 設定，可另外檢查：
+
+1. 使用者 `app-config.json` 是否已有 `updateProxyUrl`
+2. 安裝包 `Resources/update-proxy.json` 是否存在
+3. 升級後若設定沒更新，確認本機是否曾手動覆蓋成非 installer-managed 設定
 
 ## Windows 常見問題
 

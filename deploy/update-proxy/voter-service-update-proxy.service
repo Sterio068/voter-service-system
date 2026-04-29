@@ -1,0 +1,23 @@
+[Unit]
+Description=Voter Service System Update Proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=voter-service
+Group=voter-service
+WorkingDirectory=/opt/voter-service-system
+EnvironmentFile=/etc/voter-service-system/update-proxy.env
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env npm run start:update-proxy
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/voter-service-system
+
+[Install]
+WantedBy=multi-user.target
