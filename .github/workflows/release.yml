@@ -9,7 +9,11 @@ permissions:
   contents: write
 
 jobs:
-  verify:
+  # Fast feedback: typecheck + unit tests + audit + build sanity check.
+  # No browser install, no e2e — runs in ~3 min and gates the slower jobs
+  # below so an obvious typo / failing test doesn't waste 5 min on a Mac
+  # / Win runner.
+  unit:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,11 +26,54 @@ jobs:
 
       - run: npm ci
 
-      - name: Full verification
-        run: npm run verify
+      - name: Typecheck (client + server + electron + tests)
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production audit
+        run: npm run audit:prod
+
+      - name: Build sanity check
+        run: npm run build
+
+  # E2E in its own runner so it overlaps with mac/win builds. Used to
+  # block them; now it runs in parallel because mac/win don't depend on
+  # browser tests passing — the unit job already ensures the bundle and
+  # types are sound.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: unit
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Cache the Playwright browser binaries (~170 MB chromium) so the
+      # 30s install only happens on a clean cache miss.
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
 
       - name: Install Playwright Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system deps (cache hit)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: End-to-end tests
         run: npm run test:e2e -- --project=chromium
@@ -47,8 +94,8 @@ jobs:
           retention-days: 7
 
   build-mac:
-    needs: verify
     runs-on: macos-latest
+    needs: unit
 
     steps:
       - uses: actions/checkout@v5
@@ -66,10 +113,10 @@ jobs:
       - name: Build app
         run: npm run build
 
-      # electron-builder uploads .dmg / .dmg.blockmap / latest-mac.yml /
-      # latest-mac-arm64.yml directly to the GitHub draft release. We skip
-      # the intermediate actions/upload-artifact step so we don't burn the
-      # account-level artifact storage quota.
+      # electron-builder uploads .dmg / .dmg.blockmap / latest-mac.yml
+      # directly to the GitHub draft release. We skip the intermediate
+      # actions/upload-artifact step so we don't burn the account-level
+      # artifact storage quota.
       - name: Package & publish macOS DMG
         run: npx electron-builder --mac --publish always
         env:
@@ -79,8 +126,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-win:
-    needs: verify
     runs-on: windows-latest
+    needs: unit
 
     steps:
       - uses: actions/checkout@v5
@@ -104,7 +151,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish:
-    needs: [build-mac, build-win]
+    # publish only after all 3 of unit/e2e/mac/win finish to ensure the
+    # tag isn't promoted to 'latest' on a partial release.
+    needs: [unit, e2e, build-mac, build-win]
     runs-on: ubuntu-latest
 
     steps:
