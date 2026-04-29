@@ -24,7 +24,11 @@ type UpdateStatus =
   | { phase: 'downloaded'; version: string; filePath?: string }
   | { phase: 'error'; message: string }
 
-const RELEASE_API = 'https://api.github.com/repos/Sterio068/voter-service-system/releases/latest'
+// We avoid /releases/latest because GitHub's CDN-cached "latest" pointer
+// occasionally goes stale on this repo and serves 404 even when a valid
+// non-draft non-prerelease release exists. Listing /releases?per_page=10
+// + filtering client-side is more reliable.
+const RELEASE_API = 'https://api.github.com/repos/Sterio068/voter-service-system/releases?per_page=10'
 const USER_AGENT = 'voter-service-system'
 
 let lastStatus: UpdateStatus = { phase: 'idle' }
@@ -146,6 +150,8 @@ type GhRelease = {
   body?: string
   published_at?: string
   assets?: GhAsset[]
+  draft?: boolean
+  prerelease?: boolean
 }
 
 let cachedRelease: { fetchedAt: number; data: GhRelease } | null = null
@@ -164,8 +170,19 @@ async function fetchLatestRelease(): Promise<GhRelease | null> {
     })
     clearTimeout(t)
     if (!res.ok) return null
-    const data = (await res.json()) as GhRelease
-    cachedRelease = { fetchedAt: Date.now(), data }
+    const list = (await res.json()) as GhRelease[]
+    if (!Array.isArray(list)) return null
+    // GitHub returns releases sorted by created_at DESC. We need the first
+    // non-draft, non-prerelease entry. Compare semver tags as a tiebreaker
+    // to be robust against out-of-order republishes.
+    const eligible = list
+      .filter(r => !r.draft && !r.prerelease && typeof r.tag_name === 'string')
+      .sort((a, b) => compareVersion(
+        (b.tag_name || '').replace(/^v/, ''),
+        (a.tag_name || '').replace(/^v/, ''),
+      ))
+    const data = eligible[0] || null
+    if (data) cachedRelease = { fetchedAt: Date.now(), data }
     return data
   } catch {
     return null

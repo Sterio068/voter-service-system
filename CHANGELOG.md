@@ -9,6 +9,14 @@
 
 ## [Unreleased]
 
+## [1.0.27] - 2026-04-28
+
+### Fixed
+- **自動更新失敗（「無法取得 GitHub Release 資訊」）**：GitHub `/releases/latest` API 對本 repo 偶發回 404（即使 release 已 publish 且未設 draft/prerelease）。改用 `/releases?per_page=10` 列表 + 客戶端過濾 + semver 排序取最新非 draft 非 prerelease 的版本。Electron Mac 自動更新流程與後端 `/api/system/version-check` 都改用同樣方式。
+
+### Added
+- **側邊欄底部顯示目前版本號**：之前只在「系統設定 → 軟體更新」卡片才看得到，現在側邊欄收合按鈕上方永遠顯示 `v1.0.x`。瀏覽器存取（Tailscale / 區網）會從 `/api/system/version-check` 拿伺服器版本；Electron 桌面版直接走 IPC 取應用版本。
+
 ## [1.0.26] - 2026-04-28
 
 ### Changed

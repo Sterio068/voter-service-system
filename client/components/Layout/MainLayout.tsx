@@ -94,6 +94,22 @@ export default function MainLayout() {
   const [pendingCount, setPendingCount] = useState(0)
   const [showWizard, setShowWizard] = useState(false)
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
+  const [appVersion, setAppVersion] = useState<string>('')
+
+  // 取得目前應用版本（Electron 主進程 IPC，瀏覽器存取時 fallback 到 server check）
+  useEffect(() => {
+    let mounted = true
+    const electronGet = (window as unknown as { electronAPI?: { getVersion?: () => Promise<string> } }).electronAPI?.getVersion
+    if (typeof electronGet === 'function') {
+      electronGet().then(v => { if (mounted) setAppVersion(v || '') }).catch(() => {})
+    } else {
+      // Browser/LAN access: read current version from server's version-check
+      api.get('/system/version-check').then(r => {
+        if (mounted && r.data?.data?.current) setAppVersion(String(r.data.data.current))
+      }).catch(() => {})
+    }
+    return () => { mounted = false }
+  }, [])
   const idleTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const idleTimeoutMinutesRef = React.useRef<number>(30)
 
@@ -461,12 +477,29 @@ export default function MainLayout() {
           {navItems}
         </div>
 
-        {/* Sidebar footer — collapse toggle */}
+        {/* Sidebar footer — version + collapse toggle */}
         <div style={{
           borderTop: sidebarBorder,
           padding: '8px 6px',
           flexShrink: 0,
         }}>
+          {/* Version label — shown above the collapse toggle so it's always visible */}
+          {appVersion && (
+            <div
+              aria-label={`目前版本 v${appVersion}`}
+              style={{
+                fontSize: collapsed ? 9 : 11,
+                color: '#8e8e93',
+                textAlign: 'center',
+                padding: collapsed ? '4px 0 8px' : '4px 8px 8px',
+                fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                letterSpacing: 0.2,
+                userSelect: 'none',
+              }}
+            >
+              v{appVersion}
+            </div>
+          )}
           <div
             role="button"
             tabIndex={0}

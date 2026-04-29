@@ -649,7 +649,10 @@ export default async function adminRoutes(fastify: FastifyInstance) {
     try {
       const ctrl = new AbortController()
       const timer = setTimeout(() => ctrl.abort(), 4000)
-      const resp = await fetch('https://api.github.com/repos/Sterio068/voter-service-system/releases/latest', {
+      // /releases/latest occasionally serves a stale 404 from CDN even when
+      // a valid release exists; list endpoint + client-side filtering is
+      // robust against that and against draft/prerelease leakage.
+      const resp = await fetch('https://api.github.com/repos/Sterio068/voter-service-system/releases?per_page=10', {
         headers: { 'User-Agent': 'voter-service-system' },
         signal: ctrl.signal,
       }).catch(() => null)
@@ -657,7 +660,27 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       if (!resp || !resp.ok) {
         return reply.send({ success: true, data: { current: currentVersion, latest: null, has_update: false, reason: 'github_unreachable' } })
       }
-      const json = await resp.json() as { tag_name?: string; html_url?: string; published_at?: string; body?: string }
+      const list = (await resp.json()) as Array<{
+        tag_name?: string
+        html_url?: string
+        published_at?: string
+        body?: string
+        draft?: boolean
+        prerelease?: boolean
+      }>
+      if (!Array.isArray(list)) {
+        return reply.send({ success: true, data: { current: currentVersion, latest: null, has_update: false, reason: 'github_unexpected_response' } })
+      }
+      const eligible = list
+        .filter(r => !r.draft && !r.prerelease && typeof r.tag_name === 'string')
+        .sort((a, b) => cmpVersion(
+          String(b.tag_name || '').replace(/^v/, ''),
+          String(a.tag_name || '').replace(/^v/, ''),
+        ))
+      const json = eligible[0] || null
+      if (!json) {
+        return reply.send({ success: true, data: { current: currentVersion, latest: null, has_update: false, reason: 'no_published_release' } })
+      }
       const latestTag = String(json.tag_name || '').replace(/^v/, '')
       const has_update = !!latestTag && cmpVersion(latestTag, currentVersion) > 0
       const data = {
