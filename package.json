@@ -2,6 +2,7 @@
   "name": "voter-service-system",
   "version": "1.0.27",
   "description": "本地單機版選民服務管理系統",
+  "license": "AGPL-3.0-only",
   "main": "dist-electron/main.js",
   "homepage": "./",
   "scripts": {

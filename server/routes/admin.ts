@@ -658,7 +658,10 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       }).catch(() => null)
       clearTimeout(timer)
       if (!resp || !resp.ok) {
-        return reply.send({ success: true, data: { current: currentVersion, latest: null, has_update: false, reason: 'github_unreachable' } })
+        const reason = resp?.status === 404
+          ? 'github_release_not_public_or_missing'
+          : 'github_unreachable'
+        return reply.send({ success: true, data: { current: currentVersion, latest: null, has_update: false, reason } })
       }
       const list = (await resp.json()) as Array<{
         tag_name?: string

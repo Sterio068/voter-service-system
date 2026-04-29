@@ -205,7 +205,7 @@ async function macCheck(): Promise<void> {
   emitStatus({ phase: 'checking' })
   const release = await fetchLatestRelease()
   if (!release || !release.tag_name) {
-    emitStatus({ phase: 'error', message: '無法取得 GitHub Release 資訊（網路或配額限制）' })
+    emitStatus({ phase: 'error', message: '無法取得 GitHub Release 資訊。請確認 repo 已公開、GitHub 可連線，且未超過 API 配額。' })
     return
   }
   const latest = release.tag_name.replace(/^v/, '')
