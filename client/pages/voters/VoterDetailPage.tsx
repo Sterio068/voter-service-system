@@ -10,6 +10,7 @@ import { useIsMobile } from '../../components/Layout/MainLayout'
 import PageScaffold from '../../components/ui/PageScaffold'
 import EmptyState from '../../components/ui/EmptyState'
 import FormFooter from '../../components/ui/FormFooter'
+import ManagedCategoryField from '../../components/ManagedCategoryField'
 import dayjs from 'dayjs'
 import BasicTab from './components/BasicTab'
 import ContactTab from './components/ContactTab'
@@ -288,11 +289,11 @@ export default function VoterDetailPage() {
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
-              <Form.Item name="tags" label="標籤">
+              <ManagedCategoryField name="tags" label="標籤" tab="voter_tag" buttonText="管理標籤">
                 <Select mode="multiple" placeholder="選擇標籤">
                   {tags.map(t => <Option key={t} value={t}>{t}</Option>)}
                 </Select>
-              </Form.Item>
+              </ManagedCategoryField>
             </Col>
           </Row>
           <Form.Item name="note" label="備註">

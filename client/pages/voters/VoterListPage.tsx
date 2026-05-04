@@ -19,6 +19,7 @@ import FormFooter from '../../components/ui/FormFooter'
 import SelectionActionBar from '../../components/ui/SelectionActionBar'
 import FormSection from '../../components/ui/FormSection'
 import SavedFiltersBar from '../../components/SavedFiltersBar'
+import ManagedCategoryField, { CategoryManageButton } from '../../components/ManagedCategoryField'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import type { UploadFile } from 'antd/es/upload'
@@ -671,9 +672,12 @@ export default function VoterListPage() {
             value={filterVillage}
             onChange={(e) => { setFilterVillage(e.target.value); setPage(1) }}
           />
-          <Select placeholder="標籤篩選" aria-label="標籤篩選" allowClear style={{ width: 120 }} value={filterTag || undefined} onChange={(v) => { setFilterTag(v || ''); setPage(1) }}>
-            {tags.map(t => <Option key={t} value={t}>{t}</Option>)}
-          </Select>
+          <Space.Compact>
+            <Select placeholder="標籤篩選" aria-label="標籤篩選" allowClear style={{ width: 120 }} value={filterTag || undefined} onChange={(v) => { setFilterTag(v || ''); setPage(1) }}>
+              {tags.map(t => <Option key={t} value={t}>{t}</Option>)}
+            </Select>
+            <CategoryManageButton tab="voter_tag" size="middle">管理</CategoryManageButton>
+          </Space.Compact>
           {(search || filterCity || filterDistrict || filterVillage || filterTag) && (
             <Button
               icon={<FilterOutlined />}
@@ -1197,11 +1201,11 @@ export default function VoterListPage() {
                 </Form.Item>
               </Col>
             </Row>
-            <Form.Item name="tags" label="標籤">
+            <ManagedCategoryField name="tags" label="標籤" tab="voter_tag" buttonText="管理標籤">
               <Select mode="multiple" placeholder="選擇標籤">
                 {tags.map(t => <Option key={t} value={t}>{t}</Option>)}
               </Select>
-            </Form.Item>
+            </ManagedCategoryField>
           </FormSection>
 
           <FormSection title="其他資訊" description="補充來源、介紹人與備註，讓後續交接更有脈絡。">

@@ -25,6 +25,7 @@ import FormFooter from '../../components/ui/FormFooter'
 import EmptyState from '../../components/ui/EmptyState'
 import FormSection from '../../components/ui/FormSection'
 import SavedFiltersBar from '../../components/SavedFiltersBar'
+import ManagedCategoryField, { CategoryManageButton } from '../../components/ManagedCategoryField'
 import { hasModulePermission } from '../../utils/permissions'
 
 const { Text } = Typography
@@ -739,9 +740,12 @@ export default function SchedulePage() {
             onChange={e => { if (!e.target.value) setSearchKeyword('') }}
             onSearch={v => setSearchKeyword(v)}
           />
-          <Select placeholder="類型篩選" aria-label="行程類型篩選" allowClear style={{ width: 130 }} value={filterType || undefined} onChange={v => setFilterType(v || '')}>
-            {scheduleTypes.map(t => <Option key={t.code} value={t.code}>{t.name}</Option>)}
-          </Select>
+          <Space.Compact>
+            <Select placeholder="類型篩選" aria-label="行程類型篩選" allowClear style={{ width: 130 }} value={filterType || undefined} onChange={v => setFilterType(v || '')}>
+              {scheduleTypes.map(t => <Option key={t.code} value={t.code}>{t.name}</Option>)}
+            </Select>
+            <CategoryManageButton tab="schedule_type" size="middle">管理</CategoryManageButton>
+          </Space.Compact>
           <Select placeholder="狀態篩選" aria-label="行程狀態篩選" allowClear style={{ width: 110 }} value={filterStatus || undefined} onChange={v => setFilterStatus(v || '')}>
             <Option value="confirmed">確認</Option>
             <Option value="tentative">暫定</Option>
@@ -847,7 +851,7 @@ export default function SchedulePage() {
             </Form.Item>
             <Row gutter={12}>
               <Col xs={24} sm={12}>
-                <Form.Item name="schedule_type" label="行程類型">
+                <ManagedCategoryField name="schedule_type" label="行程類型" tab="schedule_type" buttonText="管理類型">
                   <Select allowClear onChange={v => setDrawerScheduleType(v || '')}>
                     {(scheduleTypes.length > 0
                       ? scheduleTypes
@@ -861,7 +865,7 @@ export default function SchedulePage() {
                       </Option>
                     ))}
                   </Select>
-                </Form.Item>
+                </ManagedCategoryField>
               </Col>
               <Col xs={24} sm={12}>
                 <Form.Item name="location" label="地點"><Input /></Form.Item>
@@ -977,6 +981,9 @@ export default function SchedulePage() {
                       >
                         {giftCategories.map((c: any) => <Option key={c.id} value={c.id}>{c.name}</Option>)}
                       </Select>
+                    </Col>
+                    <Col>
+                      <CategoryManageButton tab="gift_category" size="small">管理</CategoryManageButton>
                     </Col>
                     <Col flex={1}>
                       <Input
@@ -1402,6 +1409,9 @@ export default function SchedulePage() {
                     }}>
                     {giftCategories.map((c: any) => <Option key={c.id} value={c.id}>{c.name}</Option>)}
                   </Select>
+                </Col>
+                <Col>
+                  <CategoryManageButton tab="gift_category" size="small">管理</CategoryManageButton>
                 </Col>
                 <Col flex={1}>
                   <Input placeholder="品項名稱" value={item.item_name}

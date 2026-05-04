@@ -9,6 +9,7 @@ import api from '../../utils/api'
 import { useDataSync } from '../../hooks/useDataSync'
 import PageScaffold from '../../components/ui/PageScaffold'
 import EmptyState from '../../components/ui/EmptyState'
+import ManagedCategoryField from '../../components/ManagedCategoryField'
 import dayjs from 'dayjs'
 import { SCHEDULE_TYPE_LABELS, SCHEDULE_TYPE_COLORS } from '../../utils/constants'
 
@@ -339,12 +340,12 @@ export default function GroupDetailPage() {
         <Form form={editGroupForm} layout="vertical" onFinish={handleEditGroup}>
           <Form.Item name="name" label="團體名稱" rules={[{ required: true }]}><Input /></Form.Item>
           <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item name="category" label="類別">
+            <Col span={24}>
+              <ManagedCategoryField name="category" label="類別" tab="group_category" buttonText="管理類別">
                 <Select allowClear>
                   {groupCategories.map(c => <Option key={c} value={c}>{c}</Option>)}
                 </Select>
-              </Form.Item>
+              </ManagedCategoryField>
             </Col>
             <Col span={12}>
               <Form.Item name="phone" label="聯絡電話"><Input /></Form.Item>

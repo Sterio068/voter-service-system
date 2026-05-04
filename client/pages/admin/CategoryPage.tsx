@@ -5,6 +5,7 @@ import api from '../../utils/api'
 import PageScaffold from '../../components/ui/PageScaffold'
 import { useAuthStore } from '../../stores/authStore'
 import { hasModulePermission } from '../../utils/permissions'
+import { useSearchParams } from 'react-router-dom'
 
 const { Text } = Typography
 
@@ -15,6 +16,8 @@ const TYPE_LABELS: Record<string, string> = {
   group_category: '團體類別',
   doc_category: '公文分類',
 }
+
+const CATEGORY_TAB_KEYS = ['schedule_type', ...Object.keys(TYPE_LABELS), 'gift_category']
 
 // ── 禮品類別 ─────────────────────────────────────────────────────
 function GiftCategoryTable({ canManage }: { canManage: boolean }) {
@@ -356,10 +359,17 @@ function CategoryTable({ type, canManage }: { type: string; canManage: boolean }
 // ── 主頁 ──────────────────────────────────────────────────────────
 export default function CategoryPage() {
   const { user } = useAuthStore()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab') || searchParams.get('type') || ''
+  const activeTab = CATEGORY_TAB_KEYS.includes(requestedTab) ? requestedTab : 'schedule_type'
   const canManageCategories =
     hasModulePermission(user?.role, 'categories', 'create') ||
     hasModulePermission(user?.role, 'categories', 'edit') ||
     hasModulePermission(user?.role, 'categories', 'delete')
+
+  const handleTabChange = (key: string) => {
+    setSearchParams(key === 'schedule_type' ? {} : { tab: key }, { replace: true })
+  }
 
   return (
     <PageScaffold
@@ -372,7 +382,7 @@ export default function CategoryPage() {
         : '目前以唯讀模式查看系統類別定義，確保填報口徑一致。'}
     >
       <Card>
-        <Tabs defaultActiveKey="schedule_type" items={[
+        <Tabs activeKey={activeTab} onChange={handleTabChange} items={[
           { key: 'schedule_type', label: '行程類型', children: <ScheduleTypeTable canManage={canManageCategories} /> },
           ...Object.entries(TYPE_LABELS).map(([key, label]) => ({
             key, label, children: <CategoryTable type={key} canManage={canManageCategories} />,

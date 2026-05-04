@@ -7,6 +7,7 @@ import { PrinterOutlined, SearchOutlined } from '@ant-design/icons'
 import api from '../../utils/api'
 import PageScaffold from '../../components/ui/PageScaffold'
 import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
+import { CategoryManageButton } from '../../components/ManagedCategoryField'
 import dayjs from 'dayjs'
 
 const { Text } = Typography
@@ -153,9 +154,12 @@ export default function PrintVoterListPage() {
             </Select>
           </Form.Item>
           <Form.Item name="tag">
-            <Select placeholder="標籤" allowClear style={{ width: 110 }}>
-              {['樁腳','志工','捐款者','支持者','意見領袖'].map(t => <Option key={t} value={t}>{t}</Option>)}
-            </Select>
+            <Space.Compact>
+              <Select placeholder="標籤" allowClear style={{ width: 110 }}>
+                {['樁腳','志工','捐款者','支持者','意見領袖'].map(t => <Option key={t} value={t}>{t}</Option>)}
+              </Select>
+              <CategoryManageButton tab="voter_tag" size="middle">管理</CategoryManageButton>
+            </Space.Compact>
           </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit" loading={loading}>查詢</Button>

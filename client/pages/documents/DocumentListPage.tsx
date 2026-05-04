@@ -9,6 +9,7 @@ import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
 import EmptyState from '../../components/ui/EmptyState'
 import FormFooter from '../../components/ui/FormFooter'
 import FormSection from '../../components/ui/FormSection'
+import ManagedCategoryField from '../../components/ManagedCategoryField'
 import { useAuthStore } from '../../stores/authStore'
 import { hasModulePermission } from '../../utils/permissions'
 import dayjs from 'dayjs'
@@ -454,7 +455,11 @@ function DocTable({ docType }: { docType: 'incoming' | 'outgoing' }) {
             <Form.Item name="subject" label="主旨" rules={[{ required: true }]}><Input /></Form.Item>
             <Row gutter={12}>
               <Col span={12}><Form.Item name="doc_date" label={docType === 'incoming' ? '收文日期' : '發文日期'} rules={[{ required: true }]}><DatePicker style={{ width: '100%' }} format={rocPickerFormat} placeholder="民國年份" /></Form.Item></Col>
-              <Col span={12}><Form.Item name="category" label="分類"><Select allowClear>{categories.map(c => <Option key={c} value={c}>{c}</Option>)}</Select></Form.Item></Col>
+              <Col span={12}>
+                <ManagedCategoryField name="category" label="分類" tab="doc_category" buttonText="管理分類">
+                  <Select allowClear>{categories.map(c => <Option key={c} value={c}>{c}</Option>)}</Select>
+                </ManagedCategoryField>
+              </Col>
               <Col span={12}><Form.Item name="org_name" label={docType === 'incoming' ? '來文機關' : '受文機關'}><Input /></Form.Item></Col>
               {/* 使用 hidden 避免 unmount 造成資料丟失 */}
               <Col span={12} style={{ display: docType === 'incoming' ? undefined : 'none' }}>

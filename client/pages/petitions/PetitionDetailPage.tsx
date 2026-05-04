@@ -12,6 +12,7 @@ import AttachmentUpload from '../../components/AttachmentUpload'
 import AIButton from '../../components/ai/AIButton'
 import { PETITION_LOG_ACTION_TYPES } from '../../../shared/types'
 import PageScaffold from '../../components/ui/PageScaffold'
+import ManagedCategoryField from '../../components/ManagedCategoryField'
 import dayjs from 'dayjs'
 
 const { Text } = Typography
@@ -521,7 +522,7 @@ export default function PetitionDetailPage() {
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
-              <Form.Item name="category" label={
+              <ManagedCategoryField name="category" tab="petition_category" buttonText="管理類別" label={
                 <Space>
                   <span>陳情類別</span>
                   <AIButton
@@ -537,7 +538,7 @@ export default function PetitionDetailPage() {
                 <Select allowClear showSearch>
                   {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
                 </Select>
-              </Form.Item>
+              </ManagedCategoryField>
             </Col>
           </Row>
           <Row gutter={12}>
@@ -561,10 +562,14 @@ export default function PetitionDetailPage() {
             <Col xs={24} sm={8}>
               <Form.Item name="area_city" label="縣市"><Input /></Form.Item>
             </Col>
-            <Col xs={24} sm={8}>
-              <Form.Item name="area_district" label="區域"><Input /></Form.Item>
+            <Col xs={24} sm={16}>
+              <ManagedCategoryField name="area_district" label="區域" tab="petition_area" buttonText="管理區域">
+                <Input />
+              </ManagedCategoryField>
             </Col>
-            <Col xs={24} sm={8}>
+          </Row>
+          <Row gutter={12}>
+            <Col span={24}>
               <Form.Item name="area_address" label="地址"><Input /></Form.Item>
             </Col>
           </Row>

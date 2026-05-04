@@ -7,6 +7,7 @@ import { PlusOutlined, GiftOutlined, DeleteOutlined, EditOutlined } from '@ant-d
 import api from '../../utils/api'
 import PageScaffold from '../../components/ui/PageScaffold'
 import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
+import { CategoryManageButton } from '../../components/ManagedCategoryField'
 import dayjs from 'dayjs'
 import { CEREMONY_TYPE_LABELS } from '../../utils/constants'
 import { useAuthStore } from '../../stores/authStore'
@@ -403,6 +404,9 @@ export default function CeremonyPage() {
                       }}>
                       {giftCategories.map((c: any) => <Option key={c.id} value={c.id}>{c.name}</Option>)}
                     </Select>
+                  </Col>
+                  <Col>
+                    <CategoryManageButton tab="gift_category" size="small">管理</CategoryManageButton>
                   </Col>
                   <Col flex={1}>
                     <Input placeholder="品項名稱" value={item.item_name}

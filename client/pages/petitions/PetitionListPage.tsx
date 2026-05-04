@@ -16,6 +16,7 @@ import FormFooter from '../../components/ui/FormFooter'
 import SelectionActionBar from '../../components/ui/SelectionActionBar'
 import FormSection from '../../components/ui/FormSection'
 import SavedFiltersBar from '../../components/SavedFiltersBar'
+import ManagedCategoryField, { CategoryManageButton } from '../../components/ManagedCategoryField'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import { hasModulePermission } from '../../utils/permissions'
@@ -561,9 +562,12 @@ export default function PetitionListPage() {
           <Select placeholder="狀態篩選" aria-label="狀態篩選" allowClear style={{ width: 110 }} onChange={(v) => { setFilterStatus(v || ''); setPage(1) }} value={filterStatus || undefined}>
             {Object.entries(STATUS_LABELS).map(([v, l]) => <Option key={v} value={v}>{l}</Option>)}
           </Select>
-          <Select placeholder="類別篩選" aria-label="類別篩選" allowClear style={{ width: 120 }} onChange={(v) => { setFilterCategory(v || ''); setPage(1) }} value={filterCategory || undefined}>
-            {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
-          </Select>
+          <Space.Compact>
+            <Select placeholder="類別篩選" aria-label="類別篩選" allowClear style={{ width: 120 }} onChange={(v) => { setFilterCategory(v || ''); setPage(1) }} value={filterCategory || undefined}>
+              {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
+            </Select>
+            <CategoryManageButton tab="petition_category" size="middle">管理</CategoryManageButton>
+          </Space.Compact>
           <Select placeholder="緊急程度" aria-label="緊急程度篩選" allowClear style={{ width: 100 }} onChange={(v) => { setFilterUrgency(v || ''); setPage(1) }} value={filterUrgency || undefined}>
             {Object.entries(URGENCY_LABELS).map(([v, l]) => <Option key={v} value={v}>{l}</Option>)}
           </Select>
@@ -771,14 +775,14 @@ export default function PetitionListPage() {
                 </Form.Item>
               </Col>
               <Col xs={24} sm={12}>
-                <Form.Item name="category" label="陳情類別">
+                <ManagedCategoryField name="category" label="陳情類別" tab="petition_category" buttonText="管理類別">
                   <AutoComplete
                     allowClear
                     placeholder={categories.length === 0 ? '尚未設定類別，可直接輸入' : '選擇或輸入關鍵字'}
                     options={categories.map(c => ({ value: c }))}
                     filterOption={(input, option) => String(option?.value || '').toLowerCase().includes(input.toLowerCase())}
                   />
-                </Form.Item>
+                </ManagedCategoryField>
               </Col>
               <Col xs={24} sm={12}>
                 <Form.Item name="urgency" label="急迫程度">
@@ -805,11 +809,14 @@ export default function PetitionListPage() {
           <FormSection title="處理區域" description="標記案件發生區域，後續可用於熱點與缺口分析。">
             <Row gutter={12}>
               <Col span={24}>
-                <Form.Item name="area_city" label="區域">
-                  <Select allowClear showSearch placeholder="選擇或輸入區域" optionFilterProp="children">
-                    {areas.map(a => <Option key={a} value={a}>{a}</Option>)}
-                  </Select>
-                </Form.Item>
+                <ManagedCategoryField name="area_city" label="區域" tab="petition_area" buttonText="管理區域">
+                  <AutoComplete
+                    allowClear
+                    placeholder={areas.length === 0 ? '尚未設定區域，可直接輸入' : '選擇或輸入區域'}
+                    options={areas.map(a => ({ value: a }))}
+                    filterOption={(input, option) => String(option?.value || '').toLowerCase().includes(input.toLowerCase())}
+                  />
+                </ManagedCategoryField>
               </Col>
               <Col span={24}>
                 <Form.Item name="area_address" label="詳細地址"><Input placeholder="路段、門牌等" /></Form.Item>
@@ -868,14 +875,14 @@ export default function PetitionListPage() {
           <Form.Item name="content" label="陳情內容" rules={[{ required: true, message: '請填寫陳情內容' }]}>
             <TextArea rows={4} placeholder="詳細描述陳情事項..." maxLength={5000} />
           </Form.Item>
-          <Form.Item name="category" label="陳情類別">
+          <ManagedCategoryField name="category" label="陳情類別" tab="petition_category" buttonText="管理類別">
             <AutoComplete
               allowClear
               placeholder={categories.length === 0 ? '尚未設定類別，可直接輸入' : '選擇或輸入關鍵字'}
               options={categories.map(c => ({ value: c }))}
               filterOption={(input, option) => String(option?.value || '').toLowerCase().includes(input.toLowerCase())}
             />
-          </Form.Item>
+          </ManagedCategoryField>
           <Form.Item name="channel" label="陳情方式">
             <Select>
               {['電話', '現場', 'LINE', 'Email', '轉介'].map(c =>

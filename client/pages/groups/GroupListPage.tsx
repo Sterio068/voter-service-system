@@ -7,6 +7,7 @@ import PageScaffold from '../../components/ui/PageScaffold'
 import WorkspaceToolbar from '../../components/ui/WorkspaceToolbar'
 import FormFooter from '../../components/ui/FormFooter'
 import FormSection from '../../components/ui/FormSection'
+import ManagedCategoryField, { CategoryManageButton } from '../../components/ManagedCategoryField'
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 
@@ -144,9 +145,12 @@ export default function GroupListPage() {
       >
         <Space wrap>
           <Input.Search placeholder="搜尋團體名稱" allowClear style={{ width: 200 }} onSearch={(v) => { setSearch(v); setPage(1) }} prefix={<SearchOutlined />} />
-          <Select placeholder="類別篩選" allowClear style={{ width: 150 }} onChange={(v) => { setFilterCategory(v || ''); setPage(1) }}>
-            {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
-          </Select>
+          <Space.Compact>
+            <Select placeholder="類別篩選" allowClear style={{ width: 150 }} onChange={(v) => { setFilterCategory(v || ''); setPage(1) }}>
+              {categories.map(c => <Option key={c} value={c}>{c}</Option>)}
+            </Select>
+            <CategoryManageButton tab="group_category" size="middle">管理</CategoryManageButton>
+          </Space.Compact>
         </Space>
       </WorkspaceToolbar>
       {error && (
@@ -170,9 +174,9 @@ export default function GroupListPage() {
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <FormSection title="團體基本資料" description="先建立團體名稱、分類與聯絡方式，後續可再管理成員。">
             <Form.Item name="name" label="團體名稱" rules={[{ required: true }]}><Input /></Form.Item>
-            <Form.Item name="category" label="團體類別">
+            <ManagedCategoryField name="category" label="團體類別" tab="group_category" buttonText="管理類別">
               <Select allowClear>{categories.map(c => <Option key={c} value={c}>{c}</Option>)}</Select>
-            </Form.Item>
+            </ManagedCategoryField>
             <Row gutter={12}>
               <Col span={12}><Form.Item name="phone" label="聯絡電話"><Input /></Form.Item></Col>
               <Col span={12}><Form.Item name="member_count" label="預估成員數"><Input type="number" /></Form.Item></Col>
