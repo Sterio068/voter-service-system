@@ -34,6 +34,11 @@ Desktop App / Local Fastify
 - `GET /api/updates/generic/win/:assetName`
 - `GET /api/updates/generic/mac/latest-mac.yml`
 - `GET /api/updates/generic/mac/:assetName`
+- `GET /download` — 瀏覽器下載頁，給使用者直接下載安裝檔
+- `GET /download/windows` — Windows 安裝版穩定下載連結
+- `GET /download/windows-portable` — Windows 免安裝版穩定下載連結
+- `GET /download/mac-arm64` — macOS Apple Silicon DMG 穩定下載連結
+- `GET /download/mac-x64` — macOS Intel DMG 穩定下載連結
 
 ---
 
@@ -66,6 +71,8 @@ VOTER_SERVICE_UPDATE_PROXY_TOKEN=一組長且隨機的共享token
 ```http
 Authorization: Bearer <VOTER_SERVICE_UPDATE_PROXY_TOKEN>
 ```
+
+例外：`/download` 與 `/download/*` 是給 Chrome / Safari 直接下載用的公開交付路由，不需要 bearer header。若 proxy 掛在 Tailscale MagicDNS 後方，實際可見範圍仍由 tailnet 控制。
 
 ---
 
@@ -275,7 +282,37 @@ VOTER_SERVICE_UPDATE_PROXY_TOKEN=...
 - macOS 可取得最新版 metadata 與 DMG 下載連結
 - Windows 可透過 generic provider 抓 `latest.yml`
 
-### 5. 檢查 reverse proxy 後的公開網址
+### 5. 檢查瀏覽器下載頁
+
+private repo 的 GitHub Release 頁面不適合作為交付連結，因為沒有 GitHub 權限的人會看不到或無法下載。請改貼 update proxy 的下載頁：
+
+```text
+https://updates.example.com/download
+```
+
+目前支援的穩定下載路徑：
+
+```text
+https://updates.example.com/download/windows
+https://updates.example.com/download/windows-portable
+https://updates.example.com/download/mac-arm64
+https://updates.example.com/download/mac-x64
+```
+
+用 curl 快速驗證：
+
+```bash
+curl -I https://updates.example.com/download
+curl -I https://updates.example.com/download/windows
+```
+
+預期：
+
+- `/download` 回傳 `200` 與 `text/html`
+- `/download/windows` 回傳 `200`，且有 `content-disposition: attachment`
+- 不需要 `Authorization` header
+
+### 6. 檢查 reverse proxy 後的公開網址
 
 若前面有掛 Caddy / Nginx / Tunnel，請再驗一次外部網址：
 

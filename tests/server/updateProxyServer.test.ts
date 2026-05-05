@@ -40,6 +40,16 @@ test('update proxy server enforces auth and emits forwarded-host asset URLs', as
       })
     }
 
+    if (url === 'https://api.github.test/assets/mac-arm64') {
+      return new Response('DMGDATA', {
+        status: 200,
+        headers: {
+          'content-type': 'application/x-apple-diskimage',
+          'content-length': '7',
+        },
+      })
+    }
+
     return new Response('not found', { status: 404 })
   }) as typeof fetch
 
@@ -88,6 +98,31 @@ test('update proxy server enforces auth and emits forwarded-host asset URLs', as
     })
     assert.equal(latestMacYml.statusCode, 200)
     assert.match(latestMacYml.body, /version: 1\.0\.28/)
+
+    const downloadPage = await server.inject({
+      method: 'GET',
+      url: '/download',
+      headers: {
+        'x-forwarded-proto': 'https',
+        'x-forwarded-host': 'updates.example.com',
+      },
+    })
+    assert.equal(downloadPage.statusCode, 200)
+    assert.match(downloadPage.headers['content-type'] as string, /text\/html/)
+    assert.match(downloadPage.body, /選民服務系統 v1\.0\.28/)
+    assert.match(downloadPage.body, /https:\/\/updates\.example\.com\/download\/mac-arm64/)
+
+    const directDownload = await server.inject({
+      method: 'GET',
+      url: '/download/mac-arm64',
+    })
+    assert.equal(directDownload.statusCode, 200)
+    assert.equal(directDownload.body, 'DMGDATA')
+    assert.equal(directDownload.headers['content-type'], 'application/x-apple-diskimage')
+    assert.match(
+      String(directDownload.headers['content-disposition']),
+      /attachment; filename="voter-service-system-1\.0\.28-arm64\.dmg"/,
+    )
   } finally {
     await server.close()
     global.fetch = originalFetch
