@@ -9,6 +9,12 @@
 
 ## [Unreleased]
 
+## [1.0.31] - 2026-05-05
+
+### Fixed
+- **private repo 更新與下載交付**：修正 electron-builder `extraResources` 設定，確保 CI 產出的 macOS / Windows 安裝包會內建 `update-proxy.json`，正式版不再回退到 GitHub `releases.atom`。
+- **瀏覽器安裝檔下載頁**：update proxy 新增 `/download` 與 `/download/windows`、`/download/mac-arm64` 等穩定路由，GitHub repository 維持 private 時也能直接用 Chrome / Safari 下載安裝檔。
+
 ## [1.0.27] - 2026-04-28
 
 ### Fixed

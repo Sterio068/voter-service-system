@@ -1,6 +1,6 @@
 {
   "name": "voter-service-system",
-  "version": "1.0.30",
+  "version": "1.0.31",
   "description": "本地單機版選民服務管理系統",
   "license": "AGPL-3.0-only",
   "main": "dist-electron/main.js",
@@ -115,8 +115,8 @@
         ]
       },
       {
-        "from": "generated-resources/update-proxy.json",
-        "to": "update-proxy.json",
+        "from": "generated-resources",
+        "to": ".",
         "filter": [
           "update-proxy.json"
         ]
