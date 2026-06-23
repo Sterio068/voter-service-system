@@ -109,18 +109,34 @@ test('voter list with city filter is fast (uses index)', async () => {
   console.log(`[large-scale] voter filter city=臺北市: ${resp.body.total} matched in ${dt}ms`)
 })
 
-test('voter LIKE search is bounded (< 3s) even on full table scan', async () => {
+test('voter search (FTS5 when available) is fast and matches LIKE result count', async () => {
+  // 「壓測選民1」為 >=3 字元 → 走 FTS5（若環境支援）；否則回退 LIKE。
+  // 兩者結果集對齊，故 total 與直接 LIKE 計數一致。
+  const search = '壓測選民1'
+  const ftsReady = !!ctx.db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='voters_fts'")
+    .get()
+
   const t0 = Date.now()
   const resp = parseJsonResponse(await ctx.app.inject({
     method: 'GET',
-    url: '/api/voters?search=壓測選民1&page=1&pageSize=20',
+    url: `/api/voters?search=${encodeURIComponent(search)}&page=1&pageSize=20`,
     headers: bearer(adminToken),
   }))
   const dt = Date.now() - t0
   assert.equal(resp.statusCode, 200)
   assert.ok(resp.body.total > 0)
-  assert.ok(dt < 3000, `voter search took ${dt}ms (LIKE is full-scan, allow up to 3s)`)
-  console.log(`[large-scale] voter LIKE search: ${resp.body.total} matched in ${dt}ms`)
+
+  // 結果集 parity：端點回傳 total 應等於原 LIKE 全掃的計數。
+  const likeCount = (ctx.db.prepare(
+    "SELECT COUNT(*) AS c FROM voters WHERE is_active=1 AND (name LIKE ? OR mobile LIKE ? OR phone LIKE ? OR household_address LIKE ?)",
+  ).get(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`) as any).c
+  assert.equal(resp.body.total, likeCount, 'FTS/LIKE 結果計數應一致')
+
+  // FTS 可用時應遠快於 LIKE 全掃；給寬鬆上限避免 CI 抖動誤報。
+  const limit = ftsReady ? 500 : 3000
+  assert.ok(dt < limit, `voter search took ${dt}ms (ftsReady=${ftsReady}, limit ${limit}ms)`)
+  console.log(`[large-scale] voter search (ftsReady=${ftsReady}): ${resp.body.total} matched in ${dt}ms`)
 })
 
 test('voter timeline endpoint stays well under 100ms even on a 50k voter dataset', async () => {

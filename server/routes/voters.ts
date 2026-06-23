@@ -4,6 +4,7 @@ import { db } from '../db/index'
 import { requirePermission, authenticate } from '../middleware/auth'
 import { createAuditLog } from '../middleware/audit'
 import { anonymizeVoter } from '../utils/voterAnonymization'
+import { isVoterFtsReady, buildVoterFtsMatch } from '../db/voterFts'
 
 function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
@@ -230,7 +231,21 @@ export default async function voterRoutes(fastify: FastifyInstance) {
     const { search, city, district, village, tag, mobile, id_number, is_active = 1, is_blacklisted } = _q
     const conds = ['v.is_active = ?']
     const params: any[] = [Number(is_active) === 0 ? 0 : 1]
-    if (search) { const es = escapeLike(search); conds.push("(v.name LIKE ? ESCAPE '\\' OR v.mobile LIKE ? ESCAPE '\\' OR v.phone LIKE ? ESCAPE '\\' OR v.household_address LIKE ? ESCAPE '\\')"); params.push(`%${es}%`,`%${es}%`,`%${es}%`,`%${es}%`) }
+    if (search) {
+      // 優先走 FTS5（避免全表 LIKE 掃描）；不可用 / 短查詢時回退原 LIKE 行為。
+      // 欄位範圍須與下方 LIKE 完全一致（name/mobile/phone/household_address）。
+      const matchExpr = isVoterFtsReady(db)
+        ? buildVoterFtsMatch(search, ['name', 'mobile', 'phone', 'household_address'])
+        : null
+      if (matchExpr) {
+        conds.push('v.id IN (SELECT rowid FROM voters_fts WHERE voters_fts MATCH ?)')
+        params.push(matchExpr)
+      } else {
+        const es = escapeLike(search)
+        conds.push("(v.name LIKE ? ESCAPE '\\' OR v.mobile LIKE ? ESCAPE '\\' OR v.phone LIKE ? ESCAPE '\\' OR v.household_address LIKE ? ESCAPE '\\')")
+        params.push(`%${es}%`,`%${es}%`,`%${es}%`,`%${es}%`)
+      }
+    }
     if (city) { conds.push('v.household_city = ?'); params.push(city) }
     if (district) { conds.push('v.household_district = ?'); params.push(district) }
     if (village) { conds.push('v.household_village = ?'); params.push(village) }
@@ -272,9 +287,20 @@ export default async function voterRoutes(fastify: FastifyInstance) {
   fastify.get('/api/voters/search', { preHandler: [requirePermission('voters', 'view')] }, async (request, reply) => {
     const { q } = request.query as any
     if (!q) return reply.send({ success: true, data: [] })
-    const eq = escapeLike(q)
-    const results = db.prepare("SELECT id,name,mobile,household_address FROM voters WHERE is_active=1 AND (name LIKE ? ESCAPE '\\' OR mobile LIKE ? ESCAPE '\\') LIMIT 10")
-      .all(`%${eq}%`, `%${eq}%`)
+    // 欄位範圍須與下方 LIKE 一致（name/mobile）。
+    const matchExpr = isVoterFtsReady(db) ? buildVoterFtsMatch(q, ['name', 'mobile']) : null
+    let results: any[]
+    if (matchExpr) {
+      results = db.prepare(`
+        SELECT id,name,mobile,household_address FROM voters
+        WHERE is_active=1 AND id IN (SELECT rowid FROM voters_fts WHERE voters_fts MATCH ?)
+        LIMIT 10
+      `).all(matchExpr)
+    } else {
+      const eq = escapeLike(q)
+      results = db.prepare("SELECT id,name,mobile,household_address FROM voters WHERE is_active=1 AND (name LIKE ? ESCAPE '\\' OR mobile LIKE ? ESCAPE '\\') LIMIT 10")
+        .all(`%${eq}%`, `%${eq}%`)
+    }
     return reply.send({ success: true, data: results })
   })
 

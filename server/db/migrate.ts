@@ -1,6 +1,7 @@
 import { db } from './index'
 import bcrypt from 'bcrypt'
 import { migrateSecretsAtRest } from '../utils/secrets'
+import { applyVoterFts } from './voterFts'
 
 export async function runMigrations() {
   // D-2: Schema migrations version table (must be first)
@@ -916,6 +917,21 @@ export async function runMigrations() {
     db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run('5.7.0', 'F-N12: 使用者儲存的篩選組合（saved_filters）')
   } catch (e: any) {
     if (!e.message?.includes('already exists')) console.error('saved_filters migration:', e.message)
+  }
+
+  // 5.8.0: 選民全文搜尋（FTS5 虛擬表 + 同步 trigger）。
+  // 原 voters 表結構不變；不支援 FTS5 的環境會安全跳過（查詢層自動回退 LIKE）。
+  try {
+    const enabled = applyVoterFts(db)
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)").run(
+      '5.8.0',
+      enabled
+        ? 'Perf: 選民全文搜尋 FTS5（voters_fts + 同步 trigger）'
+        : 'Perf: 選民全文搜尋（此環境不支援 FTS5，已跳過，沿用 LIKE）',
+    )
+  } catch (e: any) {
+    // FTS 失敗不可阻斷啟動：查詢層會自動回退 LIKE。
+    console.error('voters_fts migration:', e.message)
   }
 
   await seedDefaultData()
